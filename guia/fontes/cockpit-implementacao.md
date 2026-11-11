@@ -3,7 +3,7 @@ titulo: Cockpit — Guia de Implementação
 subtitulo: Passo a passo manual, no rito do dia a dia de um dev NestJS + React
 rotulo: Documento técnico
 autor: Davi Kelve
-badges: Para implementar à mão:ok, v1.3
+badges: Para implementar à mão:ok, v1.4
 kpis: Sprints=11; Recurso Nest padrão=12 passos; Commits por feature=3 a 6
 ---
 
@@ -62,6 +62,13 @@ NestJS trabalha de verdade. Cada sprint segue o mesmo rito — repita-o até vir
 > [!INFO] v1.3 — correção da Sprint 1 (10/11/2026)
 > O `AppModule` da seção 1.3 citava o filtro (1.4) e o `HealthModule` (1.5) antes de eles existirem. Agora
 > cada peça é registrada na seção em que nasce.
+
+> [!INFO] v1.4 — revisão da Sprint 1 (11/11/2026)
+> A seção 1.6 virou passo a passo: os dois testes e2e têm arquivo e código (antes eram duas linhas de
+> lista, fáceis de passar batido), o `ci.yml` aparece inteiro (o trecho solto levava a pôr `services` na
+> raiz do arquivo, o que invalida o workflow) e há um "Como deve ficar no fim". O filtro da 1.4 passou a
+> registrar todo erro 5xx no log e a devolver o corpo do Terminus quando o health check falha; o ping da
+> 1.5 ganhou 3 s de limite, porque um banco que hiberna (Neon) não acorda em 1 s.
 
 ### Definição de pronto (DoD) — vale para todo PR
 
@@ -926,6 +933,8 @@ Os três primeiros sem erro e o `git status` dizendo *nothing to commit, working
 > [!OK] Provado em 31/10/2026
 > Tudo desta sprint foi executado com Nest 12.0.11, Prisma 7.10.1 e Vitest 4 contra um Postgres local:
 > 2 de 2 e2e (`/health` e 404 em problem+json), `openapi.json` exportado, lint limpo.
+> Provado de novo em 11/11/2026 com Vitest 5 e o banco no Neon, já com as correções da v1.4: os mesmos 2 de 2,
+> mais o 503 do health com o corpo do Terminus e o log do erro 500.
 
 > [!CRITICO] A partir daqui: dois terminais fixos
 > No VS Code, deixe **dois terminais** abertos e renomeie as abas (clique direito → *Rename*):
@@ -1187,7 +1196,7 @@ nest g filter common/filters/problem-details --flat --no-spec
 ```
 
 ```ts
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 function messageOf(body: unknown): string {
@@ -1199,14 +1208,30 @@ function messageOf(body: unknown): string {
   return 'Unexpected error';
 }
 
+// O Terminus lança 503 com o resultado do health check no corpo: { status, info, error, details }.
+function isHealthResult(body: unknown): body is Record<string, unknown> {
+  return typeof body === 'object' && body !== null && 'status' in body && 'details' in body;
+}
+
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
+  private readonly logger = new Logger(ProblemDetailsFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request & { id?: string }>();
     const res = ctx.getResponse<Response>();
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
     const body = exception instanceof HttpException ? exception.getResponse() : undefined;
+
+    // Health check que falhou: devolve o corpo do Terminus, que diz QUAL indicador caiu.
+    if (isHealthResult(body)) {
+      res.status(status).json(body);
+      return;
+    }
+    // Erro 5xx é defeito nosso: sem este log ele some (o cliente só vê "Unexpected error").
+    if (status >= 500) this.logger.error(exception);
+
     res.status(status).type('application/problem+json').json({
       type: 'about:blank',
       title: HttpStatus[status] ?? 'Error',
@@ -1226,6 +1251,14 @@ Agora registre no `AppModule`, acrescentando a linha de `providers` (o `APP_FILT
 ```
 
 Registrado assim ele recebe injeção de dependência, ao contrário do `app.useGlobalFilters`.
+
+> [!INFO] Dois desvios de propósito (v1.4)
+> **O log do 5xx.** Um filtro `@Catch()` engole tudo: sem o `this.logger.error`, um defeito em produção
+> responde "Unexpected error" e não deixa rastro nenhum. O 4xx não é logado como erro, porque é o cliente
+> que errou. O `Logger` do Nest escreve pelo pino, graças ao `app.useLogger` do `main.ts`.
+> **O corpo do health.** Quando o health check falha, o Terminus lança um 503 cujo corpo é o resultado
+> (`error.database.status: "down"`). Convertido em problem+json ele virava "Unexpected error" e escondia
+> qual indicador caiu; por isso passa direto, no formato que o próprio Swagger do `/health` anuncia.
 Faça depois um `PrismaExceptionFilter`: `P2002` (único violado) → 409 e `P2025` (não encontrado) → 404.
 
 ### 1.5 Health
@@ -1257,7 +1290,7 @@ export class HealthController {
   @Get()
   @HealthCheck()
   check() {
-    return this.health.check([() => this.db.pingCheck('database', this.prisma)]);
+    return this.health.check([() => this.db.pingCheck('database', this.prisma).withTimeout(3000)]);
   }
 }
 ```
@@ -1265,9 +1298,27 @@ export class HealthController {
 O `nest g module` já acrescenta o `HealthModule` aos `imports` do `AppModule`. Confira com `git status` e
 veja se o import ficou com `.js` no fim. Com a API rodando, `http://localhost:3000/health` devolve 200.
 
+> [!ATENCAO] Por que `.withTimeout(3000)` (v1.4)
+> O limite padrão do ping é **1 segundo**. O banco do plano gratuito do Neon hiberna depois de alguns
+> minutos parado e leva mais que isso para acordar: a primeira chamada devolvia **503** e as seguintes 200
+> (medido em 11/11/2026: 503 na primeira, depois 432 ms e ~55 ms). Com 3 s a primeira chamada já passa. Se
+> ainda assim vier um 503 isolado depois de um tempo parado, chame de novo antes de procurar defeito.
+
 ### 1.6 Testes desta sprint
 
-**O spec que a CLI gerou vai quebrar** — `nest g controller` cria um `health.controller.spec.ts` que só
+Esta seção tem **seis passos**, e a sprint só fecha com os seis feitos. É a mais longa da sprint
+(~3 sessões): não é só "rodar os testes".
+
+| Passo | O que você cria ou altera |
+|---|---|
+| 1 | `src/core/health/health.controller.spec.ts` — o spec gerado vira teste de verdade |
+| 2 | `test/utils/app.ts` e `vitest.config.e2e.ts` — a base dos e2e |
+| 3 | `test/health.e2e-spec.ts` — **arquivo novo** |
+| 4 | `test/problem-details.e2e-spec.ts` — **arquivo novo** |
+| 5 | `openapi.json` regerado (`npm run api:gen`) |
+| 6 | `.github/workflows/ci.yml` com Postgres, depois o Pull Request |
+
+**Passo 1 — o teste unitário.** **O spec que a CLI gerou vai quebrar** — `nest g controller` cria um `health.controller.spec.ts` que só
 registra o controller, e o controller agora depende de três serviços. É normal no dia a dia: **todo spec
 gerado vira teste de verdade ou é apagado**, nunca fica quebrado. Versão de verdade, com mocks do Vitest:
 
@@ -1295,7 +1346,9 @@ describe('HealthController', () => {
 });
 ```
 
-Utilitário de e2e, `test/utils/app.ts` (usado em todas as sprints):
+Se sobrar no topo do arquivo o `TestingModule` que a CLI importou, apague: o lint acusa import sem uso.
+
+**Passo 2 — a base dos e2e.** Utilitário `test/utils/app.ts` (usado em todas as sprints):
 
 ```ts
 export async function createTestApp(): Promise<INestApplication> {
@@ -1310,18 +1363,88 @@ export async function createTestApp(): Promise<INestApplication> {
 E no `vitest.config.e2e.ts`, `fileParallelism: false` dentro de `test`: as suítes e2e compartilham um banco
 e cada uma faz `TRUNCATE` no começo — em paralelo, uma apaga os dados da outra.
 
-- e2e: `GET /health` → 200 com `info.database.status === 'up'`.
-- e2e: `GET /api/v1/nada` → 404 em `application/problem+json`, com `instance: '/api/v1/nada'`.
-- Apague `app.controller.ts`, `app.service.ts` e o spec deles. Gerado de exemplo não fica.
+> [!CRITICO] Os dois arquivos a seguir não existem: você cria
+> A CLI não gera teste e2e para o health nem para o filtro, e o `test/app.e2e-spec.ts` de exemplo foi
+> apagado na 1.3. Sem os passos 3 e 4, `npm run test:e2e -w apps/api` termina com **"No test files found"
+> e código 1** — e o CI falha no último passo. O nome tem que terminar em `.e2e-spec.ts`: é o que o
+> `include` do `vitest.config.e2e.ts` procura.
 
-**CI com banco:** agora que existe Prisma, volte ao `.github/workflows/ci.yml` e acrescente o Postgres
-como *service* e a migration antes do e2e:
+**Passo 3 — e2e do health.** Crie `test/health.e2e-spec.ts`:
+
+```ts
+import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { createTestApp } from './utils/app.js';
+
+describe('GET /health (e2e)', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close(); // fecha a conexão com o banco; sem isso o Vitest não termina
+  });
+
+  it('returns 200 with the database up', async () => {
+    const res = await request(app.getHttpServer()).get('/health').expect(200);
+    expect(res.body.info.database.status).toBe('up');
+  });
+});
+```
+
+**Passo 4 — e2e do filtro de erros.** Crie `test/problem-details.e2e-spec.ts`. A casca (`describe`,
+`beforeAll`, `afterAll`) é a mesma do passo 3; muda o teste:
+
+```ts
+  it('answers an unknown route with 404 in application/problem+json', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/nada')
+      .expect(404)
+      .expect('Content-Type', /application\/problem\+json/);
+    expect(res.body).toMatchObject({ status: 404, instance: '/api/v1/nada' });
+  });
+```
+
+Antes de rodar, **preveja**: quantos arquivos e quantos testes o Vitest vai contar? Depois confira:
+
+```powershell
+# 📍 raiz
+npm run test -w apps/api        # 1 arquivo, 1 teste
+npm run test:e2e -w apps/api    # 2 arquivos, 2 testes (usa o banco do seu .env)
+```
+
+**Passo 5 — contrato em dia.** O `openapi.json` commitado na 1.3 foi exportado quando a API ainda não
+tinha rota nenhuma (`"paths": {}`). Agora existe o `/health`:
+
+```powershell
+# 📍 raiz
+npm run api:gen
+git diff --stat openapi.json    # tem que mostrar o /health entrando
+```
+
+Confira também que não sobrou gerado de exemplo: `app.controller.ts`, `app.service.ts` e o spec deles.
+
+**Passo 6 — CI com banco.** Agora que existe Prisma, o CI precisa de um Postgres. O bloco `services`
+entra **dentro do job** (`build-test`), no mesmo nível do `runs-on` e do `steps`; na raiz do arquivo o
+GitHub rejeita o workflow inteiro e nenhum check aparece no PR. O arquivo completo fica assim:
 
 ```yaml
+name: ci
+on:
+  pull_request:
+  push: { branches: [main] }
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17
-        env: { POSTGRES_USER: cockpit, POSTGRES_PASSWORD: cockpit, POSTGRES_DB: cockpit_test }
+        env:
+          POSTGRES_USER: cockpit
+          POSTGRES_PASSWORD: cockpit
+          POSTGRES_DB: cockpit_test
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
@@ -1329,9 +1452,36 @@ como *service* e a migration antes do e2e:
       DATABASE_URL: postgresql://cockpit:cockpit@localhost:5432/cockpit_test
       JWT_ACCESS_SECRET: ci-only-secret-with-at-least-32-chars!!
       WEB_ORIGIN: http://localhost:5173
-    # ...e nos steps, antes do test:e2e:
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test
       - run: npm exec -w apps/api -- prisma migrate deploy
+      - run: npm run test:e2e -w apps/api
 ```
+
+> [!ATENCAO] YAML não avisa erro de digitação
+> Três erros que o editor aceita calado e só o CI acusa: `services` fora do job (workflow inválido),
+> `--health-restries` no lugar de `--health-retries` (o contêiner do Postgres não sobe) e
+> `JWT_ACESS_SECRET` com um C a menos (o Joi da 1.1 derruba a API: *"JWT_ACCESS_SECRET is required"*).
+> Confira os nomes das variáveis contra o `env.validation.ts`, letra por letra.
+
+Faça o push, abra o **Pull Request** com `Closes #<número da issue da Sprint 1>` na descrição, espere o
+check `build-test` ficar verde, revise o seu PR e faça o *squash merge*.
+
+#### Como deve ficar no fim da Sprint 1
+
+- [ ] `npm run lint` sem aviso, `npm run build` e `npm run test` (1 teste) passam
+- [ ] `npm run test:e2e -w apps/api` passa com **2 arquivos, 2 testes**
+- [ ] `GET /health` devolve 200 com o banco `up`; `GET /api/v1/nada` devolve 404 em problem+json
+- [ ] `openapi.json` tem o caminho `/health`
+- [ ] `apps/api/.env.example` lista **todas** as variáveis do `env.validation.ts`, sem valores
+- [ ] CI verde no PR, *squash merge* na `main`, branch apagada, issue da sprint fechada
+- [ ] No Dojo, a missão 1.6 só é concluída depois disso tudo
 
 **Commits sugeridos:** `feat(api): validate env with joi` · `feat(api): add prisma module` ·
 `feat(api): configure bootstrap, swagger and logging` · `feat(api): add problem details filter` ·
