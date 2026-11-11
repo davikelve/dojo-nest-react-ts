@@ -1,0 +1,1165 @@
+{
+  "licoes": [
+    {
+      "id": "dados-01",
+      "titulo": "Postgres para quem sabe Oracle",
+      "minutos": 12,
+      "ponte": "Você não está aprendendo banco: está trocando de sotaque. MVCC, plano de execução, lock de linha, `READ COMMITTED` como padrão: tudo isso existe nos dois. A analogia quebra em quatro lugares que mordem quem vem do Oracle: string vazia não é `NULL`, DDL participa da transação, um erro aborta a transação inteira e não existe *package*.",
+      "texto": "O Postgres é o banco padrão do ecossistema Node, e é o do Cockpit. Quase todo o seu reflexo de Oracle vale. Esta lição é a tabela de conversão e, principalmente, a lista do que **se comporta diferente sem avisar**.\n\n### De → Para\n\n| Oracle | Postgres | Observação |\n|---|---|---|\n| `NVL(a, b)` | `COALESCE(a, b)` | `COALESCE` é padrão SQL e existe nos dois |\n| `DECODE` | `CASE` | |\n| `ROWNUM <= 10` | `LIMIT 10` | `FETCH FIRST 10 ROWS ONLY` funciona nos dois |\n| `MERGE` | `INSERT ... ON CONFLICT (...) DO UPDATE` | O Postgres 15+ também tem `MERGE`, mas o idioma da casa é `ON CONFLICT` |\n| `SYSDATE` | `now()` | `now()` é a hora de **início da transação**; a hora do relógio é `clock_timestamp()` |\n| `DATE` (com hora) | `timestamp` ou `timestamptz` | `date` no Postgres é **só o dia** |\n| *sequence* + trigger | `GENERATED ... AS IDENTITY` | *sequence* existe: `nextval('nome_seq')` |\n| `FROM DUAL` | nada | `SELECT 1;` é válido |\n| `VARCHAR2(n)` | `text` | `text` e `varchar(n)` têm o mesmo custo; o limite é só uma restrição |\n| `NUMBER` | `integer`, `bigint`, `numeric` | Escolha o tipo: `numeric` é exato e mais lento |\n| `CONNECT BY` | `WITH RECURSIVE` | |\n| `MINUS` | `EXCEPT` | |\n| `a.id = b.id(+)` | `LEFT JOIN` | Só a sintaxe ANSI |\n\n### O que muda de comportamento\n\n- **`''` não é `NULL`.** No Oracle, string vazia vira `NULL`. No Postgres são valores diferentes: `'' IS NULL` é falso e `COALESCE('', 'x')` devolve `''`. Uma coluna `NOT NULL` aceita string vazia. Toda regra portada que dependia de \"campo vazio é nulo\" precisa de revisão.\n- **DDL é transacional.** `CREATE TABLE` e `ALTER TABLE` entram na transação e podem sofrer `ROLLBACK`. No Oracle o DDL faz commit implícito. É por isso que uma *migration* (dados-03) pode falhar no meio sem deixar o banco pela metade.\n- **Erro aborta a transação.** No Oracle, um comando que falha desfaz só ele e a transação segue. No Postgres, depois de um erro, todo comando seguinte é recusado até o `ROLLBACK`. Para o comportamento do Oracle, use `SAVEPOINT`.\n- **Nomes sem aspas viram minúsculas** (no Oracle, maiúsculas). O Prisma cria tabelas com o nome do model entre aspas, então no SQL puro você escreve `SELECT * FROM \"Tarefa\"`. Sem aspas, o erro é \"relation does not exist\".\n- **MVCC por outro caminho.** O Oracle guarda a versão antiga no *undo*. O Postgres guarda a linha antiga **na própria tabela** e o `VACUUM` (automático) limpa depois. Não existe ORA-01555, mas existe tabela inchada (*bloat*) quando uma transação fica aberta por horas e impede a limpeza.\n- **Não há hint de otimizador** no núcleo. Você corrige o plano com estatística, índice e reescrita (dados-08).\n\n### O que não existe igual\n\n- **Package.** Não há. O agrupamento é o *schema* (aqui, um *namespace* de objetos, não um usuário) e as funções e procedures em PL/pgSQL. Não há variável de package nem estado de sessão embutido.\n- **Transação autônoma.** Não existe `PRAGMA AUTONOMOUS_TRANSACTION`. O log que sobrevive ao rollback precisa de outra conexão, que na prática é a aplicação gravando fora da transação.\n- **Procedure com `COMMIT` dentro** existe (via `CALL`), com restrições. Função chamada dentro de `SELECT` não controla transação.\n\n```sql\ninsert into tarefa (id, titulo) values (1, 'Revisar PR')\non conflict (id) do update set titulo = excluded.titulo;\n```\n\n### O critério\n\nNão traduza hábito por hábito. No mundo Node a regra costuma morar na aplicação e o banco guarda integridade (chaves, `CHECK`, índice único). Função no banco continua válida para o que é conjunto de dados. Para o que é fluxo de negócio, o time espera encontrar em TypeScript, versionado e testado junto com a API.",
+      "naPratica": "No Cockpit, um título `''` passa por uma coluna `NOT NULL` sem reclamar. Quem barra string vazia é a validação da borda (DTO) ou um `CHECK (titulo <> '')`, não o banco por conta própria.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "As duas funções imitam `NVL` no Oracle e `COALESCE` no Postgres aplicados a um apelido. O que sai em cada linha?",
+          "codigo": "const nvlOracle = (v: string | null, padrao: string) => (v === null || v === '' ? padrao : v);\nconst coalescePg = (v: string | null, padrao: string) => (v === null ? padrao : v);\n\nfor (const apelido of ['Davi', '', null]) {\n  const o = nvlOracle(apelido, 'sem apelido');\n  const p = coalescePg(apelido, 'sem apelido');\n  console.log(`${JSON.stringify(apelido)} oracle=[${o}] postgres=[${p}]`);\n}\n",
+          "saida": "\"Davi\" oracle=[Davi] postgres=[Davi]\n\"\" oracle=[sem apelido] postgres=[]\nnull oracle=[sem apelido] postgres=[sem apelido]\n",
+          "explicacao": "Só a linha do meio difere. No Oracle a string vazia já é `NULL`, então o `NVL` troca pelo padrão. No Postgres `''` é um valor, e o `COALESCE` devolve a própria string vazia. Relatório portado sem revisão passa a mostrar campo em branco onde mostrava \"sem apelido\"."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Dentro de uma transação no Postgres, o segundo de três `INSERT` falha por chave duplicada. Você ignora o erro e manda o terceiro. O que acontece?",
+          "opcoes": [
+            "O terceiro grava normalmente, como no Oracle: só o comando que falhou é desfeito",
+            "O terceiro é recusado: a transação está abortada e só aceita `ROLLBACK`",
+            "O Postgres faz `COMMIT` automático do primeiro e segue",
+            "A conexão é derrubada pelo servidor"
+          ],
+          "correta": 1,
+          "explicacao": "No Postgres um erro marca a transação como abortada, e todo comando seguinte falha até o `ROLLBACK` (ou `ROLLBACK TO SAVEPOINT`). O rollback por comando, que deixa a transação seguir, é comportamento do Oracle."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma coluna Oracle `DATE` guarda data e hora de criação. Qual o tipo certo no Postgres?",
+          "opcoes": [
+            "`date`, que é o equivalente direto",
+            "`text`, formatado pela aplicação",
+            "`timestamptz` (ou `timestamp`), porque `date` no Postgres não guarda hora",
+            "`interval`"
+          ],
+          "correta": 2,
+          "explicacao": "`date` no Postgres é só ano, mês e dia: a hora seria truncada sem erro. Para instante use `timestamptz`, que guarda em UTC e converte para o fuso da sessão na leitura."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você precisa gravar uma linha de auditoria que sobreviva ao `ROLLBACK` da operação principal. No Oracle você usaria transação autônoma. E numa API com Postgres?",
+          "opcoes": [
+            "`PRAGMA AUTONOMOUS_TRANSACTION` em PL/pgSQL",
+            "Gravar a auditoria por outra conexão, fora da transação principal",
+            "Usar `SAVEPOINT` antes da auditoria",
+            "Não é possível no Postgres"
+          ],
+          "correta": 1,
+          "explicacao": "Não existe transação autônoma no Postgres. O que sobrevive ao rollback é o que foi gravado por outra conexão, e na API isso é uma chamada fora do bloco de transação. `SAVEPOINT` continua dentro da mesma transação e cai junto com ela."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`'' IS NULL` no Oracle e no Postgres?",
+          "verso": "Oracle: verdadeiro (string vazia é `NULL`). Postgres: falso, `''` é um valor e passa por `NOT NULL`."
+        },
+        {
+          "frente": "Por que uma migration no Postgres pode falhar no meio sem deixar o banco pela metade?",
+          "verso": "DDL é transacional: `CREATE` e `ALTER` entram na transação e sofrem `ROLLBACK`. No Oracle o DDL faz commit implícito."
+        },
+        {
+          "frente": "O que acontece com a transação do Postgres depois de um comando com erro?",
+          "verso": "Fica abortada: tudo é recusado até o `ROLLBACK`. Para seguir depois de um erro, use `SAVEPOINT`."
+        },
+        {
+          "frente": "Equivalentes no Postgres: `ROWNUM`, `MERGE`, `SYSDATE`, `DUAL`.",
+          "verso": "`LIMIT`; `INSERT ... ON CONFLICT`; `now()` (hora do início da transação); nada, `SELECT 1` basta."
+        },
+        {
+          "frente": "O que substitui package no Postgres?",
+          "verso": "Schema como agrupador, mais funções e procedures soltas. Sem variável de package e sem transação autônoma."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "PostgreSQL — Documentação (versão atual)",
+          "url": "https://www.postgresql.org/docs/current/"
+        },
+        {
+          "titulo": "PostgreSQL — INSERT (ON CONFLICT)",
+          "url": "https://www.postgresql.org/docs/current/sql-insert.html"
+        },
+        {
+          "titulo": "PostgreSQL — Concurrency Control (MVCC)",
+          "url": "https://www.postgresql.org/docs/current/mvcc.html"
+        }
+      ]
+    },
+    {
+      "id": "dados-02",
+      "titulo": "ORM: o que entrega e o que cobra (Prisma: schema e client)",
+      "minutos": 11,
+      "ponte": "Pense no bloco de dados do Forms baseado em tabela: você não escreve o `INSERT`, o Forms gera. O ORM (*Object-Relational Mapper*, mapeador objeto-relacional) é a mesma troca, feita em código. A analogia quebra aqui: o Forms gera sempre o mesmo SQL previsível por bloco, e o ORM gera SQL diferente conforme a forma da chamada. Você só sabe qual foi se ligar o log.",
+      "texto": "Um ORM traduz chamadas de método em SQL e linhas em objetos. Você vai conviver com ele em quase todo projeto Nest, então precisa saber o que ele paga e o que ele cobra.\n\n### O que entrega\n\n- **Tipos.** O resultado de cada consulta tem tipo exato, derivado do modelo. Renomeou uma coluna, o compilador aponta todo lugar que quebrou. No PL/SQL você tem isso com `%ROWTYPE`; no JavaScript puro, não tem nada.\n- **Produtividade no CRUD.** Oitenta por cento de uma API é buscar por chave, listar com filtro e gravar. Isso sai sem SQL escrito à mão.\n- **Migração versionada.** A mudança de estrutura vira arquivo no repositório (dados-03).\n\n### O que cobra\n\n- **SQL escondido.** Você não vê o que roda. Uma linha inocente pode virar cinco consultas.\n- **N+1.** O erro de desempenho mais comum com ORM (dados-07).\n- **Abstração que vaza.** Relatório, agregação com janela, CTE recursiva, `FOR UPDATE`: o ORM não expressa bem, e você desce para SQL puro (dados-09). Isso é esperado, não é derrota.\n\n### Prisma: as três peças\n\n1. **Schema** (`prisma/schema.prisma`): a descrição dos modelos numa linguagem própria.\n2. **Client gerado**: `prisma generate` lê o schema e escreve código TypeScript. No Cockpit ele sai em `src/generated/prisma` e é importado por caminho relativo.\n3. **Migrate**: gera e aplica as migrations.\n\n```text\nmodel Tarefa {\n  id        Int      @id @default(autoincrement())\n  titulo    String\n  notas     String?\n  feita     Boolean  @default(false)\n  criadaEm  DateTime @default(now())\n}\n```\n\nO que mudou no Prisma 7, a versão do Cockpit, e que você não vai achar em tutorial antigo: a URL do banco fica no arquivo de configuração do Prisma (`defineConfig`), não no bloco `datasource` do schema. E o client não abre conexão sozinho: recebe um **driver adapter** (aqui `PrismaPg`, que usa o driver `pg`). É o que o `PrismaService` do projeto faz no construtor.\n\n### select × include\n\n```ts\n// todas as colunas escalares da tarefa\nawait prisma.tarefa.findMany({ where: { feita: false } });\n\n// só o que a tela usa\nawait prisma.tarefa.findMany({ select: { id: true, titulo: true } });\n\n// tudo da tarefa, mais a relação carregada\nawait prisma.tarefa.findMany({ include: { projeto: true } });\n```\n\nSem `select`, o Prisma traz **todas as colunas escalares**: é o `SELECT *` disfarçado, com o custo conhecido quando há coluna larga. `include` acrescenta relações ao resultado completo. `select` restringe, e também aceita relação dentro. Os dois não podem aparecer no mesmo nível. O tipo do resultado acompanha: o campo que você não selecionou **não existe no tipo**, e usar dá erro de compilação.\n\n### Ligue o log de query\n\n```ts\nsuper({ adapter, log: ['query'] });\n```\n\nCom `log: ['query']` no construtor do client, cada SQL aparece no terminal. Para tratar em código (medir tempo, contar), a opção vira `{ emit: 'event', level: 'query' }` e você escuta com `$on('query', (e) => ...)`, recebendo o SQL, os parâmetros e a duração. Ligue em desenvolvimento e leia. É o equivalente a abrir o trace da sessão: sem ele, você revisa ORM no escuro.\n\n### O critério\n\nORM para o CRUD, SQL puro para o que é conjunto. Desconfie de dois extremos: o time que proíbe SQL puro e o time que escreve tudo em SQL dentro de um projeto com ORM. A sua vantagem é ler o log e saber, em dez segundos, se aquele SQL é aceitável.",
+      "naPratica": "No Cockpit, a listagem de tarefas não precisa da coluna `notas`. Um `select` com os quatro campos da tela reduz o tráfego e, de quebra, impede que um campo novo e sensível vaze pela API só porque alguém o adicionou ao model.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um client falso que imita a regra de `select` e `include`. Quais campos voltam em cada chamada?",
+          "codigo": "type Linha = Record<string, unknown>;\nconst tarefa: Linha = { id: 1, titulo: 'Revisar PR', notas: 'texto longo', projetoId: 7 };\nconst projeto: Linha = { id: 7, nome: 'Cockpit' };\n\nfunction buscar(args: { select?: Record<string, boolean>; include?: { projeto: boolean } }): Linha {\n  if (args.select) {\n    return Object.fromEntries(Object.keys(args.select).map((c) => [c, tarefa[c]]));\n  }\n  return args.include?.projeto ? { ...tarefa, projeto } : { ...tarefa };\n}\n\nconsole.log(Object.keys(buscar({})).join(','));\nconsole.log(Object.keys(buscar({ select: { id: true, titulo: true } })).join(','));\nconsole.log(Object.keys(buscar({ include: { projeto: true } })).join(','));\n",
+          "saida": "id,titulo,notas,projetoId\nid,titulo\nid,titulo,notas,projetoId,projeto\n",
+          "explicacao": "Sem argumento voltam todas as colunas escalares, inclusive `notas`. Com `select` voltam só as pedidas. Com `include` volta tudo da tarefa e mais o objeto da relação. É a mesma regra do Prisma: `include` soma, `select` restringe."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A função imita o tipo que um ORM devolve quando você seleciona campos. Compila?",
+          "codigo": "type Tarefa = { id: number; titulo: string; notas: string };\ndeclare function buscar<K extends keyof Tarefa>(campos: K[]): Pick<Tarefa, K>;\n\nconst t = buscar(['id', 'titulo']);\nconsole.log(t.titulo.toUpperCase());\nconsole.log(t.notas.length);\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 6,
+          "explicacao": "O tipo do resultado é `Pick<Tarefa, 'id' | 'titulo'>`: `notas` não foi selecionado, então não existe no tipo. É isso que o client do Prisma faz com `select`. O erro aparece na compilação, não em produção com `undefined`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num `findMany` do Prisma sem `select` nem `include`, o que vem do banco?",
+          "opcoes": [
+            "Só a chave primária, o resto é carregado sob demanda",
+            "Todas as colunas escalares do model, sem as relações",
+            "Todas as colunas e todas as relações",
+            "Só as colunas que o código usar depois, por análise estática"
+          ],
+          "correta": 1,
+          "explicacao": "O padrão é trazer todas as colunas escalares e nenhuma relação. Não há carga sob demanda (*lazy loading*) no Prisma: acessar uma relação que você não pediu dá erro de tipo, não uma consulta escondida."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, você que é de banco: ORM presta ou a gente devia escrever SQL na mão em tudo?\"",
+          "pontos": [
+            "Disse o que o ORM entrega: tipos, CRUD rápido, migração versionada",
+            "Disse o que cobra: SQL escondido, N+1, casos que ele não expressa",
+            "Deu o critério: ORM no CRUD, SQL puro em relatório e consulta de conjunto",
+            "Citou o log de query como condição para usar ORM com segurança"
+          ],
+          "modelo": "Presta, para o que ele foi feito. Em CRUD ele paga bem: o resultado vem tipado, renomear coluna quebra na compilação e a mudança de estrutura fica versionada. O preço é que você não vê o SQL, e uma chamada mal montada vira dezenas de consultas. Então eu uso com duas regras. A primeira: log de query ligado em desenvolvimento, e todo endpoint novo tem o SQL lido por alguém. A segunda: relatório, agregação pesada e qualquer coisa com lock explícito vai em SQL puro parametrizado, dentro do próprio ORM. Proibir SQL puro ou proibir ORM são os dois extremos que dão problema."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Ler o SQL que o Prisma gera",
+          "minutos": 15,
+          "passos": [
+            "No `PrismaService` do Cockpit, acrescente `log: ['query']` ao objeto passado ao `super`, só na sua máquina.",
+            "Suba a API e chame um endpoint que lista e um que grava.",
+            "Copie para `estudo/sql-do-orm.md` o SQL de cada um e anote: quantas consultas, quais colunas, se há transação (`BEGIN`/`COMMIT`).",
+            "Desfaça a alteração do log antes de commitar."
+          ],
+          "prontoQuando": "O arquivo tem o SQL real de pelo menos duas chamadas e uma frase sua dizendo se cada SQL é aceitável."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Prisma: diferença entre `select` e `include`?",
+          "verso": "`include` traz todas as colunas escalares e soma relações. `select` restringe ao que foi listado (e pode conter relações). Não se usam no mesmo nível."
+        },
+        {
+          "frente": "Por que ligar o log de query ao trabalhar com ORM?",
+          "verso": "O SQL fica escondido atrás da chamada. Sem ler o log você não vê `SELECT *`, consultas repetidas nem a falta de transação."
+        },
+        {
+          "frente": "Três coisas que um ORM cobra.",
+          "verso": "SQL escondido, N+1 e abstração que vaza (relatório, CTE, lock explícito pedem SQL puro)."
+        },
+        {
+          "frente": "No Prisma 7, onde ficam a URL do banco e a conexão?",
+          "verso": "A URL no arquivo de configuração do Prisma (`defineConfig`). A conexão vem de um driver adapter (`PrismaPg`) passado ao construtor do client."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Documentação do ORM",
+          "url": "https://www.prisma.io/docs/orm"
+        },
+        {
+          "titulo": "Prisma — Select fields",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/queries/select-fields"
+        },
+        {
+          "titulo": "Prisma — Logging",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/observability-and-logging/logging"
+        }
+      ]
+    },
+    {
+      "id": "dados-03",
+      "titulo": "Migrations seguras",
+      "minutos": 11,
+      "ponte": "Você já entrega script de DDL numerado, com script de retorno, para alguém aplicar em homologação e produção. *Migration* é isso com duas diferenças: o script mora no mesmo repositório do código e uma tabela de controle no banco registra o que já rodou. A analogia quebra no deploy: aqui a aplicação nova e a antiga rodam juntas por alguns minutos sobre a mesma estrutura.",
+      "texto": "Uma *migration* (migração de estrutura) é um arquivo SQL com data no nome, versionado junto com o código. O Prisma guarda os arquivos em `prisma/migrations/` e registra na tabela `_prisma_migrations` quais já foram aplicados, com um *checksum* (soma de verificação) de cada um.\n\n### Dois comandos, dois ambientes\n\n| | `prisma migrate dev` | `prisma migrate deploy` |\n|---|---|---|\n| Onde | Só na sua máquina | Homologação, produção, CI |\n| O que faz | Compara o schema com o banco, **gera** a migration nova e aplica | Aplica as **pendentes**, na ordem, e mais nada |\n| Pode apagar dados? | Sim: se detectar divergência, propõe recriar o banco | Não gera nem recria nada |\n\nA regra é simples: `dev` cria, `deploy` aplica. Rodar `migrate dev` apontando para produção é o acidente clássico. Confira na documentação da sua versão o que o `dev` dispara além disso (geração do client, por exemplo): isso mudou entre versões.\n\n### Migration é código\n\n- Vai no mesmo *commit* da mudança de código que depende dela, e passa por revisão.\n- **Leia o SQL gerado.** O Prisma decide pelo diff do schema. Renomear um campo no schema gera `DROP COLUMN` mais `ADD COLUMN`: os dados somem. Quem sabe que era um `RENAME` é você.\n- **Nunca edite uma migration já aplicada** em outro banco. O checksum deixa de bater e os ambientes passam a ter histórias diferentes com o mesmo nome. Errou? Escreva uma nova migration que corrige.\n\n### Mudança destrutiva em etapas: expand/contract\n\nNo deploy sem parada, por alguns minutos a versão antiga da API ainda roda contra a estrutura nova. Se a migration remove a coluna que o código antigo lê, você derruba a produção no meio do deploy. A saída é dividir em entregas compatíveis:\n\n1. **Expandir:** cria a coluna nova, aceitando nulo. O código antigo ignora.\n2. **Migrar:** o código passa a gravar nas duas e um script copia o legado, em lotes.\n3. **Trocar:** o código passa a ler só da nova.\n4. **Contrair:** em outra entrega, remove a coluna antiga.\n\nCada etapa pode ser desfeita sozinha. É mais trabalho, e é o preço de não ter janela de manutenção. Com janela combinada e sistema pequeno, uma etapa só é uma decisão legítima: diga isso em voz alta, não finja que não existe a escolha.\n\n### O que trava no Postgres\n\nVocê conhece o problema, mudam os nomes. `ALTER TABLE` pede lock exclusivo na tabela, mesmo que por milissegundos, e fica na fila atrás de qualquer transação longa, segurando quem vem depois. `CREATE INDEX` bloqueia escrita. A versão `CREATE INDEX CONCURRENTLY` não bloqueia, mas **não roda dentro de transação**: em geral precisa de uma migration só com esse comando. Teste no seu fluxo antes de confiar.\n\n### Migration manual em SQL\n\nO schema do Prisma não expressa tudo: índice parcial, `CHECK`, extensão, trigger. Para esses, gere a migration vazia e escreva o SQL:\n\n```bash\nnpx prisma migrate dev --create-only --name tarefa_aberta_idx\n```\n\n```sql\ncreate index tarefa_aberta_idx on \"Tarefa\" (\"prazo\") where \"feita\" = false;\n```\n\nO `--create-only` cria o arquivo sem aplicar. Você edita e depois roda o `migrate dev` normal. Suporte a índice parcial direto no schema depende da versão do Prisma; o SQL manual funciona em qualquer uma.\n\n### E o rollback?\n\nO Prisma não gera migration de retorno. O retorno de produção é outra migration para a frente, ou restauração. Por isso expand/contract importa: o plano de volta é não ter destruído nada ainda.",
+      "naPratica": "No pipeline do Cockpit, o passo de deploy roda `prisma migrate deploy` antes de subir a versão nova da API. Em revisão de PR, abra sempre o arquivo `.sql` da migration: é ali que um rename vira perda de dados.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um aplicador de migrations simplificado, com tabela de controle e checksum. O que ele imprime nas três chamadas?",
+          "codigo": "type Migration = { nome: string; sql: string };\nconst soma = (s: string) => [...s].reduce((a, c) => (a + c.charCodeAt(0)) % 9973, 0);\nconst aplicadas = new Map<string, number>();\n\nfunction deploy(pasta: Migration[]) {\n  for (const m of pasta) {\n    const antes = aplicadas.get(m.nome);\n    if (antes === undefined) {\n      aplicadas.set(m.nome, soma(m.sql));\n      console.log('aplica', m.nome);\n    } else if (antes !== soma(m.sql)) {\n      console.log('ERRO: migration aplicada foi editada:', m.nome);\n      return;\n    }\n  }\n  console.log('ok,', aplicadas.size, 'aplicadas');\n}\n\nconst m1 = { nome: '001_tarefa', sql: 'create table tarefa (id int)' };\nconst m2 = { nome: '002_prazo', sql: 'alter table tarefa add prazo date' };\ndeploy([m1]);\ndeploy([m1, m2]);\ndeploy([{ ...m1, sql: 'create table tarefa (id bigint)' }, m2]);\n",
+          "saida": "aplica 001_tarefa\nok, 1 aplicadas\naplica 002_prazo\nok, 2 aplicadas\nERRO: migration aplicada foi editada: 001_tarefa\n",
+          "explicacao": "Na segunda chamada a `001` já consta na tabela de controle e é pulada: só a pendente roda. Na terceira, o texto da `001` mudou, o checksum não bate e o aplicador para. Note que o banco continua com `id int`: editar o arquivo não muda o que já foi aplicado, só cria divergência."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você renomeou o campo `prazo` para `venceEm` no schema e rodou `migrate dev`. O que revisar antes de commitar?",
+          "opcoes": [
+            "Nada: o Prisma detecta rename e gera `ALTER TABLE ... RENAME COLUMN`",
+            "Só se o client foi gerado de novo",
+            "O SQL da migration: o diff tende a virar `DROP COLUMN` + `ADD COLUMN`, o que apaga os dados",
+            "Se a migration tem o bloco de rollback preenchido"
+          ],
+          "correta": 2,
+          "explicacao": "O gerador compara estado antes e depois: ele vê uma coluna que sumiu e outra que apareceu. Você edita o SQL para um `RENAME COLUMN` (antes de aplicar em qualquer outro banco). O Prisma não tem bloco de rollback."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A API roda em duas instâncias, com deploy sem parada. Qual sequência remove uma coluna com segurança?",
+          "opcoes": [
+            "Uma migration com `DROP COLUMN` no mesmo deploy que remove o uso no código",
+            "Primeiro um deploy em que o código para de usar a coluna; em um deploy posterior, a migration que remove",
+            "Primeiro a migration que remove; depois o deploy do código",
+            "Rodar `migrate dev` em produção, que resolve a ordem sozinho"
+          ],
+          "correta": 1,
+          "explicacao": "Durante o deploy, a versão antiga ainda está no ar. Se a coluna some antes de todas as instâncias pararem de ler, elas quebram. Primeiro o código deixa de depender (contrato compatível), depois a estrutura contrai. A opção do mesmo deploy é a tentadora, e funciona só com janela de parada."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Uma migration manual com índice parcial",
+          "minutos": 20,
+          "passos": [
+            "No banco de desenvolvimento do Cockpit, gere uma migration vazia com `--create-only`.",
+            "Escreva nela um `create index ... where` sobre uma tabela que já exista, respeitando as aspas dos nomes.",
+            "Aplique com `migrate dev` e confira no `psql` com `\\d \"NomeDaTabela\"` que o índice aparece com o predicado.",
+            "Rode `prisma migrate status` e anote a saída em `estudo/migration-manual.md`."
+          ],
+          "prontoQuando": "O `\\d` mostra o índice com a cláusula `WHERE` e o `migrate status` diz que o banco está em dia."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`migrate dev` × `migrate deploy`?",
+          "verso": "`dev`: só local, gera a migration a partir do diff e pode recriar o banco. `deploy`: aplica as pendentes em ordem e nada mais; é o de produção e CI."
+        },
+        {
+          "frente": "Por que nunca editar uma migration já aplicada?",
+          "verso": "O banco já rodou a versão antiga. O checksum deixa de bater e os ambientes ficam com estruturas diferentes sob o mesmo nome. Corrija com uma migration nova."
+        },
+        {
+          "frente": "As quatro etapas do expand/contract.",
+          "verso": "Expandir (cria o novo, compatível), migrar (grava nos dois e copia o legado), trocar (lê do novo), contrair (remove o antigo em outra entrega)."
+        },
+        {
+          "frente": "Como criar no Prisma algo que o schema não expressa (índice parcial, CHECK)?",
+          "verso": "`migrate dev --create-only` gera a migration vazia; você escreve o SQL à mão e aplica."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Prisma Migrate",
+          "url": "https://www.prisma.io/docs/orm/prisma-migrate"
+        },
+        {
+          "titulo": "Martin Fowler — Parallel Change (expand/contract)",
+          "url": "https://martinfowler.com/bliki/ParallelChange.html"
+        },
+        {
+          "titulo": "PostgreSQL — CREATE INDEX",
+          "url": "https://www.postgresql.org/docs/current/sql-createindex.html"
+        }
+      ]
+    },
+    {
+      "id": "dados-04",
+      "titulo": "Relações 1:N e N:N, onDelete e exclusão lógica",
+      "minutos": 10,
+      "ponte": "Chave estrangeira, tabela associativa, `ON DELETE CASCADE`: nada novo para você. O que muda é que a relação agora tem **dois lados**: a coluna no banco e um campo de navegação no objeto. A analogia quebra porque o campo de navegação não existe no banco, e porque o ORM oferece criar a tabela de junção escondida, o que parece presente e vira dívida.",
+      "texto": "### 1:N no schema\n\n```text\nmodel Projeto {\n  id      Int      @id @default(autoincrement())\n  nome    String\n  tarefas Tarefa[]\n}\n\nmodel Tarefa {\n  id        Int     @id @default(autoincrement())\n  titulo    String\n  projetoId Int\n  projeto   Projeto @relation(fields: [projetoId], references: [id], onDelete: Restrict)\n\n  @@index([projetoId])\n}\n```\n\n`projetoId` é a coluna real, com a chave estrangeira. `projeto` e `tarefas` são **campos de navegação**: só existem no client, para `include` e para filtros. O `@@index([projetoId])` está ali de propósito: no Postgres, como no Oracle, a chave estrangeira **não cria índice** na coluna filha, e o Prisma também não cria. Sem ele, listar as tarefas de um projeto é varredura completa, e apagar um projeto varre a tabela filha para conferir a restrição.\n\n### N:N: prefira a junção explícita\n\nO Prisma aceita N:N implícito: você declara lista dos dois lados e ele cria uma tabela escondida, com duas colunas de nome genérico. É rápido e limitado: não cabe data, ordem, quem associou. Na primeira vez que o negócio pedir um atributo no vínculo, você migra dado em produção.\n\n```text\nmodel TarefaEtiqueta {\n  tarefaId   Int\n  etiquetaId Int\n  criadoEm   DateTime @default(now())\n  tarefa     Tarefa   @relation(fields: [tarefaId], references: [id], onDelete: Cascade)\n  etiqueta   Etiqueta @relation(fields: [etiquetaId], references: [id], onDelete: Cascade)\n\n  @@id([tarefaId, etiquetaId])\n  @@index([etiquetaId])\n}\n```\n\nA tabela de junção explícita é um model como outro qualquer, com chave composta. Custa um nível a mais nas consultas e não surpreende ninguém que abre o banco.\n\n### onDelete\n\n| Ação | Efeito ao apagar o pai | Quando usar |\n|---|---|---|\n| `Restrict` | Recusa se houver filho | Padrão seguro para dado de negócio |\n| `Cascade` | Apaga os filhos | Filho que não tem vida própria: itens do pedido, linha de junção |\n| `SetNull` | Zera a coluna no filho (coluna opcional) | Vínculo opcional: tarefa sem projeto |\n\nSe você omitir, o Prisma usa `Restrict` em relação obrigatória e `SetNull` em opcional. Escreva sempre: é uma decisão de negócio e deve aparecer no review. `Cascade` em cadeia de três níveis apaga muito mais do que a pessoa imaginou ao clicar.\n\n### Exclusão lógica e o que ela custa\n\nExclusão lógica (*soft delete*) é marcar `excluidoEm` em vez de apagar. Parece prudente e cobra em quatro lugares:\n\n- **Todo filtro.** Cada consulta precisa de `excluidoEm: null`. O Prisma não faz isso sozinho. Esquecer em um `include` devolve registro apagado. Dá para centralizar numa extensão do client ou numa view, e ainda assim o SQL puro escapa.\n- **Unicidade.** `@unique` no e-mail impede recadastrar quem foi excluído. A solução é índice único **parcial**, `where \"excluidoEm\" is null`, que no Prisma entra por migration manual (dados-03).\n- **Chave estrangeira.** O `onDelete` não dispara, porque nada foi apagado. Filhos de um pai excluído continuam aparecendo.\n- **Volume e privacidade.** A tabela só cresce, e \"apagar meus dados\" passa a exigir uma rotina de expurgo de verdade.\n\n### O critério\n\nPergunte para que serve o registro apagado. Se é para **desfazer** em poucos dias, exclusão lógica com expurgo agendado resolve. Se é para **auditoria**, uma tabela de histórico é melhor: a tabela viva fica limpa e os índices pequenos. Se ninguém sabe responder, apague de verdade com `Restrict` protegendo o que importa.",
+      "naPratica": "No Cockpit, tarefa pertence a projeto com `Restrict` e os vínculos de etiqueta caem em `Cascade`. Num review, o `onDelete` omitido e a chave estrangeira sem `@@index` são dois achados que você faz em segundos e que quase ninguém do time de aplicação procura.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma tabela em memória com exclusão lógica. `inserir` checa unicidade do e-mail de dois jeitos: índice único total ou parcial (só linhas não excluídas). O que sai?",
+          "codigo": "type Usuario = { email: string; excluidoEm: string | null };\nconst tabela: Usuario[] = [];\n\nfunction inserir(email: string, unicoParcial: boolean): string {\n  const conflito = tabela.some((u) => u.email === email && (!unicoParcial || u.excluidoEm === null));\n  if (conflito) return 'violou unique';\n  tabela.push({ email, excluidoEm: null });\n  return 'inseriu';\n}\n\nconsole.log(inserir('ana@x.com', false));\ntabela[0]!.excluidoEm = '2026-01-10';\nconsole.log(inserir('ana@x.com', false));\nconsole.log(inserir('ana@x.com', true));\nconsole.log(inserir('ana@x.com', true));\nconsole.log(tabela.length);\n",
+          "saida": "inseriu\nviolou unique\ninseriu\nviolou unique\n2\n",
+          "explicacao": "Com índice único total, a linha excluída logicamente ainda ocupa o e-mail: o recadastro falha. Com o índice parcial, só as linhas vivas contam, então o recadastro passa e um segundo cadastro vivo com o mesmo e-mail continua barrado. A tabela termina com duas linhas: a excluída e a nova."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um model `Tarefa` tem `projetoId` com `@relation` para `Projeto`, sem `@@index`. No Postgres, o que existe de índice nessa coluna?",
+          "opcoes": [
+            "Um índice criado automaticamente pela chave estrangeira",
+            "Um índice criado pelo Prisma ao declarar a relação",
+            "Nenhum: nem a FK nem o Prisma criam índice na coluna filha",
+            "Um índice bitmap implícito"
+          ],
+          "correta": 2,
+          "explicacao": "Igual ao Oracle: só a chave primária e as colunas `UNIQUE` ganham índice sozinhas. A coluna da FK fica sem índice até você declarar `@@index`. É tentador supor que o ORM cuida, e não cuida."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`Projeto` usa exclusão lógica (`excluidoEm`). `Tarefa` aponta para `Projeto` com `onDelete: Cascade`. Um projeto é marcado como excluído. O que acontece com as tarefas dele?",
+          "opcoes": [
+            "São apagadas pelo `Cascade`",
+            "São marcadas como excluídas automaticamente",
+            "Nada: continuam vivas e aparecem nas listagens, porque nenhum `DELETE` aconteceu",
+            "O banco recusa o `UPDATE` por causa da FK"
+          ],
+          "correta": 2,
+          "explicacao": "`onDelete` reage a `DELETE`. Exclusão lógica é um `UPDATE`, então a regra referencial nunca dispara. Propagar a marca para os filhos, ou filtrá-los pelo pai, é código seu."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Desenhar uma relação N:N com atributo",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/relacoes.prisma`, escreva os models `Tarefa`, `Etiqueta` e a junção explícita com chave composta e uma coluna de data.",
+            "Declare o `onDelete` de cada relação e escreva ao lado, em comentário, o motivo em uma linha.",
+            "Acrescente os `@@index` que faltam nas colunas de chave estrangeira.",
+            "Escreva em comentário o SQL do índice único parcial que você usaria se `Etiqueta` tivesse exclusão lógica e nome único."
+          ],
+          "prontoQuando": "O arquivo tem os três models, todo `onDelete` justificado, índice em toda FK e o SQL do índice parcial."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "A chave estrangeira cria índice na coluna filha no Postgres? E o Prisma?",
+          "verso": "Não e não. Declare `@@index([colunaFk])`, senão listar filhos e apagar o pai fazem varredura completa."
+        },
+        {
+          "frente": "Por que preferir tabela de junção explícita no N:N?",
+          "verso": "A implícita não aceita atributo no vínculo (data, ordem, autor). Quando o negócio pedir um, você migra dado em produção."
+        },
+        {
+          "frente": "`Restrict`, `Cascade`, `SetNull`: quando cada um?",
+          "verso": "`Restrict` para dado de negócio; `Cascade` para filho sem vida própria (itens, junção); `SetNull` para vínculo opcional."
+        },
+        {
+          "frente": "Quatro custos da exclusão lógica.",
+          "verso": "Filtro em toda consulta; unicidade exige índice único parcial; `onDelete` não dispara; volume e expurgo por privacidade."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Relations",
+          "url": "https://www.prisma.io/docs/orm/prisma-schema/data-model/relations"
+        },
+        {
+          "titulo": "Prisma — Referential actions",
+          "url": "https://www.prisma.io/docs/orm/prisma-schema/data-model/relations/referential-actions"
+        },
+        {
+          "titulo": "PostgreSQL — Partial Indexes",
+          "url": "https://www.postgresql.org/docs/current/indexes-partial.html"
+        }
+      ]
+    },
+    {
+      "id": "dados-05",
+      "titulo": "Transações e isolamento: aqui o padrão é autocommit",
+      "minutos": 11,
+      "ponte": "No Oracle a sessão é sua: o primeiro DML abre a transação e ela fica aberta até o seu `COMMIT`. Numa API com ORM não existe \"a sua sessão\". Cada chamada pega uma conexão do pool, executa, confirma e devolve. A analogia quebra por inteiro: dois `await` seguidos podem rodar em **conexões diferentes**, e nada do que o primeiro fez pode ser desfeito pelo segundo.",
+      "texto": "### O padrão invertido\n\n```ts\nawait prisma.conta.update({ where: { id: 1 }, data: { saldo: { decrement: 100 } } });\nawait prisma.conta.update({ where: { id: 2 }, data: { saldo: { increment: 100 } } });\n```\n\nPara o seu olho, isso é uma transação com dois `UPDATE`. Não é. São **duas transações**, cada uma confirmada ao terminar (*autocommit*). Se a segunda falhar, o dinheiro saiu da conta 1 e não chegou a lugar nenhum. O compilador não avisa, o teste de caminho feliz passa. É o erro que você, vindo do Oracle, tem mais chance de cometer e mais condição de achar no código dos outros.\n\nTransação aqui é **explícita**, e o Prisma tem duas formas.\n\n### Em lote\n\n```ts\nawait prisma.$transaction([\n  prisma.conta.update({ where: { id: 1 }, data: { saldo: { decrement: 100 } } }),\n  prisma.conta.update({ where: { id: 2 }, data: { saldo: { increment: 100 } } }),\n]);\n```\n\nUma lista de operações que roda em ordem, numa transação só. Limite: uma operação não enxerga o resultado da anterior. Serve para gravações independentes que precisam valer juntas.\n\n### Interativa\n\n```ts\nawait prisma.$transaction(async (tx) => {\n  const origem = await tx.conta.findUniqueOrThrow({ where: { id: 1 } });\n  if (origem.saldo < 100) throw new Error('saldo insuficiente');\n  await tx.conta.update({ where: { id: 1 }, data: { saldo: { decrement: 100 } } });\n  await tx.conta.update({ where: { id: 2 }, data: { saldo: { increment: 100 } } });\n});\n```\n\nA função recebe `tx`, um client preso a **uma conexão**. Terminou sem erro: `COMMIT`. Lançou exceção: `ROLLBACK`. Duas armadilhas:\n\n- **Usar `prisma` em vez de `tx` lá dentro.** A chamada compila, roda em outra conexão, fora da transação, e não é desfeita no rollback. Num service do Nest, isso acontece quando você chama outro método que usa `this.prisma`. Quem participa da transação precisa receber o `tx`.\n- **Transação longa.** Enquanto a função não termina, a conexão está fora do pool (dados-10) e os locks estão presos. Chamada HTTP, envio de e-mail ou cálculo demorado dentro do bloco esgotam o pool sob carga. O Prisma impõe limites de tempo para obter a conexão e para concluir a transação (`maxWait` e `timeout`, da ordem de segundos por padrão; confira os valores na documentação). Aumentar o `timeout` raramente é a correção: a correção é tirar do bloco o que não é banco.\n\nUma terceira forma é implícita: uma gravação aninhada (criar o pedido com os itens na mesma chamada) já roda numa transação.\n\n### Isolamento\n\nO padrão do Postgres é `READ COMMITTED`, igual ao do Oracle: cada **comando** enxerga o que estava confirmado quando ele começou. Leitor não bloqueia escritor. Os outros níveis mudam de significado:\n\n| Nível no Postgres | Comportamento | Parente no Oracle |\n|---|---|---|\n| `READ COMMITTED` | Foto por comando | `READ COMMITTED` |\n| `REPEATABLE READ` | Foto única por transação; conflito de escrita falha com erro de serialização | `SERIALIZABLE` do Oracle (ORA-08177) |\n| `SERIALIZABLE` | Serializável de fato; o banco aborta uma das transações em conflito | Não tem equivalente direto |\n\nNos dois níveis de cima, **a aplicação precisa repetir a transação** quando o banco aborta. Sem laço de *retry*, subir o isolamento só troca dado errado por erro 500. O `$transaction` aceita `isolationLevel` nas opções.\n\n### O critério\n\nFique em `READ COMMITTED` e resolva a concorrência no ponto exato, com lock ou versão (dados-06). Abra transação quando duas ou mais gravações precisam valer juntas, e mantenha o bloco curto: ler, decidir, gravar, sair. Lembre também de dados-01: no Postgres, um erro dentro da transação invalida a transação inteira, então capturar a exceção e seguir no mesmo `tx` não funciona.",
+      "naPratica": "No Cockpit, concluir uma tarefa e registrar o evento no histórico são duas gravações que valem juntas: vão num `$transaction`. Em review, procure dois `await` de gravação seguidos sem transação e pergunte \"e se o segundo falhar?\".",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma transferência que credita antes de conferir o saldo. Primeiro direto no \"banco\" (autocommit), depois dentro de uma transação em memória. O que sai?",
+          "codigo": "type Contas = { ana: number; beto: number };\nlet banco: Contas = { ana: 100, beto: 50 };\n\nfunction transfere(db: Contas, valor: number) {\n  db.beto += valor;\n  if (db.ana < valor) throw new Error('saldo insuficiente');\n  db.ana -= valor;\n}\n\nfunction transacao(trabalho: (tx: Contas) => void) {\n  const tx = { ...banco };\n  try {\n    trabalho(tx);\n    banco = tx;\n    console.log('commit');\n  } catch (e) {\n    console.log('rollback:', (e as Error).message);\n  }\n}\n\ntry {\n  transfere(banco, 150);\n} catch {\n  console.log('erro no meio, sem transação');\n}\nconsole.log(banco);\n\nbanco = { ana: 100, beto: 50 };\ntransacao((tx) => transfere(tx, 150));\nconsole.log(banco);\ntransacao((tx) => transfere(tx, 30));\nconsole.log(banco);\n",
+          "saida": "erro no meio, sem transação\n{ ana: 100, beto: 200 }\nrollback: saldo insuficiente\n{ ana: 100, beto: 50 }\ncommit\n{ ana: 70, beto: 80 }\n",
+          "explicacao": "Sem transação, o crédito já estava gravado quando o erro veio: beto ficou com 200 e ana com 100, dinheiro criado do nada. Com a transação, o trabalho acontece numa cópia (`tx`) que só substitui o banco no commit: o erro descarta a cópia. Repare que a função recebe `tx`. Se ela alterasse `banco` direto, estaria fora da transação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Dentro de `prisma.$transaction(async (tx) => { ... })`, uma linha chama `await this.prisma.historico.create(...)` em vez de `tx.historico.create(...)`. A transação lança erro depois dessa linha. O que acontece com o histórico?",
+          "opcoes": [
+            "É desfeito junto, porque está dentro do bloco",
+            "Fica gravado: a chamada rodou em outra conexão, fora da transação",
+            "O Prisma lança erro ao detectar o client errado",
+            "Fica pendente até a conexão voltar ao pool"
+          ],
+          "correta": 1,
+          "explicacao": "Só o que passa por `tx` usa a conexão da transação. `this.prisma` pega outra conexão do pool e confirma na hora. Estar escrito dentro das chaves não significa nada para o banco. É a armadilha mais comum de transação interativa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma transação interativa faz um `update`, chama uma API externa de pagamento que leva 8 segundos e faz outro `update`. Qual o problema principal?",
+          "opcoes": [
+            "Nenhum, desde que o `timeout` seja aumentado para 30 segundos",
+            "A conexão e os locks ficam presos durante a espera; sob carga o pool esgota",
+            "O Postgres não permite chamadas de rede durante uma transação",
+            "O segundo `update` roda em autocommit"
+          ],
+          "correta": 1,
+          "explicacao": "A transação segura uma conexão do pool e os locks das linhas alteradas enquanto espera um terceiro. Dez requisições simultâneas assim e a API para. Aumentar o `timeout` é a correção tentadora e só esconde o desenho errado: a chamada externa sai do bloco."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o estagiário disse que não precisa de transação porque 'o Prisma já cuida'. Cuida?\"",
+          "pontos": [
+            "Disse que cada chamada do client é uma transação própria (autocommit)",
+            "Contrastou com a sessão do Oracle, em que a transação fica aberta até o COMMIT",
+            "Citou as formas explícitas: lote e interativa, e a gravação aninhada",
+            "Alertou para usar o `tx` e manter a transação curta"
+          ],
+          "modelo": "Cuida de uma chamada por vez, e é aí que engana. Cada operação do client pega uma conexão do pool, executa e confirma sozinha. Duas gravações seguidas são duas transações: se a segunda falhar, a primeira já está no banco. No Oracle a gente estava acostumado ao contrário, com a sessão segurando tudo até o commit. Aqui, quando duas gravações precisam valer juntas, tem que escrever `$transaction`, em lote ou com a função que recebe `tx`. Dois cuidados: dentro do bloco tudo passa pelo `tx`, senão roda fora da transação, e o bloco tem que ser curto, porque ele segura uma conexão do pool."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Dois `await prisma.x.update(...)` seguidos formam uma transação?",
+          "verso": "Não. Cada chamada é confirmada sozinha (autocommit), possivelmente em conexões diferentes. Use `$transaction`."
+        },
+        {
+          "frente": "`$transaction` em lote × interativa?",
+          "verso": "Lote: lista de operações independentes, sem ler resultado da anterior. Interativa: função que recebe `tx`; exceção dá rollback, retorno dá commit."
+        },
+        {
+          "frente": "Por que uma transação interativa longa derruba a API?",
+          "verso": "Ela segura uma conexão do pool e os locks até terminar. Poucas requisições lentas esgotam o pool e todo o resto espera."
+        },
+        {
+          "frente": "`REPEATABLE READ` do Postgres parece com qual nível do Oracle?",
+          "verso": "Com o `SERIALIZABLE` do Oracle: foto única por transação e erro em conflito de escrita. Exige retry na aplicação."
+        },
+        {
+          "frente": "O que acontece ao usar `prisma` em vez de `tx` dentro da transação?",
+          "verso": "A operação roda em outra conexão, é confirmada na hora e não sofre o rollback."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Transactions and batch queries",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/queries/transactions"
+        },
+        {
+          "titulo": "PostgreSQL — Transaction Isolation",
+          "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+        }
+      ]
+    },
+    {
+      "id": "dados-06",
+      "titulo": "Concorrência: lock pessimista × otimista",
+      "minutos": 11,
+      "ponte": "O Forms trava a linha quando o usuário começa a digitar e segura até o `COMMIT`: é o `SELECT ... FOR UPDATE` que você conhece. Isso depende de uma sessão de banco viva por usuário. Na web a analogia quebra: entre abrir o formulário e salvar não há conexão nenhuma presa àquele usuário, então não há onde pendurar o lock.",
+      "texto": "O problema é o de sempre: dois processos leem a mesma linha, cada um calcula em cima do que leu, os dois gravam, e a segunda gravação apaga a primeira. É a atualização perdida (*lost update*). `READ COMMITTED` não impede: cada comando, isolado, está correto.\n\n### Antes de tudo: dá para não ler?\n\n```sql\nupdate produto set estoque = estoque - 3 where id = 10 and estoque >= 3;\n```\n\nSe a regra cabe num `UPDATE` relativo, não existe leitura para ficar velha. O banco serializa as duas escritas na linha e a condição protege o limite. No Prisma é `data: { estoque: { decrement: 3 } }` com a condição no `where`, conferindo a contagem de linhas afetadas. É a solução mais barata e a mais esquecida.\n\n### Pessimista: `SELECT ... FOR UPDATE`\n\nFunciona no Postgres como no Oracle, com `NOWAIT` e `SKIP LOCKED`. O Prisma não tem método para isso: você usa SQL puro **dentro de uma transação interativa** (dados-05), pelo `tx`.\n\n```ts\nawait prisma.$transaction(async (tx) => {\n  await tx.$queryRaw`select id from \"Conta\" where id = ${id} for update`;\n  // ler, decidir e gravar com tx\n});\n```\n\nUse quando a seção crítica é **curta e inteira no servidor**, o conflito é frequente e repetir é caro: debitar saldo com várias regras, pegar o próximo item de uma fila (`SKIP LOCKED`). Custos: segura conexão e lock, e abre a porta para *deadlock*. O Postgres detecta e aborta uma das transações, como o ORA-00060, só que aqui a transação inteira cai.\n\nNão use para proteger a edição de um formulário. A requisição que abriu a tela já terminou e devolveu a conexão.\n\n### Otimista: coluna de versão\n\nNinguém trava. Cada linha tem um número de versão, a tela recebe esse número junto com os dados e devolve ao salvar. A gravação só vale se a versão ainda for a mesma:\n\n```ts\nconst { count } = await prisma.tarefa.updateMany({\n  where: { id, versao: versaoLida },\n  data: { titulo, versao: { increment: 1 } },\n});\nif (count === 0) throw new ConflictException('A tarefa foi alterada por outra pessoa.');\n```\n\nO SQL é `update ... set versao = versao + 1 where id = $1 and versao = $2`. O teste e a escrita são **um comando só**, então é atômico. O passo que não pode faltar é **conferir as linhas afetadas**: zero significa que alguém gravou antes (ou que a linha sumiu). O `updateMany` devolve a contagem; um `update` comum com a versão no `where` lançaria erro de registro não encontrado. Para a API, o resultado é um `409 Conflict`.\n\nUse quando há tempo de pensar de um humano entre ler e gravar, e quando conflito é raro. É o caso de quase toda tela de edição.\n\n### E depois do conflito?\n\n- **Operação que o servidor consegue recalcular** (baixa de estoque, contador): leia de novo e tente outra vez, com limite de tentativas.\n- **Edição feita por pessoa:** não repita sozinho. Repetir com os dados antigos é exatamente a atualização perdida que você queria evitar. Devolva o conflito e deixe a tela mostrar o estado atual.\n\n### O critério\n\n| Situação | Escolha |\n|---|---|\n| Regra cabe num `UPDATE` relativo | Update atômico com condição |\n| Seção curta no servidor, conflito frequente | `FOR UPDATE` em transação curta |\n| Edição de tela, conflito raro | Versão e `409` |\n| Fila de trabalho em tabela | `FOR UPDATE SKIP LOCKED` |\n\nEsta é a base de mig-06: toda tela Forms migrada troca o lock da sessão por coluna de versão, e a mensagem \"registro alterado por outro usuário\" passa a ser uma resposta HTTP.",
+      "naPratica": "No Cockpit, a edição de uma tarefa aberta em duas abas é o caso do lock otimista: a segunda aba que salvar recebe `409` em vez de apagar em silêncio o que a primeira gravou. Sem a coluna de versão, vence quem salvar por último e ninguém fica sabendo.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas baixas de estoque concorrentes, no padrão ler, esperar, gravar. O estoque começa em 10; uma baixa 3 e a outra 4. Quanto sobra?",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\nconst linha = { estoque: 10 };\n\nasync function baixa(qtd: number, demora: number) {\n  const lido = linha.estoque; // SELECT\n  await espera(demora); // regra de negócio, outra consulta...\n  linha.estoque = lido - qtd; // UPDATE ... SET estoque = :novo\n}\n\nawait Promise.all([baixa(3, 40), baixa(4, 20)]);\nconsole.log(linha.estoque);\n",
+          "saida": "7\n",
+          "explicacao": "As duas leram 10. A de 4 gravou 6 aos 20 ms. A de 3 gravou `10 - 3 = 7` aos 40 ms, por cima. A baixa de 4 unidades se perdeu sem erro nenhum: o certo seria 3. Nenhum comando isolado está errado, e é por isso que `READ COMMITTED` não protege."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mesmo cenário com coluna de versão e nova tentativa. O que sai, e em que ordem?",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\nconst linha = { estoque: 10, versao: 1 };\n\nfunction atualiza(novo: number, versaoLida: number): number {\n  if (linha.versao !== versaoLida) return 0; // where versao = :lida\n  linha.estoque = novo;\n  linha.versao++;\n  return 1; // linhas afetadas\n}\n\nasync function baixa(nome: string, qtd: number, demora: number) {\n  for (let tentativa = 1; tentativa <= 3; tentativa++) {\n    const { estoque, versao } = linha;\n    await espera(demora);\n    if (atualiza(estoque - qtd, versao) === 1) {\n      console.log(nome, 'gravou na tentativa', tentativa);\n      return;\n    }\n    console.log(nome, 'conflito, lendo de novo');\n  }\n}\n\nawait Promise.all([baixa('A', 3, 40), baixa('B', 4, 20)]);\nconsole.log(linha);\n",
+          "saida": "B gravou na tentativa 1\nA conflito, lendo de novo\nA gravou na tentativa 2\n{ estoque: 3, versao: 3 }\n",
+          "explicacao": "B grava primeiro e sobe a versão para 2. O `UPDATE` de A procura versão 1, afeta zero linhas e A percebe o conflito. Na segunda tentativa A lê estoque 6 e versão 2, e grava 3. Nenhuma baixa se perdeu. O retry automático é legítimo aqui porque o servidor recalcula a partir do dado novo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela de edição de cadastro será migrada do Forms para a web. Como proteger contra dois usuários editando o mesmo registro?",
+          "opcoes": [
+            "`SELECT ... FOR UPDATE` quando a tela abre, liberado quando o usuário salvar",
+            "Coluna de versão: a tela devolve a versão lida e o `UPDATE` só vale se ela não mudou",
+            "Nível de isolamento `SERIALIZABLE` na API",
+            "Não precisa: o `READ COMMITTED` já impede atualização perdida"
+          ],
+          "correta": 1,
+          "explicacao": "Entre abrir e salvar há duas requisições HTTP separadas, sem conexão presa ao usuário: o `FOR UPDATE` seria liberado no fim da primeira. O lock otimista não precisa de sessão. `SERIALIZABLE` só vale dentro de uma transação, e a edição atravessa duas."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, no Forms o registro ficava travado enquanto o usuário editava. Na tela nova dois usuários conseguem abrir o mesmo cadastro. Isso não é um retrocesso?\"",
+          "pontos": [
+            "Explicou que a web não mantém sessão de banco por usuário, então não há lock para segurar",
+            "Apresentou o lock otimista com coluna de versão e a resposta de conflito",
+            "Mostrou o ganho: ninguém fica preso por quem abriu a tela e foi almoçar",
+            "Disse o custo: o segundo usuário pode perder a digitação e a tela precisa tratar o conflito"
+          ],
+          "modelo": "É uma troca, não um retrocesso. O Forms travava porque cada usuário tinha uma sessão de banco aberta o tempo todo. Na web a conexão é devolvida ao fim de cada requisição, então não existe onde segurar o lock. O que a gente faz é guardar um número de versão no registro: a tela devolve a versão que leu e a gravação só vale se ninguém mudou nesse intervalo. Se mudou, o segundo usuário recebe um aviso de conflito. O ganho é que ninguém fica bloqueado por quem abriu a tela e saiu. O custo é que, no caso raro de conflito, alguém precisa refazer a edição, e a tela tem que mostrar isso bem."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o passo que não pode faltar no lock otimista?",
+          "verso": "Conferir as linhas afetadas pelo `UPDATE ... WHERE versao = :lida`. Zero linhas significa conflito."
+        },
+        {
+          "frente": "Por que `FOR UPDATE` não protege a edição de um formulário web?",
+          "verso": "A requisição que abriu a tela termina e devolve a conexão: o lock é liberado. Não há sessão de banco por usuário."
+        },
+        {
+          "frente": "Quando o retry automático depois de um conflito é aceitável?",
+          "verso": "Quando o servidor recalcula a operação a partir do dado novo (baixa, contador). Edição humana volta como `409`."
+        },
+        {
+          "frente": "Qual a alternativa mais barata a qualquer lock numa baixa de estoque?",
+          "verso": "`UPDATE` relativo com condição: `set estoque = estoque - n where estoque >= n`, conferindo as linhas afetadas."
+        },
+        {
+          "frente": "Como fazer `SELECT ... FOR UPDATE` com Prisma?",
+          "verso": "SQL puro (`$queryRaw`) pelo `tx`, dentro de uma transação interativa curta."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "PostgreSQL — Explicit Locking",
+          "url": "https://www.postgresql.org/docs/current/explicit-locking.html"
+        },
+        {
+          "titulo": "Martin Fowler — Optimistic Offline Lock",
+          "url": "https://martinfowler.com/eaaCatalog/optimisticOfflineLock.html"
+        },
+        {
+          "titulo": "Prisma — Transactions (optimistic concurrency control)",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/queries/transactions"
+        }
+      ]
+    },
+    {
+      "id": "dados-07",
+      "titulo": "O problema N+1 e como enxergá-lo",
+      "minutos": 10,
+      "ponte": "É o cursor dentro de cursor: um `FOR` nos pedidos e, a cada volta, um `SELECT` nos itens. No PL/SQL isso já é ruim, e lá a troca entre os motores acontece dentro do servidor. A analogia quebra para pior: aqui cada consulta do laço é uma **ida e volta pela rede**, e o SQL não aparece no código, só no log.",
+      "texto": "N+1 é o nome do padrão: **1** consulta traz a lista e depois **N** consultas buscam, uma a uma, o detalhe de cada linha. Com 200 pedidos, são 201 idas ao banco onde bastavam 1 ou 2. Cada uma é rápida, o plano de cada uma é perfeito, e a tela leva dois segundos.\n\n### Como nasce\n\n```ts\nconst pedidos = await prisma.pedido.findMany({ where: { status: 'ABERTO' } });\nfor (const p of pedidos) {\n  p.itens = await prisma.item.findMany({ where: { pedidoId: p.id } });\n}\n```\n\nNinguém escreve assim de propósito. Ele aparece escondido: um método `carregaItens(pedido)` chamado dentro de um `map`, um campo calculado que consulta o banco, um *resolver* de GraphQL por campo, um laço de validação. Em ORMs com carga sob demanda (*lazy loading*), como algumas configurações do TypeORM, basta **ler a propriedade** para disparar a consulta. O Prisma não tem carga sob demanda, então aqui o N+1 é sempre um laço seu.\n\n### Como enxergar\n\nLigue o log de query (dados-02) e chame o endpoint uma vez. O sinal é inconfundível: **a mesma consulta repetida, mudando só o parâmetro**. Vale o seu reflexo de trace: não procure a consulta lenta, procure a consulta com muitas execuções. Dois hábitos de sênior:\n\n- Em desenvolvimento, conte as consultas por requisição. Um endpoint de listagem que faz mais de umas poucas merece explicação.\n- Teste com volume. Com 3 linhas na tabela, N+1 é invisível.\n\n### Como resolver\n\n**1. Pedir a relação junto.**\n\n```ts\nawait prisma.pedido.findMany({\n  where: { status: 'ABERTO' },\n  include: { itens: true },\n});\n```\n\nO que roda por baixo surpreende quem espera um `JOIN`: por padrão o Prisma costuma fazer **uma consulta por nível**, a segunda com `WHERE \"pedidoId\" IN (...)`, e monta os objetos em memória. São 2 consultas, não 201. Há uma estratégia alternativa com `JOIN` que depende da versão e de configuração: confira na documentação da sua. A escolha entre as duas é a sua discussão conhecida de *nested loop* contra *hash join*, só que feita pelo ORM. Leia o log e decida.\n\n**2. Buscar em lote com `in`.** Quando o dado vem de outro lugar ou a relação não está no schema, junte os ids, faça uma consulta e distribua em memória com um `Map`.\n\n```ts\nconst ids = pedidos.map((p) => p.id);\nconst itens = await prisma.item.findMany({ where: { pedidoId: { in: ids } } });\n```\n\nCuidado com listas enormes: um `IN` com dezenas de milhares de valores tem custo e limite de parâmetros. Pagine a lista de fora.\n\n**3. Agregar no banco.** Se a tela só mostra a quantidade de itens, não traga os itens. Use `_count` no `select` ou um `groupBy`.\n\n**4. DataLoader, em noção.** Em GraphQL cada campo é resolvido por uma função isolada, que não sabe das outras. O padrão *DataLoader* resolve assim: cada pedido de \"me dá o usuário 7\" entra numa fila, e no fim do *tick* do event loop (você viu microtasks em js-06) a fila vira **uma** consulta com `IN`. O Prisma aplica ideia parecida para `findUnique` disparados no mesmo tick.\n\n### O excesso oposto\n\nResolver N+1 com um `include` de cinco níveis traz o banco inteiro em toda listagem. O remédio é pedir o que a tela usa: `select` com as colunas e as relações necessárias, e paginação.\n\n### O critério\n\nN+1 sobre 10 linhas com limite garantido não vale uma refatoração. N+1 sobre lista que cresce com o uso é defeito, mesmo que hoje esteja rápido. A pergunta de review é uma só: \"esta chamada ao banco está dentro de um laço cujo tamanho o usuário controla?\"",
+      "naPratica": "No Cockpit, a tela do plano do dia lista tarefas com o nome do projeto e a contagem de subtarefas. Feita com um laço, são dezenas de consultas por carregamento. Feita com `select` aninhado e `_count`, são uma ou duas.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um repositório falso que conta cada ida ao \"banco\". Quantas consultas faz cada versão, para o mesmo resultado?",
+          "codigo": "let consultas = 0;\nconst itens = [{ pedidoId: 1 }, { pedidoId: 1 }, { pedidoId: 2 }];\nconst repo = {\n  pedidos: () => (consultas++, [1, 2, 3]),\n  itensDoPedido: (id: number) => (consultas++, itens.filter((i) => i.pedidoId === id)),\n  itensDosPedidos: (ids: number[]) => (consultas++, itens.filter((i) => ids.includes(i.pedidoId))),\n};\n\nconst a = repo.pedidos().map((id) => ({ id, itens: repo.itensDoPedido(id).length }));\nconsole.log(consultas, JSON.stringify(a));\n\nconsultas = 0;\nconst ids = repo.pedidos();\nconst todos = repo.itensDosPedidos(ids);\nconst b = ids.map((id) => ({ id, itens: todos.filter((i) => i.pedidoId === id).length }));\nconsole.log(consultas, JSON.stringify(b));\n",
+          "saida": "4 [{\"id\":1,\"itens\":2},{\"id\":2,\"itens\":1},{\"id\":3,\"itens\":0}]\n2 [{\"id\":1,\"itens\":2},{\"id\":2,\"itens\":1},{\"id\":3,\"itens\":0}]\n",
+          "explicacao": "A primeira versão faz 1 consulta para a lista e 1 por pedido: 4. A segunda faz 1 para a lista e 1 para todos os itens: 2, e continua sendo 2 com mil pedidos. O resultado é idêntico, por isso nenhum teste funcional acusa a diferença. Só a contagem acusa."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um mini DataLoader: cada chamada entra numa fila e uma microtask despacha o lote. Quantas consultas saem para três chamadas?",
+          "codigo": "let consultas = 0;\nconst fila: { id: number; resolve: (nome: string) => void }[] = [];\n\nfunction carregaUsuario(id: number): Promise<string> {\n  return new Promise((resolve) => {\n    if (fila.length === 0) queueMicrotask(despacha);\n    fila.push({ id, resolve });\n  });\n}\n\nfunction despacha() {\n  const lote = fila.splice(0);\n  consultas++;\n  console.log('SELECT ... WHERE id IN (' + lote.map((p) => p.id).join(', ') + ')');\n  for (const p of lote) p.resolve('usuario' + p.id);\n}\n\nconst nomes = await Promise.all([carregaUsuario(3), carregaUsuario(5), carregaUsuario(3)]);\nconsole.log(nomes.join(' '), '| consultas:', consultas);\n",
+          "saida": "SELECT ... WHERE id IN (3, 5, 3)\nusuario3 usuario5 usuario3 | consultas: 1\n",
+          "explicacao": "As três chamadas acontecem no mesmo trecho síncrono: a primeira agenda a microtask, as outras só entram na fila. Quando o código síncrono termina, `despacha` roda uma vez com o lote inteiro. Um DataLoader de verdade ainda eliminaria o id 3 repetido e guardaria o resultado em cache durante a requisição."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Com o log de query ligado, qual é o sinal típico de N+1?",
+          "opcoes": [
+            "Uma consulta com tempo de execução alto",
+            "Uma consulta com muitos `JOIN`",
+            "A mesma consulta repetida muitas vezes, mudando só o valor do parâmetro",
+            "Um `BEGIN` sem `COMMIT`"
+          ],
+          "correta": 2,
+          "explicacao": "No N+1 cada consulta é rápida e bem indexada. O custo está na quantidade e nas idas e voltas pela rede. Procurar a consulta lenta é o reflexo natural e, neste caso, não encontra nada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma listagem mostra, para cada projeto, apenas o **número** de tarefas. Qual a melhor forma?",
+          "opcoes": [
+            "`include: { tarefas: true }` e contar com `.length` na aplicação",
+            "Um laço com `count` por projeto",
+            "Pedir a contagem ao banco na mesma consulta (`_count` ou `groupBy`)",
+            "Guardar a contagem numa variável global da API"
+          ],
+          "correta": 2,
+          "explicacao": "Trazer todas as tarefas para contar em memória resolve o N+1 e cria outro problema: tráfego e memória proporcionais ao total de tarefas. Agregação é trabalho do banco. O laço com `count` é o próprio N+1."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é N+1?",
+          "verso": "1 consulta traz a lista e N consultas buscam o detalhe de cada linha, uma por vez. Cada uma é rápida; o custo é a quantidade de idas ao banco."
+        },
+        {
+          "frente": "Por que o N+1 passa em teste e em desenvolvimento?",
+          "verso": "O resultado é correto e, com poucas linhas, é rápido. Só aparece contando consultas no log ou testando com volume."
+        },
+        {
+          "frente": "Três correções para N+1.",
+          "verso": "Carregar a relação junto (`include`/`select` aninhado), buscar em lote com `in` e distribuir em memória, ou agregar no banco (`_count`)."
+        },
+        {
+          "frente": "Como o `include` do Prisma costuma carregar uma relação 1:N?",
+          "verso": "Com uma segunda consulta usando `IN` nos ids do pai, juntando em memória. São 2 consultas, não N+1."
+        },
+        {
+          "frente": "Qual a pergunta de review para achar N+1?",
+          "verso": "\"Esta chamada ao banco está dentro de um laço cujo tamanho o usuário controla?\""
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Query optimization and the n+1 problem",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance"
+        },
+        {
+          "titulo": "Prisma — Relation queries",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/queries/relation-queries"
+        }
+      ]
+    },
+    {
+      "id": "dados-08",
+      "titulo": "Índices e EXPLAIN ANALYZE",
+      "minutos": 12,
+      "ponte": "Você lê `DBMS_XPLAN` de olhos fechados. O `EXPLAIN` do Postgres mostra a mesma árvore de operações, com outros nomes e o custo numa unidade abstrata. A analogia quebra em três pontos: `EXPLAIN ANALYZE` **executa** o comando, não existe hint e não existe índice bitmap persistente.",
+      "texto": "### Ler o plano\n\n```sql\nexplain (analyze, buffers)\nselect * from \"Tarefa\" where \"projetoId\" = 7 and \"feita\" = false;\n```\n\n```text\nIndex Scan using \"Tarefa_projetoId_idx\" on \"Tarefa\"\n    (cost=0.29..12.40 rows=4 width=61) (actual time=0.021..0.030 rows=5 loops=1)\n  Index Cond: (\"projetoId\" = 7)\n  Filter: (NOT feita)\n  Rows Removed by Filter: 38\n  Buffers: shared hit=6\nPlanning Time: 0.110 ms\nExecution Time: 0.052 ms\n```\n\n(Saída ilustrativa: o formato varia um pouco entre versões.)\n\n- `cost=início..total`: estimativa em unidade arbitrária. Serve para comparar planos, não é tempo.\n- `rows`: linhas **estimadas**. Em `actual`, as linhas **reais**. A diferença entre as duas é o seu velho amigo: estimativa de cardinalidade errada, causa da maioria dos planos ruins.\n- `loops`: quantas vezes o nó rodou. Tempo e linhas reais são **por volta**: multiplique.\n- `Buffers: shared hit / read`: páginas achadas em memória e páginas lidas de fora. São os seus *consistent gets* e *physical reads*.\n- `Rows Removed by Filter`: linhas que o índice trouxe e o filtro descartou. Número alto aqui pede índice melhor.\n\n| Postgres | Oracle |\n|---|---|\n| `Seq Scan` | `TABLE ACCESS FULL` |\n| `Index Scan` | `INDEX RANGE SCAN` + `TABLE ACCESS BY ROWID` |\n| `Index Only Scan` | Consulta resolvida só no índice |\n| `Bitmap Index Scan` + `Bitmap Heap Scan` | Sem equivalente exato: o bitmap é montado **na hora**, em memória, a partir de um índice comum |\n| `Nested Loop`, `Hash Join`, `Merge Join` | Os mesmos três |\n\nTrês avisos. **`ANALYZE` executa de verdade**: para testar um `UPDATE` ou `DELETE`, envolva em `BEGIN` e `ROLLBACK`. **Não há hint** no núcleo: o plano se corrige com estatística (`ANALYZE tabela`, o papel do `DBMS_STATS`, feito sozinho pelo *autovacuum*), com índice ou reescrevendo a consulta. E o `Index Only Scan` depende de a tabela estar com o `VACUUM` em dia: se aparecer `Heap Fetches` alto, ele está indo à tabela mesmo assim.\n\n### Os índices que você vai usar\n\n- **B-tree**: o padrão, igual ao que você conhece. Igualdade, faixa, ordenação.\n- **Composto**: a ordem das colunas manda. `(projetoId, feita)` atende filtro por `projetoId` e por `projetoId + feita`. Para filtro só por `feita`, em geral não ajuda. Regra prática: igualdade primeiro, faixa por último.\n- **Parcial**: `create index ... where \"feita\" = false`. Indexa só as linhas que interessam. Fica pequeno e é a resposta para \"99% das linhas estão concluídas e eu só consulto as abertas\". É também como se faz unicidade condicional (dados-04). No Oracle você simularia com índice baseado em função que devolve `NULL`.\n- **De expressão**: `create index on \"Usuario\" (lower(email))`. É o índice baseado em função.\n- **Com `INCLUDE`**: colunas extras na folha, para permitir `Index Only Scan`.\n- **GIN**: índice invertido, para valores compostos: `jsonb`, *array*, busca textual, e `LIKE '%termo%'` com a extensão `pg_trgm`. Mais caro para gravar.\n\n`CREATE INDEX CONCURRENTLY` é o seu `ONLINE` (com as ressalvas de dados-03).\n\n### O que o ORM não cria sozinho\n\nO Prisma cria índice para `@id` e `@unique`. Todo o resto é com você:\n\n- **Coluna de chave estrangeira** (dados-04): declare `@@index`.\n- **Colunas de filtro e ordenação das listagens**: `@@index([projetoId, feita])`.\n- **Parcial, de expressão e GIN específico**: em geral por migration manual em SQL (dados-03).\n\nO ORM também não avisa quando gera consulta que nenhum índice atende, como um `contains` que vira `LIKE '%x%'`, ou `mode: 'insensitive'` que vira `ILIKE`.\n\n### O critério\n\nÍndice se cria por consulta medida, não por palpite. Cada índice é pago em toda escrita e em espaço. O fluxo é o mesmo de sempre: pegue o SQL real no log do ORM, rode com `EXPLAIN (ANALYZE, BUFFERS)` num banco com volume parecido com o de produção, compare estimado com real e só então decida.",
+      "naPratica": "No Cockpit, a consulta mais frequente é \"tarefas abertas do dia\". Um índice parcial sobre as abertas atende essa tela com um índice minúsculo, enquanto as tarefas concluídas, que são a maioria e só crescem, ficam fora dele.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Cem mil valores ordenados. `seqScan` lê do começo; `btree` faz busca binária, que é a ideia por trás do índice. Quantos passos cada um dá para achar um valor que existe e para concluir que outro não existe?",
+          "codigo": "const linhas = Array.from({ length: 100_000 }, (_, i) => i * 2);\n\nfunction seqScan(alvo: number): number {\n  let lidas = 0;\n  for (const v of linhas) {\n    lidas++;\n    if (v === alvo) break;\n  }\n  return lidas;\n}\n\nfunction btree(alvo: number): number {\n  let lo = 0, hi = linhas.length - 1, passos = 0;\n  while (lo <= hi) {\n    passos++;\n    const meio = (lo + hi) >> 1;\n    const v = linhas[meio]!;\n    if (v === alvo) break;\n    if (v < alvo) lo = meio + 1;\n    else hi = meio - 1;\n  }\n  return passos;\n}\n\nconsole.log(seqScan(150_000), btree(150_000));\nconsole.log(seqScan(7), btree(7));\n",
+          "saida": "75001 16\n100000 17\n",
+          "explicacao": "A varredura lê 75.001 linhas para achar o valor e as 100.000 para concluir que o 7 não existe. A busca binária resolve em no máximo 17 passos, porque 2 elevado a 17 já passa de 100.000. É a diferença entre `Seq Scan` e `Index Scan` para uma busca seletiva. Para trazer metade da tabela, a varredura volta a ganhar, e o otimizador sabe disso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No plano, um nó mostra `rows=12` na estimativa e `rows=48000` no real. O que isso indica primeiro?",
+          "opcoes": [
+            "Que falta memória no servidor",
+            "Que a estimativa de cardinalidade está errada: estatística desatualizada ou predicado que o otimizador não sabe estimar",
+            "Que o índice está corrompido",
+            "Que a consulta precisa de um hint"
+          ],
+          "correta": 1,
+          "explicacao": "Estimado muito diferente do real é erro de cardinalidade, e com ele o otimizador escolhe junção e acesso errados. Comece por `ANALYZE` na tabela e pelo predicado. Hint não existe no núcleo do Postgres."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você quer medir um `DELETE` pesado com `EXPLAIN (ANALYZE, BUFFERS)` num banco com dados que importam. Como fazer?",
+          "opcoes": [
+            "Rodar direto: `EXPLAIN` nunca executa o comando",
+            "Abrir transação, rodar o `EXPLAIN ANALYZE` e dar `ROLLBACK`",
+            "Usar `EXPLAIN ANALYZE` com a opção de simulação, que não grava",
+            "Não é possível medir comandos de escrita"
+          ],
+          "correta": 1,
+          "explicacao": "`EXPLAIN` sozinho só estima. Com `ANALYZE` o comando **roda de verdade**, e as linhas seriam apagadas. Dentro de `BEGIN ... ROLLBACK` você obtém os tempos reais e desfaz o efeito. Supor que `EXPLAIN` nunca executa é o engano de quem vem do `EXPLAIN PLAN` do Oracle."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Do log do ORM ao plano",
+          "minutos": 25,
+          "passos": [
+            "No banco de desenvolvimento do Cockpit, popule uma tabela com alguns milhares de linhas usando `insert ... select ... from generate_series(1, 50000)`.",
+            "Com o log de query ligado, chame uma listagem com filtro e copie o SQL gerado.",
+            "Rode o SQL no `psql` com `explain (analyze, buffers)` e anote o tipo de acesso, estimado × real e os buffers.",
+            "Crie o índice que você julgar certo (via `@@index` ou migration manual), rode de novo e compare.",
+            "Registre antes e depois em `estudo/explain.md`."
+          ],
+          "prontoQuando": "O arquivo tem os dois planos, o índice criado e uma frase dizendo por que ele foi (ou não foi) usado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`EXPLAIN` × `EXPLAIN ANALYZE` no Postgres?",
+          "verso": "`EXPLAIN` só estima. `ANALYZE` executa o comando de verdade e mostra tempos e linhas reais. Para escrita, use `BEGIN ... ROLLBACK`."
+        },
+        {
+          "frente": "Por que comparar `rows` estimado com `rows` real?",
+          "verso": "A diferença revela erro de cardinalidade, a causa mais comum de plano ruim. Corrige-se com estatística, índice ou reescrita, já que não há hint."
+        },
+        {
+          "frente": "Quando usar índice parcial?",
+          "verso": "Quando as consultas olham só um subconjunto pequeno (abertas, não excluídas). Fica menor, mais barato de manter e serve para unicidade condicional."
+        },
+        {
+          "frente": "Quais índices o Prisma cria sozinho?",
+          "verso": "Só os de `@id` e `@unique`. FK, filtros, ordenação, parcial, expressão e GIN são decisão sua."
+        },
+        {
+          "frente": "No `EXPLAIN ANALYZE`, o que significa `loops=50` num nó?",
+          "verso": "O nó rodou 50 vezes. O tempo e as linhas reais exibidos são por volta: multiplique por 50."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "PostgreSQL — Using EXPLAIN",
+          "url": "https://www.postgresql.org/docs/current/using-explain.html"
+        },
+        {
+          "titulo": "PostgreSQL — Indexes",
+          "url": "https://www.postgresql.org/docs/current/indexes.html"
+        },
+        {
+          "titulo": "Prisma — Indexes",
+          "url": "https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes"
+        }
+      ]
+    },
+    {
+      "id": "dados-09",
+      "titulo": "SQL puro dentro do ORM e injeção de SQL",
+      "minutos": 10,
+      "ponte": "Você sabe a diferença entre `EXECUTE IMMEDIATE 'where nome = ''' || p_nome || ''''` e `EXECUTE IMMEDIATE '... where nome = :1' USING p_nome`. Variável de *bind* contra concatenação: é exatamente o mesmo assunto. A analogia quebra num detalhe de sintaxe traiçoeiro: no Prisma, a forma segura e a insegura diferem por um par de parênteses.",
+      "texto": "Descer para SQL puro dentro de um projeto com ORM não é gambiarra. É a ferramenta certa quando a consulta é de conjunto. O que separa o uso correto do desastre é **como o valor entra no texto**.\n\n### A forma segura: template tag\n\n```ts\nconst linhas = await prisma.$queryRaw`\n  select id, titulo from \"Tarefa\" where \"projetoId\" = ${projetoId}\n`;\n```\n\nIsso **parece** interpolação de string e não é. O acento grave logo depois do nome de uma função é uma *tagged template* (você viu template string em js-02): o JavaScript chama a função entregando os pedaços de texto e os valores **separados**. O Prisma monta `... where \"projetoId\" = $1` e envia o valor como parâmetro. É a sua variável de *bind*. O valor nunca vira texto de SQL.\n\n`$queryRaw` devolve linhas. `$executeRaw` é para comandos de escrita e devolve a contagem de linhas afetadas.\n\n### A forma perigosa\n\n```ts\n// injeção: o valor virou parte do comando\nawait prisma.$queryRawUnsafe(`select * from \"Usuario\" where nome = '${nome}'`);\n```\n\n`$queryRawUnsafe` recebe uma **string pronta**. Aqui a interpolação é a comum do JavaScript: quando o Prisma recebe o texto, o valor já está colado. Se `nome` for `x' or '1'='1`, a consulta devolve a tabela inteira. Repare: a diferença visual para a forma segura são os parênteses e a palavra `Unsafe`.\n\nO `Unsafe` tem uso legítimo, com parâmetros posicionais: `$queryRawUnsafe('select ... where id = $1', id)`. O perigo não é o método, é a concatenação.\n\n### O que não pode ser parâmetro\n\nNome de tabela, nome de coluna e direção de ordenação são estrutura do comando, não valor, e *bind* não serve para estrutura. A lógica é a mesma do `DBMS_ASSERT`. A defesa é **lista fechada**:\n\n```ts\nconst colunas = { titulo: '\"titulo\"', prazo: '\"prazo\"' } as const;\nconst coluna = colunas[campoPedido as keyof typeof colunas] ?? colunas.titulo;\n```\n\nO texto que entra no SQL sai do seu código, nunca da requisição. Para montar consulta dinâmica com segurança, o Prisma oferece auxiliares de composição (`Prisma.sql`, `Prisma.join` para listas de `IN`): confira a forma de importar no client gerado da sua versão.\n\n### Onde o SQL puro te engana\n\n- **O resultado não é validado.** O genérico `$queryRaw<Tipo[]>` é só uma promessa sua ao compilador. Mudou a coluna, o tipo continua mentindo.\n- **`count(*)` volta como `BigInt`**, e `JSON.stringify` lança erro com `BigInt`. Converta no SQL (`count(*)::int`) ou no código.\n- **Os nomes são os do banco**, com aspas e maiúsculas (dados-01), e renomear no schema não atualiza a sua string.\n- **Exclusão lógica e outras regras do client** (dados-04) não se aplicam ao SQL puro.\n\n### Quando o SQL puro é a escolha certa\n\n- **Relatório e agregação:** funções de janela, `GROUP BY` com `FILTER`, vários níveis de agrupamento.\n- **CTE recursiva:** árvore de categorias, hierarquia, o que você faria com `CONNECT BY`.\n- **Lock explícito:** `FOR UPDATE`, `SKIP LOCKED` (dados-06).\n- **Escrita em massa:** `insert ... select`, `update ... from`, em que o ORM traria tudo para a memória.\n- **Recursos do Postgres** fora do ORM: busca textual, operadores de `jsonb`.\n\nO sinal de que passou do ponto é o contrário: CRUD simples escrito em SQL puro, perdendo o tipo e a manutenção sem ganhar nada.\n\n### O critério\n\nIsole o SQL puro em métodos de repositório com nome de negócio e tipo de retorno declarado, cobertos por teste que roda contra banco de verdade (test-05). E trate injeção como regra de review sem exceção: **valor entra por parâmetro, estrutura sai de lista fechada**. Você já aplicava isso no PL/SQL dinâmico. Aqui você é quem vai cobrar dos outros.",
+      "naPratica": "No Cockpit, o resumo semanal (tarefas concluídas por dia e por projeto) é uma agregação com `date_trunc` e `group by`: um `$queryRaw` com template tag num método `resumoSemanal()`. Em review, toda ocorrência de `Unsafe` ou de `+` montando SQL merece leitura linha a linha.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A mesma entrada maliciosa passa por concatenação e por uma template tag caseira. O que sai em cada caso?",
+          "codigo": "function concatena(nome: string) {\n  return \"SELECT * FROM usuario WHERE nome = '\" + nome + \"'\";\n}\n\nfunction sql(partes: TemplateStringsArray, ...valores: unknown[]) {\n  const texto = partes.reduce((acc, parte, i) => acc + '$' + i + parte);\n  return { texto, valores };\n}\n\nconst entrada = \"x' OR '1'='1\";\nconsole.log(concatena(entrada));\n\nconst q = sql`SELECT * FROM usuario WHERE nome = ${entrada}`;\nconsole.log(q.texto);\nconsole.log(q.valores.length, q.valores[0] === entrada);\n",
+          "saida": "SELECT * FROM usuario WHERE nome = 'x' OR '1'='1'\nSELECT * FROM usuario WHERE nome = $1\n1 true\n",
+          "explicacao": "Na concatenação, a aspa da entrada fecha o literal e o resto vira comando: `OR '1'='1'` torna o filtro sempre verdadeiro. Na template tag, a função recebe o texto e o valor separados: o SQL fica com o marcador `$1` e a entrada segue intacta na lista de parâmetros, onde o banco a trata só como dado."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A assinatura abaixo imita a de uma função de SQL puro que só aceita template tag. As duas chamadas compilam?",
+          "codigo": "declare function queryRaw(partes: TemplateStringsArray, ...valores: unknown[]): Promise<unknown[]>;\n\nconst nome = 'ana';\nvoid queryRaw`select * from usuario where nome = ${nome}`;\nvoid queryRaw(\"select * from usuario where nome = '\" + nome + \"'\");\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 5,
+          "explicacao": "Uma `string` não é um `TemplateStringsArray`, então a chamada com parênteses e concatenação é barrada pelo compilador. É por isso que a função segura do Prisma recusa string montada, e por isso existe um método separado, com `Unsafe` no nome, para quem insiste."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A listagem aceita `?ordenarPor=prazo` na URL. Como montar o `ORDER BY` em SQL puro com segurança?",
+          "opcoes": [
+            "Passar o nome da coluna como parâmetro: `order by ${ordenarPor}` na template tag",
+            "Escapar as aspas do valor recebido e concatenar",
+            "Mapear o valor recebido para um nome de coluna de uma lista fechada do código e usar o nome da lista",
+            "Usar `$queryRawUnsafe`, que valida identificadores"
+          ],
+          "correta": 2,
+          "explicacao": "Parâmetro só carrega valor: um nome de coluna enviado como parâmetro vira uma constante de texto e a ordenação não acontece (ou dá erro). Escapar na mão é a tentação clássica e sempre tem um caso esquecido. Com lista fechada, o texto que entra no SQL nunca veio do usuário."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o pessoal quer proibir SQL puro no projeto porque 'ORM é mais seguro contra injeção'. Faz sentido?\"",
+          "pontos": [
+            "Separou o risco real (concatenação) da ferramenta (SQL puro)",
+            "Explicou que a template tag do ORM envia parâmetro, como variável de bind",
+            "Citou os casos em que SQL puro é a escolha certa: relatório, CTE recursiva, lock, escrita em massa",
+            "Propôs regra objetiva: valor por parâmetro, estrutura por lista fechada, SQL isolado em repositório e revisado"
+          ],
+          "modelo": "Não faz, e a proibição sai cara. Injeção vem de concatenar valor no texto do comando, não de escrever SQL. O `$queryRaw` com template tag manda o valor como parâmetro, que é a variável de bind de sempre. Se proibirmos SQL puro, o relatório com agregação e a hierarquia recursiva vão ser feitos em memória, com laço, e a gente troca um risco controlável por lentidão garantida. Eu proporia outra regra: valor sempre por parâmetro, nome de coluna só de lista fechada, o método com `Unsafe` e qualquer concatenação exigem justificativa no review, e todo SQL puro fica em repositório com teste contra banco de verdade."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que `` $queryRaw`... ${x}` `` é seguro e `` $queryRawUnsafe(`... ${x}`) `` não é?",
+          "verso": "A template tag recebe texto e valores separados e envia o valor como parâmetro. No `Unsafe` a string já chega montada: o valor virou comando."
+        },
+        {
+          "frente": "O que não pode ser parâmetro numa consulta?",
+          "verso": "Estrutura: nome de tabela, de coluna, direção de ordenação. A defesa é lista fechada no código."
+        },
+        {
+          "frente": "Quando SQL puro é a escolha certa num projeto com ORM?",
+          "verso": "Relatório e agregação, CTE recursiva, lock explícito, escrita em massa e recursos específicos do banco."
+        },
+        {
+          "frente": "Duas pegadinhas do resultado de `$queryRaw`.",
+          "verso": "O tipo genérico não é validado, é promessa sua. E `count(*)` volta como `BigInt`, que quebra o `JSON.stringify`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Raw queries",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/using-raw-sql/raw-queries"
+        },
+        {
+          "titulo": "OWASP — SQL Injection Prevention Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "MDN — Template literals (tagged templates)",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals"
+        }
+      ]
+    },
+    {
+      "id": "dados-10",
+      "titulo": "Pool de conexões",
+      "minutos": 11,
+      "ponte": "No Forms cada usuário tem a sua sessão dedicada, do login ao logout: 500 usuários, 500 sessões. Numa API, 500 usuários dividem umas 10 conexões, cada um por milissegundos. É o modelo de *shared server* ou DRCP, feito do lado da aplicação. A analogia quebra no que você mais usa: sem sessão própria não há estado de sessão. Variável de package, tabela temporária e contexto não sobrevivem de uma requisição para outra.",
+      "texto": "### Por que existe\n\nAbrir conexão no Postgres é caro: o servidor cria **um processo por conexão** (como o *dedicated server*), autentica e negocia TLS. Fazer isso a cada requisição custaria mais que a consulta. O *pool* (conjunto de conexões reaproveitadas) mantém algumas abertas: a requisição pega uma, usa por milissegundos e devolve. Se todas estão ocupadas, a requisição **espera na fila** do pool.\n\nNo Cockpit, com Prisma 7, o pool é o do driver `pg`, criado pelo adapter. A configuração entra no próprio `PrismaPg`, que aceita as opções de pool do driver:\n\n```ts\nnew PrismaPg({ connectionString, max: 10 });\n```\n\nSe você ler tutorial antigo falando de `connection_limit` na URL, é o motor das versões anteriores. Confira os nomes e os valores padrão na documentação do driver.\n\n### Tamanho: menor do que o instinto pede\n\nMais conexões não dão mais vazão. O banco tem um número fixo de núcleos e de disco. Passado esse ponto, conexão extra só acrescenta disputa e troca de contexto. Um pool pequeno com fila costuma ser **mais rápido** que um pool grande. Comece com cerca de 10 por instância e só mude com medição.\n\nA conta que não pode furar:\n\n```text\ninstâncias da API × max do pool  ≤  max_connections − reserva\n```\n\nO `max_connections` padrão do Postgres é 100. A reserva cobre migrations, jobs, o seu `psql` e outras aplicações. Quatro instâncias com pool de 30 já estouram, e o *autoscaling* que sobe a quinta instância num pico é quem derruba o banco.\n\n### Dois erros diferentes, duas causas\n\n| Sintoma | Quem reclama | Causa provável |\n|---|---|---|\n| \"too many connections\" / \"too many clients already\" | O **servidor** | A soma dos pools passou de `max_connections` |\n| Tempo esgotado esperando conexão | O **pool** da aplicação | Conexões presas: transação longa (dados-05), consulta lenta, conexão não devolvida |\n\nNo segundo caso, aumentar o pool é o reflexo errado: ele trata o sintoma e empurra a carga para o banco. Olhe `pg_stat_activity` (a sua `V$SESSION`): muitas sessões em `idle in transaction` significam transação aberta enquanto a aplicação faz outra coisa.\n\n### Pooler externo: PgBouncer\n\nQuando há muitas instâncias, ou muitas aplicações no mesmo banco, entra um *pooler* entre a aplicação e o Postgres. O PgBouncer aceita milhares de conexões de cliente e as multiplexa em poucas conexões reais. O modo define a ponte com o que você conhece:\n\n- **Sessão:** uma conexão real por cliente enquanto ele estiver conectado. Pouco ganho.\n- **Transação:** a conexão real é emprestada só durante a transação. É o DRCP ou *shared server*. É o modo que escala.\n\nO preço do modo transação é o que você já espera: **estado de sessão não é confiável**. `SET` de sessão, tabela temporária, *advisory lock* de sessão e `LISTEN` quebram ou vazam. *Prepared statements* exigem versão e configuração adequadas do pooler. Com ORM, verifique a combinação antes de adotar: é fonte clássica de erro intermitente.\n\n### Serverless\n\nEm funções *serverless* (código que a nuvem sobe sob demanda, uma instância por requisição simultânea), cada instância cria o seu pool. Um pico abre centenas de conexões em segundos. Ali o pooler externo, ou um serviço de banco com pooler embutido, deixa de ser opção e vira requisito, com pool de 1 por função.\n\n### O critério\n\nUma API em poucas instâncias fixas não precisa de PgBouncer: o pool do driver basta. O pooler entra quando a conta de instâncias vezes pool não fecha. E a regra que vale para qualquer tamanho: conexão é recurso emprestado. Pegue tarde, devolva cedo, nunca espere rede externa segurando uma.",
+      "naPratica": "O Cockpit roda em uma instância com o pool padrão, e isso basta. O que vale levar para o trabalho é a conta: ao revisar a configuração de um serviço que escala, multiplique o pool pelo número máximo de instâncias antes de aprovar.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um pool de 2 conexões feito com semáforo e cinco requisições simultâneas, cada uma usando a conexão por 30 ms. Em que ordem elas começam, com quantas na fila, e qual o pico de conexões em uso?",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\nconst fila: (() => void)[] = [];\nlet livres = 2, emUso = 0, pico = 0;\n\nasync function pega() {\n  if (livres > 0) livres--;\n  else await new Promise<void>((liberar) => fila.push(liberar));\n}\nfunction solta() {\n  const proximo = fila.shift();\n  if (proximo) proximo();\n  else livres++;\n}\n\nasync function requisicao(n: number) {\n  await pega();\n  pico = Math.max(pico, ++emUso);\n  console.log('inicio', n, '| na fila:', fila.length);\n  await espera(30);\n  emUso--;\n  solta();\n}\n\nawait Promise.all([1, 2, 3, 4, 5].map(requisicao));\nconsole.log('pico de conexões:', pico);\n",
+          "saida": "inicio 1 | na fila: 3\ninicio 2 | na fila: 3\ninicio 3 | na fila: 2\ninicio 4 | na fila: 1\ninicio 5 | na fila: 0\npico de conexões: 2\n",
+          "explicacao": "As cinco chamadas acontecem de uma vez: duas pegam conexão e três entram na fila, por isso as duas primeiras linhas já mostram 3 esperando. Cada devolução entrega a conexão direto ao próximo da fila. O pico nunca passa de 2. As requisições não falham, só esperam: é o comportamento que protege o banco. Se a espera passar do limite configurado, aí sim vem o erro de tempo esgotado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A API roda em 6 instâncias, cada uma com pool de 20. O Postgres está com `max_connections = 100`. Em horário de pico aparece \"too many clients already\". Qual a leitura correta?",
+          "opcoes": [
+            "O pool de cada instância está pequeno e deve subir para 40",
+            "A soma dos pools (120) passa do limite do servidor: reduzir o pool por instância ou pôr um pooler externo",
+            "Há um vazamento de memória na API",
+            "O Postgres precisa de `VACUUM`"
+          ],
+          "correta": 1,
+          "explicacao": "Quem reclama é o servidor, e a conta 6 × 20 = 120 explica. Aumentar o pool piora. Subir o `max_connections` também não é de graça, porque cada conexão é um processo com memória própria. O caminho é fazer a conta fechar com folga."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Com PgBouncer em modo transação, qual destes usos deixa de ser confiável?",
+          "opcoes": [
+            "`SELECT` com `JOIN` entre três tabelas",
+            "Transação com `BEGIN` e `COMMIT` contendo dois `UPDATE`",
+            "Um `SET` de sessão feito numa requisição e lido em outra consulta fora de transação",
+            "`INSERT ... ON CONFLICT`"
+          ],
+          "correta": 2,
+          "explicacao": "No modo transação a conexão real volta ao pool ao fim de cada transação. O `SET` de sessão fica numa conexão que o próximo comando talvez não receba, e pode vazar para outro cliente. Dentro de uma única transação tudo funciona normalmente, por isso as demais opções são seguras."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a API começou a dar timeout para pegar conexão. Posso subir o pool de 10 para 50 e resolver?\"",
+          "pontos": [
+            "Separou os dois sintomas: limite do servidor × pool local esgotado",
+            "Disse que pool esgotado quase sempre é conexão presa (transação longa, consulta lenta), não pool pequeno",
+            "Indicou onde olhar: `pg_stat_activity` e sessões `idle in transaction`",
+            "Fez a conta de instâncias × pool contra `max_connections`",
+            "Explicou por que pool maior não aumenta a vazão do banco"
+          ],
+          "modelo": "Antes de subir, eu quero saber por que as dez estão ocupadas. Timeout no pool quase sempre é conexão presa: uma transação que fica aberta enquanto o código chama um serviço externo, ou uma consulta lenta. Olha o `pg_stat_activity` no horário do problema; se houver várias sessões em `idle in transaction`, é isso. Subir para 50 só deixa cinquenta requisições presas em vez de dez, e ainda multiplica pelo número de instâncias: com quatro, são 200 contra um limite de 100 no servidor. O banco não processa mais rápido com mais conexões. Primeiro a gente acha quem segura a conexão; se depois disso ainda faltar, aumenta com medição."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a conta que limita o tamanho do pool?",
+          "verso": "Instâncias × pool por instância ≤ `max_connections` − reserva (migrations, jobs, acesso manual, outras aplicações)."
+        },
+        {
+          "frente": "Por que um pool maior não deixa a API mais rápida?",
+          "verso": "O banco tem núcleos e disco finitos. Além desse ponto, mais conexões só aumentam disputa. Pool pequeno com fila costuma render mais."
+        },
+        {
+          "frente": "\"too many connections\" × timeout ao pegar conexão?",
+          "verso": "O primeiro vem do servidor: a soma dos pools passou do limite. O segundo vem do pool local: conexões presas por transação longa ou consulta lenta."
+        },
+        {
+          "frente": "PgBouncer em modo transação corresponde a quê no Oracle, e o que se perde?",
+          "verso": "A DRCP ou shared server. Perde-se o estado de sessão: `SET`, tabela temporária, advisory lock de sessão, `LISTEN`."
+        },
+        {
+          "frente": "O que `idle in transaction` em `pg_stat_activity` indica?",
+          "verso": "Transação aberta sem comando rodando: a aplicação está fazendo outra coisa segurando conexão e locks."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Prisma — Connection pool",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/databases-connections/connection-pool"
+        },
+        {
+          "titulo": "PostgreSQL — Connections and Authentication (max_connections)",
+          "url": "https://www.postgresql.org/docs/current/runtime-config-connection.html"
+        },
+        {
+          "titulo": "PostgreSQL — pg_stat_activity",
+          "url": "https://www.postgresql.org/docs/current/monitoring-stats.html"
+        }
+      ]
+    },
+    {
+      "id": "dados-11",
+      "titulo": "TypeORM, Drizzle e Knex: ler qualquer camada de dados",
+      "minutos": 11,
+      "ponte": "Você lê PL/SQL de qualquer casa: muda o estilo, o SQL por baixo é o mesmo. Com camada de dados em Node vale igual. Toda biblioteca responde às mesmas cinco perguntas, e sabendo fazê-las você lê qualquer uma. A analogia quebra no grau de mágica: umas escondem o SQL quase todo, outras são SQL com outra pontuação.",
+      "texto": "O Cockpit usa Prisma, e o seu próximo projeto provavelmente não. Em projeto Nest corporativo, o mais comum de encontrar é **TypeORM**. Esta lição é para ler os três concorrentes e ter critério de escolha.\n\n### TypeORM: a classe é a tabela\n\n```ts\n@Entity('tarefa')\nexport class Tarefa {\n  @PrimaryGeneratedColumn()\n  id: number;\n\n  @Column({ length: 200 })\n  titulo: string;\n\n  @ManyToOne(() => Projeto, (projeto) => projeto.tarefas)\n  projeto: Projeto;\n}\n```\n\nO modelo é uma classe com *decorators* (você viu em nest-02). O acesso é por um *repository* injetado (`@InjectRepository(Tarefa)`), com duas formas de consultar:\n\n```ts\nawait repo.find({ where: { feita: false }, relations: { projeto: true } });\n\nawait repo\n  .createQueryBuilder('t')\n  .leftJoinAndSelect('t.projeto', 'p')\n  .where('t.feita = :feita', { feita: false })\n  .getMany();\n```\n\nO `:feita` com o objeto ao lado é *bind* por nome. O que procurar num projeto TypeORM:\n\n- **`synchronize: true`** na configuração: altera a estrutura do banco ao subir a aplicação, a partir das classes. Em produção é perda de dados esperando para acontecer. O certo são migrations.\n- **O tipo mente sobre relações.** `tarefa.projeto` é do tipo `Projeto` mesmo quando a relação não foi carregada: em execução vem `undefined`. O Prisma acerta isso no tipo; aqui é disciplina.\n- **Relação *lazy*** (declarada como `Promise`): ler a propriedade dispara consulta. É N+1 por acesso a campo (dados-07).\n- **`save()`** decide entre `INSERT` e `UPDATE`, muitas vezes com um `SELECT` antes, e pode propagar para relações em cascata. Leia o log (`logging: true`).\n- **Transação** tem a mesma armadilha de dados-05: só participa quem usa o `manager` da transação.\n\nA favor: é maduro, cobre muitos bancos, **inclusive Oracle**, e o *query builder* chega perto do SQL.\n\n### Drizzle: SQL com tipos\n\n```ts\nexport const tarefa = pgTable('tarefa', {\n  id: serial('id').primaryKey(),\n  titulo: text('titulo').notNull(),\n  feita: boolean('feita').notNull().default(false),\n});\n\nawait db.select({ id: tarefa.id, titulo: tarefa.titulo }).from(tarefa).where(eq(tarefa.feita, false));\n```\n\nO schema é código TypeScript e a consulta **tem a forma do SQL**: `select`, `from`, `where`, `leftJoin`. Sem geração de client, sem carga escondida: o que você escreve é o que roda. O resultado é tipado. Para você, é o mais legível dos três. O custo é ser mais novo, com menos material e convenções ainda mudando.\n\n### Knex: montador de consulta\n\n```ts\nawait knex('tarefa').where({ feita: false }).select('id', 'titulo').orderBy('prazo');\nawait knex.raw('select * from tarefa where id = ?', [id]);\n```\n\nNão é ORM: é um *query builder* (montador de consulta) com pool e migrations. Não há modelo, relação nem tipo de resultado confiável: volta o que o banco devolve. Aparece em projeto mais antigo e por baixo de outras bibliotecas. Também fala com Oracle. É honesto e exige disciplina do time para não espalhar consulta pelo código.\n\n### As cinco perguntas para qualquer camada de dados\n\n1. **Onde está a verdade da estrutura?** Arquivo de schema, classes com decorator, código TypeScript ou só o banco.\n2. **Como a estrutura muda?** Migrations versionadas, ou alguma sincronização automática ligada.\n3. **Como a transação se propaga?** Qual objeto precisa ser passado adiante.\n4. **Existe carga sob demanda?** Se ler propriedade dispara consulta.\n5. **Como eu vejo o SQL?** Onde liga o log.\n\n### O critério de escolha\n\n| | Prisma | TypeORM | Drizzle | Knex |\n|---|---|---|---|---|\n| Estilo | Schema próprio + client gerado | Classes com decorator | SQL tipado | Montador de SQL |\n| Tipos do resultado | Exatos | Frágeis em relações | Exatos | Fracos |\n| Distância do SQL | Grande | Média | Pequena | Mínima |\n| Oracle | Não | Sim | Confira a versão | Sim |\n\nNenhuma tabela decide sozinha. Os critérios que pesam de verdade: **o banco** (com Oracle, o Prisma sai da lista), **o que o time já conhece**, **quanto SQL de conjunto o sistema tem** (muito relatório favorece quem fica perto do SQL) e **a saúde do projeto** (versões recentes, documentação). Trocar de ORM num sistema vivo é migração cara, e a camada de repositório (arq-02) existe para que essa troca, se vier, fique contida.",
+      "naPratica": "Ao entrar num repositório Nest desconhecido, abra primeiro o módulo de banco e responda as cinco perguntas antes de ler qualquer regra de negócio. Em dez minutos você sabe onde o SQL nasce e onde procurar o primeiro problema de desempenho.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um montador de consulta mínimo, no estilo do Knex. Que SQL e que parâmetros ele produz depois de dois filtros, um deles condicional?",
+          "codigo": "class Consulta {\n  private filtros: string[] = [];\n  private valores: unknown[] = [];\n  private tabela: string;\n  constructor(tabela: string) {\n    this.tabela = tabela;\n  }\n  where(coluna: string, valor: unknown) {\n    this.valores.push(valor);\n    this.filtros.push(`${coluna} = $${this.valores.length}`);\n    return this;\n  }\n  toSQL() {\n    const onde = this.filtros.length ? ' where ' + this.filtros.join(' and ') : '';\n    return { sql: `select * from ${this.tabela}${onde}`, bindings: this.valores };\n  }\n}\n\nconst filtroProjeto: number | undefined = 7;\nconst q = new Consulta('tarefa').where('feita', false);\nif (filtroProjeto !== undefined) q.where('projeto_id', filtroProjeto);\nconsole.log(q.toSQL().sql);\nconsole.log(q.toSQL().bindings);\n",
+          "saida": "select * from tarefa where feita = $1 and projeto_id = $2\n[ false, 7 ]\n",
+          "explicacao": "Cada `where` guarda o valor numa lista e põe no texto só o marcador numerado. O `return this` é o que permite encadear as chamadas. No fim, texto e valores seguem separados para o driver. É isso que um query builder faz: monta SQL dinâmico com filtro opcional sem concatenar valor, coisa que em string pura vira um emaranhado de `if`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num projeto TypeORM, a configuração da conexão de produção traz `synchronize: true`. O que você faz no review?",
+          "opcoes": [
+            "Aprova: é o que mantém o banco igual às entidades",
+            "Pede para trocar por migrations: a sincronização altera a estrutura ao subir a aplicação e pode apagar coluna com dados",
+            "Pede apenas para ligar o log junto",
+            "Aprova se houver backup diário"
+          ],
+          "correta": 1,
+          "explicacao": "Com `synchronize` ligado, renomear uma propriedade na classe vira remoção e criação de coluna na próxima subida, sem arquivo revisável e sem controle de ordem. Serve para protótipo local. Backup reduz o dano e não transforma isso em processo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um sistema novo em Nest precisa falar com um banco Oracle existente, com muita regra em packages. Qual destas opções está descartada de saída?",
+          "opcoes": [
+            "TypeORM",
+            "Knex",
+            "node-oracledb direto, num repositório",
+            "Prisma"
+          ],
+          "correta": 3,
+          "explicacao": "O Prisma não tem conector para Oracle. TypeORM e Knex usam o driver `oracledb` por baixo, e o driver direto é a escolha natural quando o trabalho é chamar package (dados-12). Escolher a ferramenta da moda antes de olhar o banco é o erro comum."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vamos começar um serviço novo. O time quer Prisma porque é o mais popular. Você concorda?\"",
+          "pontos": [
+            "Perguntou primeiro qual é o banco (Oracle descarta o Prisma)",
+            "Considerou o que o time já domina e o que os outros serviços da casa usam",
+            "Pesou o perfil do sistema: CRUD × muito relatório e SQL de conjunto",
+            "Lembrou que a camada de repositório contém o custo de uma troca futura",
+            "Deu um veredito condicionado, não um sim ou não seco"
+          ],
+          "modelo": "Depende de três coisas, e popularidade não é uma delas. Primeiro o banco: se for Oracle, o Prisma não conecta e a conversa acaba; aí é TypeORM ou o driver direto. Se for Postgres, olho o que os outros serviços da casa usam, porque manter dois ORMs custa em revisão e em gente. Depois o perfil: muito CRUD favorece Prisma, que entrega tipo exato com pouco código; muito relatório e SQL de conjunto favorece algo mais perto do SQL, como Drizzle, ou Prisma com SQL puro bem isolado. Em qualquer escolha, eu peço repositório por agregado, para que o ORM não vaze para os services."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "As cinco perguntas para ler qualquer camada de dados.",
+          "verso": "Onde está a verdade da estrutura; como ela muda; como a transação se propaga; existe carga sob demanda; como ver o SQL."
+        },
+        {
+          "frente": "Por que `synchronize: true` do TypeORM é perigoso em produção?",
+          "verso": "Ele altera o banco ao subir a aplicação, a partir das classes, sem migration revisável. Renomear propriedade pode apagar coluna."
+        },
+        {
+          "frente": "TypeORM: o que o tipo de uma relação não garante?",
+          "verso": "Que ela foi carregada. `tarefa.projeto` é `Projeto` no tipo e `undefined` em execução se não foi pedido em `relations`."
+        },
+        {
+          "frente": "Drizzle e Knex em uma frase cada.",
+          "verso": "Drizzle: SQL escrito em TypeScript, com schema em código e resultado tipado. Knex: montador de consulta sem modelo e sem tipo confiável."
+        },
+        {
+          "frente": "Quais dessas camadas falam com Oracle?",
+          "verso": "TypeORM e Knex (pelo driver `oracledb`). Prisma não."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeORM — Documentação",
+          "url": "https://typeorm.io/"
+        },
+        {
+          "titulo": "Drizzle ORM — Documentação",
+          "url": "https://orm.drizzle.team/docs/overview"
+        },
+        {
+          "titulo": "NestJS — Database (TypeORM)",
+          "url": "https://docs.nestjs.com/techniques/database"
+        }
+      ]
+    },
+    {
+      "id": "dados-12",
+      "titulo": "Oracle a partir do Node: node-oracledb, chamar package, REF CURSOR, thin × thick",
+      "minutos": 14,
+      "ponte": "Um bloco anônimo com `begin pk_pedido.pr_aprova(:id, :situacao); end;` e variáveis de *bind*: é isso que o Node vai mandar. O que você faz no SQL*Plus com `VARIABLE` e `EXEC`, o driver faz com um objeto JavaScript. A analogia quebra na sessão: ela vem de um pool e volta para ele, então estado de package e transação aberta não podem atravessar requisições.",
+      "texto": "Esta lição é a ponte direta com o seu trabalho: **manter a regra no PL/SQL e expô-la por uma API**. A biblioteca oficial é o `node-oracledb` (pacote `oracledb`), mantida pela Oracle. Os exemplos são ilustrativos: confirme nomes de opções e constantes na documentação da versão instalada antes de usar.\n\n### Thin × thick\n\n- **Thin:** o padrão nas versões atuais. JavaScript puro, fala o protocolo do banco sem nenhum Oracle Client na máquina. É o que você quer num contêiner.\n- **Thick:** carrega as bibliotecas do Oracle Client, ativado com `oracledb.initOracleClient()` antes de conectar.\n\nO thick é necessário quando o thin não cobre o ambiente: banco de versão antiga, conta com verificador de senha de formato antigo, criptografia de rede nativa configurada no `sqlnet.ora`, e alguns recursos avançados. A lista exata está no apêndice de diferenças da documentação e muda a cada versão, assim como a versão mínima de client que o thick aceita. Regra prática: tente thin; se a conexão for recusada por recurso não suportado, leia o apêndice antes de sair instalando client.\n\n### Pool e conexão\n\n```ts\nconst pool = await oracledb.createPool({ user, password, connectString, poolMin: 2, poolMax: 10 });\n\nconst conn = await pool.getConnection();\ntry {\n  // trabalho\n} finally {\n  await conn.close(); // devolve ao pool\n}\n```\n\nO `finally` é obrigatório: conexão não devolvida é vazamento (dados-10). `close()` numa conexão de pool devolve a sessão, e o que não foi confirmado é desfeito.\n\n### Chamar procedure de package\n\n```ts\nconst r = await conn.execute(\n  `begin pk_pedido.pr_aprova(:id, :usuario, :situacao, :mensagem); end;`,\n  {\n    id: { dir: oracledb.BIND_IN, type: oracledb.NUMBER, val: pedidoId },\n    usuario: login,\n    situacao: { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 30 },\n    mensagem: { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 4000 },\n  },\n);\nawait conn.commit();\nconsole.log(r.outBinds);\n```\n\n*Bind* por nome: as chaves do objeto casam com os `:nome` do bloco. Valor simples é entrada. Saída exige direção, tipo e, para texto, tamanho máximo. Função é o mesmo bloco com `:retorno := pk.fn(:a)` e um *bind* de saída. Nunca concatene valor no bloco (dados-09).\n\n### autoCommit é falso\n\nO driver **não confirma sozinho**. Sem `conn.commit()` (ou a opção `autoCommit: true` no `execute`), o trabalho é desfeito ao devolver a conexão. É o oposto do Prisma (dados-05), e é bom: várias chamadas na mesma conexão formam uma transação, com um `commit` no fim. Combine com a regra da casa: ou o package confirma, ou a API confirma. Os dois, nunca.\n\n### REF CURSOR\n\n```ts\nconst r = await conn.execute(\n  `begin pk_pedido.pr_lista(:cliente, :cursor); end;`,\n  { cliente: clienteId, cursor: { dir: oracledb.BIND_OUT, type: oracledb.CURSOR } },\n  { outFormat: oracledb.OUT_FORMAT_OBJECT },\n);\nconst rs = r.outBinds.cursor;\ntry {\n  let linhas;\n  while ((linhas = await rs.getRows(100)).length > 0) {\n    // processa o lote\n  }\n} finally {\n  await rs.close();\n}\n```\n\nO cursor chega como *result set*: você busca em lotes e **fecha**. Cursor esquecido aberto acaba em ORA-01000. `OUT_FORMAT_OBJECT` devolve cada linha como objeto com os nomes das colunas, em maiúsculas.\n\n### Tipos que enganam\n\n- **`NUMBER`** vira `number` do JavaScript, um ponto flutuante de 64 bits: inteiros acima de 2 elevado a 53 e decimais longos perdem precisão. Para identificador grande e valor monetário, traga como texto e trate com biblioteca decimal.\n- **`DATE`** vira `Date`, que é um **instante**. A coluna não tem fuso; a conversão usa o fuso do processo e da sessão. Fixe os dois e teste um horário perto da meia-noite.\n- **`CLOB`** vem como objeto de fluxo por padrão. Para tamanhos moderados, configure a leitura como texto.\n- **String vazia** continua voltando `null`.\n\n### Encapsular no Nest\n\nUm *provider* (nest-02) cria o pool em `onModuleInit` e fecha em `onModuleDestroy` (nest-10), e oferece um método que empresta a conexão e garante a devolução. Em cima dele, um repositório por package, com métodos de nome de negócio (`aprovar(pedidoId, login)`) que escondem o bloco e os *binds*. O controller não sabe que existe Oracle.\n\nÉ isso que viabiliza a estratégia mais barata de mig-04: a tela nova chama a API, a API chama o package, e a regra testada há anos continua onde está.\n\n### Dois alertas de quem conhece sessão\n\n- **Estado de package vaza entre requisições.** A sessão é reaproveitada: variável global de package setada por um usuário pode ser lida na requisição de outro. Package chamado por API deve ser sem estado, ou a API reinicia o estado ao pegar a conexão.\n- **A identidade é do usuário de serviço.** `USER` é sempre o mesmo. Quem é a pessoa precisa ir por parâmetro ou por identificador de cliente na sessão (mig-10).",
+      "naPratica": "Para uma primeira API sobre um sistema legado, o desenho é este: um módulo Nest com o provider do pool, um repositório por package e um endpoint por operação de negócio. Em duas semanas existe API para a tela nova, sem reescrever uma linha de regra.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma conexão falsa que imita a regra do driver: nada é confirmado sem `commit`, e devolver a conexão desfaz o pendente. O que há na tabela depois de cada bloco?",
+          "codigo": "const tabela: string[] = [];\n\nclass Conexao {\n  private pendente: string[] = [];\n  execute(linha: string, opcoes: { autoCommit?: boolean } = {}) {\n    this.pendente.push(linha);\n    if (opcoes.autoCommit) this.commit();\n  }\n  commit() {\n    tabela.push(...this.pendente);\n    this.pendente = [];\n  }\n  close() {\n    this.pendente = []; // rollback do que ficou pendente\n  }\n}\n\nconst c1 = new Conexao();\nc1.execute('pedido 1');\nc1.close();\nconsole.log(tabela);\n\nconst c2 = new Conexao();\nc2.execute('pedido 2');\nc2.execute('item 2.1');\nc2.commit();\nc2.close();\nconsole.log(tabela);\n\nconst c3 = new Conexao();\nc3.execute('pedido 3', { autoCommit: true });\nc3.execute('item 3.1');\nc3.close();\nconsole.log(tabela);\n",
+          "saida": "[]\n[ 'pedido 2', 'item 2.1' ]\n[ 'pedido 2', 'item 2.1', 'pedido 3' ]\n",
+          "explicacao": "No primeiro bloco faltou o `commit`: a devolução da conexão desfez o pedido 1 e nenhum erro apareceu. No segundo, pedido e item valem juntos, como uma transação. No terceiro, o `autoCommit` confirmou o pedido 3 sozinho e o item ficou para trás: pedido sem item gravado. É o motivo para preferir um `commit` explícito no fim a `autoCommit` espalhado."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um identificador `NUMBER(19)` chega ao Node. O que acontece ao tratá-lo como `number`, e como texto convertido para `BigInt`?",
+          "codigo": "const idDoBanco = '9007199254740993'; // lido do banco como texto\n\nconsole.log(Number(idDoBanco));\nconsole.log(BigInt(idDoBanco) + 1n);\nconsole.log(Number.MAX_SAFE_INTEGER);\nconsole.log(0.1 + 0.2 === 0.3);\n",
+          "saida": "9007199254740992\n9007199254740994n\n9007199254740991\nfalse\n",
+          "explicacao": "`number` é ponto flutuante de 64 bits e só representa inteiros com exatidão até 9007199254740991. O id terminado em 993 virou 992 sem erro: outro registro. `BigInt` preserva o valor. A última linha é o mesmo problema nos decimais: valor monetário em `number` acumula erro. Por isso `NUMBER` grande ou monetário deve vir do driver como texto."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um endpoint chama uma procedure que faz `INSERT`, recebe os *binds* de saída sem erro e devolve `200`. No banco, a linha não aparece. A procedure não tem `COMMIT`. Qual a causa mais provável?",
+          "opcoes": [
+            "O modo thin não suporta DML dentro de procedure",
+            "Faltou `commit` na conexão: o driver não confirma sozinho e a devolução ao pool desfez a transação",
+            "O pool estava cheio e a chamada foi descartada",
+            "Os *binds* de saída estavam com `maxSize` pequeno"
+          ],
+          "correta": 1,
+          "explicacao": "No `node-oracledb` o `autoCommit` é falso por padrão. A chamada executou, os valores de saída voltaram, e ao fechar a conexão o que estava pendente foi desfeito. Quem vem de ORM espera confirmação automática. `maxSize` pequeno daria erro, não sumiço silencioso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um package guarda o código da filial numa variável global, preenchida por uma procedure de inicialização que a tela Forms chama no login. A API passa a usar o mesmo package com pool de conexões. Qual o risco?",
+          "opcoes": [
+            "Nenhum: cada requisição HTTP recebe uma sessão nova",
+            "A variável some a cada chamada, porque o pool reinicia os packages",
+            "A sessão é reaproveitada: uma requisição pode ler a filial deixada por outro usuário",
+            "O modo thin não enxerga variáveis de package"
+          ],
+          "correta": 2,
+          "explicacao": "Sessão de pool é compartilhada no tempo. O estado do package pertence à sessão e fica lá quando a conexão é devolvida. A próxima requisição que pegar essa conexão herda o valor. A API deve passar a filial por parâmetro ou reinicializar o estado a cada empréstimo da conexão."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, querem uma API para a tela nova, mas toda a regra de aprovação está num package. Vamos ter que reescrever tudo em TypeScript?\"",
+          "pontos": [
+            "Disse que não: o Node chama o package com binds de entrada e saída",
+            "Descreveu o desenho: pool, repositório por package, endpoint por operação",
+            "Citou os cuidados: commit explícito em um só lugar, estado de package, identidade do usuário",
+            "Tratou a reescrita como decisão separada, posterior e por módulo",
+            "Mencionou thin × thick como ponto a validar no ambiente"
+          ],
+          "modelo": "Não precisa. O driver oficial do Oracle para Node chama procedure e function de package com bind de entrada e de saída, e recebe REF CURSOR. A API vira uma casca fina: um repositório por package e um endpoint por operação, com a regra exatamente onde está hoje. Três cuidados que eu já sei que aparecem: definir quem dá o commit, a API ou o package, nunca os dois; conferir se o package guarda estado em variável global, porque a sessão vem de pool e é compartilhada; e passar o usuário real por parâmetro, já que o banco só vê o usuário de serviço. Reescrever em TypeScript fica como decisão posterior, módulo a módulo. Antes de prometer prazo, eu valido a conexão no nosso ambiente."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Esqueleto de um repositório sobre package",
+          "minutos": 30,
+          "passos": [
+            "Sem instalar nada e sem conectar a banco nenhum: abra a documentação do node-oracledb e leia as seções de pool de conexões, de execução de PL/SQL com binds e de REF CURSOR.",
+            "Em `estudo/oracle-repo.ts`, escreva o esqueleto de um provider com `onModuleInit`, `onModuleDestroy` e um método `comConexao` que empresta a conexão e a devolve no `finally`.",
+            "Escreva um repositório fictício `PedidoRepository` com `aprovar(pedidoId, login)`, que chama uma procedure genérica com dois binds de entrada e dois de saída e confirma no fim.",
+            "Anote em comentário, com o link da seção, cada opção ou constante que você conferiu na documentação e as que diferem dos exemplos desta lição.",
+            "Liste em três linhas o que você precisaria validar no ambiente real: modo thin ou thick, quem confirma a transação, estado de package."
+          ],
+          "prontoQuando": "O arquivo tem provider, repositório, os comentários com as seções conferidas e a lista de validações. Não precisa compilar nem executar."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "node-oracledb: thin × thick?",
+          "verso": "Thin: JavaScript puro, sem Oracle Client, padrão atual. Thick: usa as bibliotecas do client (`initOracleClient`), necessário para ambientes e recursos que o thin não cobre."
+        },
+        {
+          "frente": "Por que um `INSERT` feito pelo node-oracledb pode sumir sem erro?",
+          "verso": "`autoCommit` é falso por padrão. Sem `commit`, devolver a conexão ao pool desfaz a transação."
+        },
+        {
+          "frente": "O que um bind de saída precisa declarar?",
+          "verso": "Direção (`BIND_OUT`), tipo e, para texto, o tamanho máximo. Para REF CURSOR, o tipo cursor."
+        },
+        {
+          "frente": "Dois cuidados ao receber REF CURSOR no Node.",
+          "verso": "Buscar em lotes pelo result set e fechar sempre, no `finally`. Cursor aberto esquecido acaba em ORA-01000."
+        },
+        {
+          "frente": "Por que package com variável global é risco atrás de uma API?",
+          "verso": "A sessão vem de pool e é reaproveitada: o estado deixado por uma requisição pode ser lido por outra, de outro usuário."
+        },
+        {
+          "frente": "Por que trazer `NUMBER` grande ou monetário como texto?",
+          "verso": "`number` do JavaScript é ponto flutuante de 64 bits: perde precisão acima de 2 elevado a 53 e em decimais."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "node-oracledb — Documentação",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/"
+        },
+        {
+          "titulo": "node-oracledb — User Guide: Executing PL/SQL",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/user_guide/plsql_execution.html"
+        },
+        {
+          "titulo": "node-oracledb — Appendix: Thin and Thick mode differences",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/user_guide/appendix_a.html"
+        }
+      ]
+    },
+    {
+      "id": "dados-13",
+      "titulo": "Redis: cache, fila, trava e sessão",
+      "minutos": 10,
+      "ponte": "Imagine uma coleção `INDEX BY VARCHAR2` que não pertence a uma sessão: fica num servidor à parte, todas as instâncias da API leem e gravam nela, e cada chave pode ter prazo de validade. Isso é o Redis. A analogia quebra onde dói: não é banco transacional, não tem SQL nem `ROLLBACK`, e por padrão você deve tratar o conteúdo como algo que pode ser perdido.",
+      "texto": "O Redis é um servidor de estruturas de dados **em memória**: texto, *hash*, lista, conjunto, conjunto ordenado, *stream*. Duas propriedades explicam quase todos os usos:\n\n- **Os comandos são executados um por vez.** Cada comando é atômico sem você pedir lock. `INCR` nunca perde contagem.\n- **Toda chave pode ter TTL** (*time to live*, prazo de validade). O dado some sozinho.\n\nEle entra num projeto Nest por quatro portas.\n\n### 1. Cache\n\nO padrão é *cache-aside*: procura no Redis; se não achar, consulta o banco, grava no Redis com TTL e devolve. Ganha-se latência e alívio no banco para leitura repetida e cara. Paga-se com dado **velho por até um TTL** e com o problema da invalidação (nest-17, arq-09). Antes de pôr cache numa consulta lenta, faça o que você sabe fazer: olhe o plano (dados-08). Cache em cima de consulta sem índice esconde o defeito até o cache esvaziar.\n\n### 2. Fila\n\nO BullMQ (nest-15) guarda os *jobs* em estruturas do Redis: a API enfileira e responde, um processo trabalhador consome. É o papel que você daria a uma tabela de fila com job. Atenção operacional: fila não pode perder dado, então o Redis da fila precisa de persistência ligada e de política de memória que **não descarte** chaves. Um Redis configurado para cache faz exatamente o contrário. Em sistema sério, são instâncias separadas.\n\n### 3. Trava distribuída\n\nCom várias instâncias da API, um `Map` em memória não coordena nada. A trava no Redis é um comando só:\n\n```text\nSET trava:fechamento <token-aleatório> NX PX 30000\n```\n\n`NX` grava só se a chave não existe; `PX` dá validade em milissegundos, para a trava não ficar presa se o processo morrer. Para soltar, apague **só se o valor ainda for o seu token**, num script atômico. Sem o token, um processo lento apaga a trava que já é de outro.\n\nA limitação que você precisa dizer em voz alta: se o trabalho demora mais que o TTL, a trava vence e dois processos rodam ao mesmo tempo. Trava com prazo é **redução de concorrência, não garantia**. A operação protegida deve continuar segura sozinha: restrição única, versão (dados-06) ou idempotência. O paralelo com o que você conhece é `DBMS_LOCK`, e o Postgres tem o equivalente (*advisory lock*), sem prazo e preso à sessão.\n\n### 4. Sessão e dados de vida curta\n\nSessão de usuário, lista de tokens revogados (seg-04), código de confirmação, contador de *rate limit* (seg-11): dados pequenos, lidos a cada requisição, que expiram sozinhos e precisam ser vistos por todas as instâncias. TTL nativo resolve o expurgo que no banco exigiria um job.\n\n### Quando não precisa\n\nRedis é mais um serviço para subir, monitorar, proteger e atualizar. Cada uso tem uma alternativa sem ele:\n\n| Uso | Alternativa só com Postgres |\n|---|---|\n| Cache | Índice certo, consulta melhor, *materialized view* |\n| Fila | Tabela de jobs com `FOR UPDATE SKIP LOCKED` |\n| Trava | *Advisory lock* ou restrição única |\n| Sessão | Tabela de sessão com expurgo agendado |\n\nCom uma instância e volume modesto, essas alternativas funcionam e deixam uma peça a menos para quebrar. O Redis passa a valer quando há **várias instâncias** que precisam compartilhar estado rápido, **volume de fila** que pesaria no banco transacional, ou **leitura repetida** medida e comprovadamente cara.\n\n### O critério\n\nPergunte três coisas antes de aceitar Redis num desenho. O que acontece se ele cair: a API degrada ou para? O que acontece se ele perder tudo: é cache (reconstrói) ou é fila (perdeu trabalho)? E quem vai operar? Se a resposta para a primeira for \"para tudo\", ele virou dependência crítica e merece o mesmo cuidado do banco.",
+      "naPratica": "O Cockpit, com uma instância e um usuário, não precisa de Redis: o lembrete agendado cabe numa tabela e o cache não se paga. Saber dizer isso num desenho, com a tabela de alternativas na cabeça, é mais sênior do que saber configurar o BullMQ.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um Redis falso com relógio manual, só com `SET NX` com prazo e soltura por token. O processo A demora mais que o prazo da trava. O que sai?",
+          "codigo": "let agora = 0;\nconst chaves = new Map<string, { valor: string; expira: number }>();\n\nfunction setNx(chave: string, valor: string, ttl: number): boolean {\n  const atual = chaves.get(chave);\n  if (atual && atual.expira > agora) return false;\n  chaves.set(chave, { valor, expira: agora + ttl });\n  return true;\n}\n\nfunction solta(chave: string, token: string): boolean {\n  if (chaves.get(chave)?.valor !== token) return false;\n  return chaves.delete(chave);\n}\n\nconsole.log('A pega:', setNx('trava', 'A', 30));\nconsole.log('B pega:', setNx('trava', 'B', 30));\nagora = 40; // A ainda está processando; o prazo da trava venceu\nconsole.log('B pega:', setNx('trava', 'B', 30));\nconsole.log('A solta:', solta('trava', 'A'));\nconsole.log('B solta:', solta('trava', 'B'));\n",
+          "saida": "A pega: true\nB pega: false\nB pega: true\nA solta: false\nB solta: true\n",
+          "explicacao": "Enquanto a trava de A vale, B é recusado. Aos 40, o prazo de 30 venceu e B consegue a trava com A **ainda trabalhando**: dois processos na seção crítica. Quando A termina e tenta soltar, o token não confere e a trava de B é preservada. O token evita o segundo erro; o primeiro não tem remédio dentro da trava, e é por isso que a operação precisa ser segura por si."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Cache-aside com TTL de 60 e relógio manual. Quantas idas ao \"banco\" acontecem, e que valor cada leitura devolve?",
+          "codigo": "let agora = 0;\nlet idasAoBanco = 0;\nconst cache = new Map<string, { valor: number; expira: number }>();\n\nfunction totalDoDia(dia: string): number {\n  const c = cache.get(dia);\n  if (c && c.expira > agora) return c.valor;\n  idasAoBanco++;\n  const valor = 100 + idasAoBanco; // a \"consulta cara\"; o dado muda a cada ida\n  cache.set(dia, { valor, expira: agora + 60 });\n  return valor;\n}\n\nconsole.log(totalDoDia('seg'), totalDoDia('seg'), 'idas:', idasAoBanco);\nagora = 30;\nconsole.log(totalDoDia('seg'), 'idas:', idasAoBanco);\nagora = 61;\nconsole.log(totalDoDia('seg'), 'idas:', idasAoBanco);\n",
+          "saida": "101 101 idas: 1\n101 idas: 1\n102 idas: 2\n",
+          "explicacao": "A primeira leitura vai ao banco e guarda 101. As seguintes, dentro do prazo, devolvem 101 sem consultar, mesmo que o dado real já tenha mudado: é o dado velho por até um TTL. Aos 61 a entrada venceu, há nova ida ao banco e o valor atual, 102, aparece. Escolher o TTL é escolher por quanto tempo aceitar o valor antigo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A equipe usa a mesma instância Redis para cache e para a fila de jobs, com política de memória que descarta chaves antigas quando enche. Qual o risco?",
+          "opcoes": [
+            "Nenhum: o Redis separa cache e fila automaticamente",
+            "O cache fica lento por causa da fila",
+            "Ao encher a memória, o Redis pode descartar chaves da fila: jobs somem sem erro",
+            "Os jobs passam a rodar em duplicidade"
+          ],
+          "correta": 2,
+          "explicacao": "Para o Redis, tudo são chaves. A política de descarte que é saudável para cache apaga dados da fila quando falta memória. Fila pede política sem descarte e persistência; cache pede o oposto. Por isso instâncias, ou ao menos configurações, separadas."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a listagem está lenta. Vamos colocar um Redis na frente e cachear?\"",
+          "pontos": [
+            "Pediu primeiro a medição: qual consulta, quantas execuções, qual plano",
+            "Citou as causas mais prováveis e mais baratas: N+1, falta de índice, colunas demais",
+            "Disse o custo do cache: dado velho, invalidação e mais um serviço para operar",
+            "Disse quando o cache se justifica: leitura repetida e cara, já otimizada na origem"
+          ],
+          "modelo": "Antes do Redis eu quero ver o log de query dessa listagem. Na maior parte das vezes a lentidão é N+1 ou falta de índice, e isso se resolve em uma tarde, sem peça nova. Cache em cima de consulta ruim só esconde o problema até a chave expirar, e aí o usuário pega a consulta lenta inteira. Além disso o cache cobra: o dado fica velho por um tempo, a gente passa a ter que invalidar em toda gravação, e o Redis é mais um serviço para monitorar. Se depois de arrumar a consulta ela continuar cara e for lida muitas vezes com o mesmo resultado, aí sim cache faz sentido, com TTL curto e regra clara de invalidação."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as duas propriedades do Redis que explicam os seus usos?",
+          "verso": "Comandos executados um por vez (cada um é atômico) e TTL por chave (o dado expira sozinho)."
+        },
+        {
+          "frente": "Por que uma trava com TTL no Redis não é garantia de exclusão?",
+          "verso": "Se o trabalho passa do prazo, a trava vence e outro processo entra. A operação precisa ser segura sozinha: restrição única, versão ou idempotência."
+        },
+        {
+          "frente": "Para que serve o token na trava do Redis?",
+          "verso": "Para soltar só a própria trava. Sem ele, um processo atrasado apaga a trava que já pertence a outro."
+        },
+        {
+          "frente": "Por que não misturar cache e fila na mesma configuração de Redis?",
+          "verso": "Cache aceita descarte de chaves e perda de dados; fila não. A política de descarte do cache apaga jobs."
+        },
+        {
+          "frente": "Alternativas no Postgres para fila e para trava.",
+          "verso": "Fila: tabela de jobs com `FOR UPDATE SKIP LOCKED`. Trava: advisory lock ou restrição única."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Redis — Documentação",
+          "url": "https://redis.io/docs/latest/"
+        },
+        {
+          "titulo": "Redis — Distributed locks",
+          "url": "https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/"
+        },
+        {
+          "titulo": "BullMQ — Documentação",
+          "url": "https://docs.bullmq.io/"
+        }
+      ]
+    }
+  ]
+}

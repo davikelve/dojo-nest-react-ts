@@ -1,0 +1,10 @@
+node_modules/
+# o seu progresso e os seus rascunhos ficam só na sua máquina
+meu-progresso/
+estudo/
+chefoes/
+cockpit/
+# placares gerados
+placar-links.json
+*.log
+.env

@@ -1,0 +1,1055 @@
+{
+  "licoes": [
+    {
+      "id": "js-01",
+      "titulo": "Valor × referência, igualdade e imutabilidade",
+      "minutos": 10,
+      "ponte": "Em PL/SQL, atribuir um *record* a outro **copia** os campos, e um parâmetro `IN` não pode ser alterado pela rotina. Só com `IN OUT NOCOPY` a rotina mexe na variável de quem chamou. Em JavaScript todo objeto se comporta como `IN OUT NOCOPY`, sem você declarar nada. Onde a analogia quebra: não existe um modo `IN` que proteja o objeto. A proteção é disciplina do time.",
+      "texto": "Em JavaScript existem dois tipos de valor, e a diferença decide o que uma atribuição faz.\n\n- **Primitivos** (`string`, `number`, `boolean`, `null`, `undefined`, `bigint`, `symbol`): a variável guarda o valor. Atribuir copia o valor.\n- **Objetos** (objeto literal, array, função, `Date`, `Map`): a variável guarda uma **referência** (o endereço do objeto). Atribuir copia o endereço. As duas variáveis passam a apontar para o mesmo objeto.\n\n```js\nconst a = { n: 1 };\nconst b = a;      // mesma referência\nb.n = 2;\nconsole.log(a.n); // 2\n```\n\n`const` não muda isso. `const` impede **reatribuir a variável**, não impede alterar o objeto apontado.\n\n### Igualdade\n\nUse sempre `===` (igualdade estrita: compara sem converter tipo). O `==` converte antes de comparar (`1 == '1'` é verdadeiro) e a tabela de conversão não vale o custo de decorar. A exceção aceita em muitos times é `x == null`, que pega `null` e `undefined` de uma vez.\n\nPara objetos, `===` compara **a referência**, não o conteúdo. Dois objetos com os mesmos campos são diferentes. Não existe comparação de conteúdo embutida na linguagem: ou você compara campo a campo, ou compara uma chave (`a.id === b.id`), que é quase sempre o que a regra de negócio pede.\n\n### Por que mutar o que você recebeu é bug\n\nUma função que recebe um objeto recebe a referência. Se ela altera um campo, altera o objeto de quem chamou e de todo mundo que guarda a mesma referência: o cache, a lista da tela, o log. O defeito aparece longe da causa. Por isso a convenção no TypeScript moderno é **imutabilidade por disciplina**: função não altera argumento, devolve um objeto novo.\n\n```js\nconst concluida = { ...tarefa, feita: true };      // objeto novo\nconst comMais = [...lista, nova];                 // array novo\nconst semUma = lista.filter((t) => t.id !== id);  // array novo\n```\n\nNo React isso deixa de ser estilo e vira requisito: ele decide se redesenha a tela comparando referências. Objeto mutado tem a mesma referência, e a tela não atualiza.\n\n### Cópia rasa × cópia profunda\n\nO *spread* (`{ ...obj }`, `[...arr]`) faz **cópia rasa** (*shallow copy*): copia só o primeiro nível. Campos que são objetos continuam compartilhados. `structuredClone(obj)` faz **cópia profunda** (*deep copy*): duplica a árvore inteira. Ele existe no Node e nos navegadores, copia `Date`, `Map` e `Set` corretamente e falha se houver função dentro do objeto.\n\nCritério de sênior: cópia profunda é cara e raramente necessária. O padrão é copiar **só o caminho que muda**:\n\n```js\nconst novo = { ...tarefa, prazo: { ...tarefa.prazo, dia: 12 } };\n```\n\nSe você precisa de `structuredClone` a toda hora, o desenho provavelmente está mutando o que não devia.",
+      "naPratica": "No Cockpit, um service que recebe o DTO e faz `dto.titulo = dto.titulo.trim()` altera o objeto que o controller ainda vai logar. No front, `tarefas.push(nova)` seguido de `setTarefas(tarefas)` não redesenha a lista. Os dois defeitos somem quando a regra do time é devolver objeto novo.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Atribuição de primitivo e de objeto. O que sai em cada linha?",
+          "codigo": "let a = 10;\nlet b = a;\nb = 20;\n\nconst p = { nome: 'Ana' };\nconst q = p;\nq.nome = 'Bia';\n\nconsole.log(a, b);\nconsole.log(p.nome, q.nome);\nconsole.log(p === q);\n",
+          "saida": "10 20\nBia Bia\ntrue\n",
+          "explicacao": "`b = a` copiou o número: mudar `b` não toca em `a`. `q = p` copiou a referência: `p` e `q` são o mesmo objeto, então a alteração aparece nos dois e `p === q` é verdadeiro. O `const` não impediu nada, porque nenhuma variável foi reatribuída."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Seis comparações. Escreva verdadeiro ou falso para cada uma antes de rodar.",
+          "codigo": "console.log({ id: 1 } === { id: 1 });\nconsole.log([1, 2] === [1, 2]);\nconsole.log('ab' === 'a' + 'b');\nconsole.log(1 == '1', 1 === '1');\nconsole.log(null == undefined, null === undefined);\nconsole.log(NaN === NaN, Object.is(NaN, NaN));\n",
+          "saida": "false\nfalse\ntrue\ntrue false\ntrue false\nfalse true\n",
+          "explicacao": "Dois literais criam dois objetos: referências diferentes, mesmo com conteúdo igual. String é primitivo e compara por valor. O `==` converte `'1'` em número; o `===` não converte. `null == undefined` é o único caso útil do `==`. `NaN` não é igual a nada, nem a si mesmo: para testar use `Number.isNaN` ou `Object.is`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Uma cópia rasa e uma profunda da mesma tarefa. O que sobra na original?",
+          "codigo": "const tarefa = { titulo: 'Revisar PR', tags: ['git'], prazo: { dia: 10 } };\nconst rasa = { ...tarefa };\nconst funda = structuredClone(tarefa);\n\nrasa.titulo = 'Outro';\nrasa.tags.push('urgente');\nfunda.prazo.dia = 99;\n\nconsole.log(tarefa.titulo);\nconsole.log(tarefa.tags);\nconsole.log(tarefa.prazo.dia);\n",
+          "saida": "Revisar PR\n[ 'git', 'urgente' ]\n10\n",
+          "explicacao": "A cópia rasa tem o próprio `titulo` (primitivo, copiado), mas `rasa.tags` é o **mesmo array** da original: o `push` vazou. A cópia profunda duplicou tudo, então mudar `funda.prazo.dia` não afeta a original."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Duas formas de concluir uma tarefa. Qual delas altera o objeto de quem chamou?",
+          "codigo": "function concluir(tarefa) {\n  tarefa.feita = true;\n  return tarefa;\n}\nfunction concluirSemMutar(tarefa) {\n  return { ...tarefa, feita: true };\n}\n\nconst original = { id: 1, feita: false };\nconst x = concluir(original);\nconsole.log(original.feita, x === original);\n\nconst outra = { id: 2, feita: false };\nconst y = concluirSemMutar(outra);\nconsole.log(outra.feita, y.feita, y === outra);\n",
+          "saida": "true true\nfalse true false\n",
+          "explicacao": "`concluir` alterou o objeto recebido e devolveu a mesma referência: quem chamou teve o dado mudado sem pedir. `concluirSemMutar` devolveu um objeto novo e deixou o original como estava."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O TypeScript ajuda a manter a disciplina. Este trecho compila?",
+          "codigo": "type Tarefa = { readonly id: number; titulo: string };\n\nfunction renomear(t: Readonly<Tarefa>, titulo: string): Tarefa {\n  t.titulo = titulo;\n  return t;\n}\n",
+          "compila": false,
+          "erro": "TS2540",
+          "linha": 4,
+          "explicacao": "`Readonly<Tarefa>` marca todos os campos como somente leitura dentro da função, e a atribuição vira erro de compilação. É uma proteção só de compilação e só do primeiro nível: em execução o objeto continua mutável. O certo aqui é `return { ...t, titulo }`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num componente React, `tarefas.push(nova); setTarefas(tarefas);` não atualiza a lista na tela. Por quê?",
+          "opcoes": [
+            "Porque `push` é assíncrono e o `setTarefas` roda antes dele",
+            "Porque `tarefas` foi declarado com `const` e o `push` é ignorado",
+            "Porque o array é o mesmo objeto de antes: a referência não mudou e o React conclui que nada mudou",
+            "Porque o React só aceita arrays criados com `structuredClone`"
+          ],
+          "correta": 2,
+          "explicacao": "O `push` altera o array no lugar e a referência continua a mesma. O React compara a referência antiga com a nova, vê que são iguais e não redesenha. `setTarefas([...tarefas, nova])` cria um array novo. O `const` não bloqueia `push`: ele só impede reatribuir a variável."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`const lista = []; lista.push(1);` dá erro?",
+          "verso": "Não. `const` impede reatribuir a variável, não impede alterar o objeto para o qual ela aponta."
+        },
+        {
+          "frente": "O que `===` compara quando os dois lados são objetos?",
+          "verso": "A referência (é o mesmo objeto?), nunca o conteúdo. `{ id: 1 } === { id: 1 }` é falso."
+        },
+        {
+          "frente": "Por que uma função não deve mutar o objeto que recebeu?",
+          "verso": "Ela recebe a referência: a mudança atinge quem chamou e todos que guardam o mesmo objeto. O defeito aparece longe da causa. Devolva um objeto novo."
+        },
+        {
+          "frente": "Cópia rasa (`{ ...obj }`) × `structuredClone(obj)`",
+          "verso": "Rasa copia só o primeiro nível: objetos internos continuam compartilhados. `structuredClone` duplica a árvore inteira, mas é caro e falha com funções."
+        },
+        {
+          "frente": "Como alterar um campo aninhado sem mutar?",
+          "verso": "Copie só o caminho que muda: `{ ...t, prazo: { ...t.prazo, dia: 12 } }`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Equality comparisons and sameness",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness"
+        },
+        {
+          "titulo": "MDN — Glossário: Deep copy",
+          "url": "https://developer.mozilla.org/en-US/docs/Glossary/Deep_copy"
+        },
+        {
+          "titulo": "React — Updating Objects in State",
+          "url": "https://react.dev/learn/updating-objects-in-state"
+        }
+      ]
+    },
+    {
+      "id": "js-02",
+      "titulo": "Desestruturação, spread, optional chaining e ??",
+      "minutos": 10,
+      "ponte": "Você já escreve `SELECT nome, email INTO v_nome, v_email` para tirar campos de uma linha, e `NVL(v_limite, 10)` para dar um padrão. Desestruturação é o `INTO` de um objeto, e `??` é o `NVL`. Onde quebra: aqui existem **dois** vazios (`null` e `undefined`), e a string vazia `''` **não** é nula como no Oracle.",
+      "texto": "Quatro sintaxes aparecem em quase toda linha de código TypeScript moderno. Nenhuma é difícil. O que derruba é o detalhe de cada uma.\n\n### Desestruturação\n\n*Destructuring* (desestruturação) tira campos de um objeto ou posições de um array para variáveis.\n\n```js\nconst { titulo, prioridade = 'media', dono: responsavel } = tarefa;\nconst [primeiro, segundo] = lista;\n```\n\n- `prioridade = 'media'` é o **valor padrão**. Ele só entra quando o campo é `undefined`. Se vier `null`, fica `null`.\n- `dono: responsavel` **renomeia**: lê o campo `dono` e cria a variável `responsavel`. A variável `dono` não existe.\n\nFunciona também na assinatura da função, que é como todo componente React recebe as *props*: `function Cartao({ titulo, feita = false }) { ... }`.\n\n### Spread e rest\n\nOs três pontos fazem duas coisas opostas, conforme o lugar.\n\n- **Spread** (espalhar), do lado direito: `{ ...padrao, ...pedido }` monta um objeto novo com os campos dos dois. **O último vence.** A armadilha: um campo presente com valor `undefined` também vence e apaga o padrão.\n- **Rest** (o resto), do lado esquerdo ou em parâmetro: `const { senha, ...publico } = usuario` separa um campo e junta os outros em `publico`. É o jeito idiomático de tirar um campo sem mutar.\n\n### Optional chaining\n\n`a?.b` (encadeamento opcional) devolve `undefined` se `a` for `null` ou `undefined`, em vez de estourar `TypeError`. Vale para campo (`u?.nome`), índice (`lista?.[0]`) e chamada (`fn?.()`). Ele interrompe a expressão inteira naquele ponto.\n\nCritério: use `?.` onde a ausência é **legítima** (campo opcional, relação que pode não existir). Não use para calar erro. `pedido?.cliente?.nome` num lugar em que o cliente é obrigatório esconde um defeito e empurra um `undefined` para a tela.\n\n### `??` contra `||`\n\nOs dois dão um valor padrão, com critérios diferentes.\n\n- `a ?? b` usa `b` só quando `a` é `null` ou `undefined`.\n- `a || b` usa `b` quando `a` é qualquer valor *falsy* (que conta como falso num teste): `null`, `undefined`, `0`, `''`, `false`, `NaN`.\n\n`limite || 10` troca um `0` legítimo por `10`. `desconto || 5` ignora o desconto zero. A regra prática: **para valor padrão, `??`**. Deixe o `||` para lógica booleana de verdade.\n\nExiste também a atribuição `a ??= b`, que só atribui se `a` estiver vazio.",
+      "naPratica": "No Cockpit, a paginação da API lê `query.pagina ?? 1` e `query.tamanho ?? 20`. Com `||`, um filtro `minutos=0` ou um texto de busca vazio seria trocado pelo padrão sem ninguém perceber. Em review, todo `||` usado para valor padrão merece a pergunta: zero e string vazia são válidos aqui?",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Desestruturação com rename e valores padrão. Atenção ao `null` e ao `undefined`.",
+          "codigo": "const tarefa = { id: 7, titulo: 'Estudar', prioridade: undefined, dono: null };\n\nconst { titulo: nome, prioridade = 'media', dono = 'ninguem', extra = 1 } = tarefa;\nconsole.log(nome, prioridade, dono, extra);\n\nconst [primeiro, , terceiro = 'c', ...resto] = ['a', 'b', undefined, 'd', 'e'];\nconsole.log(primeiro, terceiro, resto);\n",
+          "saida": "Estudar media null 1\na c [ 'd', 'e' ]\n",
+          "explicacao": "O padrão entra quando o valor é `undefined` (campo `prioridade`) ou quando o campo não existe (`extra`). `dono` é `null`, e `null` **não** dispara o padrão. No array, a vírgula vazia pula a segunda posição, a terceira é `undefined` e recebe o padrão, e `...resto` junta o que sobrou."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Em cada linha, o mesmo campo com `||` e com `??`. O que sai?",
+          "codigo": "const config = { limite: 0, nome: '', ativo: false, tema: null };\n\nconsole.log(config.limite || 10, config.limite ?? 10);\nconsole.log(config.nome || 'sem nome', JSON.stringify(config.nome ?? 'sem nome'));\nconsole.log(config.ativo || true, config.ativo ?? true);\nconsole.log(config.tema || 'claro', config.tema ?? 'claro');\nconsole.log(config.pagina || 1, config.pagina ?? 1);\n",
+          "saida": "10 0\nsem nome \"\"\ntrue false\nclaro claro\n1 1\n",
+          "explicacao": "`0`, `''` e `false` são falsy: o `||` joga fora os três e usa o padrão. O `??` só troca `null` e `undefined`, então mantém o `0`, a string vazia e o `false`. Nas duas últimas linhas (`null` e campo inexistente) os dois operadores concordam."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Onde o `?.` salva e onde a falta dele estoura?",
+          "codigo": "const usuario = { nome: 'Davi', equipe: null, saudacao() { return 'oi'; } };\n\nconsole.log(usuario.equipe?.nome);\nconsole.log(usuario.endereco?.cidade ?? 'sem cidade');\nconsole.log(usuario.saudacao?.(), usuario.despedida?.());\nconsole.log(usuario.tags?.[0]);\ntry {\n  console.log(usuario.endereco.cidade);\n} catch (e) {\n  console.log(e.constructor.name);\n}\n",
+          "saida": "undefined\nsem cidade\noi undefined\nundefined\nTypeError\n",
+          "explicacao": "`?.` devolve `undefined` quando o que está à esquerda é `null` (equipe) ou `undefined` (endereco, despedida, tags). Combinado com `??`, vira um padrão legível. Sem o `?.`, ler `.cidade` de `undefined` lança `TypeError`, o erro mais comum do JavaScript."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Spread: quem vence, e o que o `undefined` faz com o padrão?",
+          "codigo": "const padrao = { pagina: 1, tamanho: 20, ordem: 'asc' };\nconst pedido = { tamanho: 50, ordem: undefined };\n\nconsole.log({ ...padrao, ...pedido });\nconsole.log({ ...pedido, ...padrao });\n\nconst { pagina, ...resto } = padrao;\nconsole.log(pagina, resto);\n\nconst conta = (...nums) => nums.length;\nconsole.log(conta(...[1, 2, 3], 4));\n",
+          "saida": "{ pagina: 1, tamanho: 50, ordem: undefined }\n{ tamanho: 20, ordem: 'asc', pagina: 1 }\n1 { tamanho: 20, ordem: 'asc' }\n4\n",
+          "explicacao": "No spread o último vence, inclusive quando o valor é `undefined`: `ordem` perdeu o padrão `'asc'` na primeira linha. Invertendo a ordem, o padrão sobrescreve o pedido. A ordem das chaves segue a da primeira aparição. `...resto` na desestruturação junta o que não foi nomeado; `...nums` no parâmetro junta os argumentos num array."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O campo `equipe` é opcional. O compilador aceita este acesso?",
+          "codigo": "type Usuario = { nome: string; equipe?: { nome: string } };\n\nfunction nomeDaEquipe(u: Usuario): string {\n  return u.equipe.nome;\n}\n",
+          "compila": false,
+          "erro": "TS18048",
+          "linha": 4,
+          "explicacao": "Com `strict`, o compilador sabe que `u.equipe` pode ser `undefined` e recusa o acesso direto. As saídas honestas são `u.equipe?.nome ?? 'sem equipe'` ou um `if` que trate a ausência. É o `TypeError` do exercício anterior pego antes de rodar."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um endpoint aceita `?desconto=0`. O código faz `const d = desconto || 5`. Qual é o defeito?",
+          "opcoes": [
+            "Nenhum: `||` e `??` são equivalentes para números",
+            "O desconto zero é falsy e vira 5: o cliente sem desconto ganha 5",
+            "O código lança `TypeError` quando `desconto` é zero",
+            "O `||` converte o resultado para booleano e `d` vira `true`"
+          ],
+          "correta": 1,
+          "explicacao": "`0` é falsy, então `0 || 5` devolve `5`. O `??` só substitui `null` e `undefined` e manteria o zero. O `||` não converte o resultado: ele devolve um dos dois operandos como está."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`a ?? b` × `a || b`: qual a diferença?",
+          "verso": "`??` usa `b` só se `a` for `null` ou `undefined`. `||` usa `b` para qualquer falsy, inclusive `0`, `''` e `false`."
+        },
+        {
+          "frente": "Na desestruturação, quando o valor padrão (`{ x = 1 }`) é aplicado?",
+          "verso": "Só quando o campo é `undefined` ou não existe. `null` não dispara o padrão."
+        },
+        {
+          "frente": "Por que não espalhar `?.` em todo acesso?",
+          "verso": "Ele transforma erro em `undefined` silencioso. Onde o dado é obrigatório, a ausência é defeito e deve aparecer, não ser escondida."
+        },
+        {
+          "frente": "`{ ...padrao, ...pedido }`: o que acontece se `pedido.ordem` for `undefined`?",
+          "verso": "O `undefined` vence e apaga o padrão. No spread o último ganha, mesmo sendo `undefined`."
+        },
+        {
+          "frente": "Como tirar o campo `senha` de um objeto sem mutar?",
+          "verso": "`const { senha, ...publico } = usuario;` O rest junta os outros campos num objeto novo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Optional chaining (?.)",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Optional_chaining"
+        },
+        {
+          "titulo": "MDN — Nullish coalescing operator (??)",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing"
+        },
+        {
+          "titulo": "MDN — Spread syntax (...)",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax"
+        }
+      ]
+    },
+    {
+      "id": "js-03",
+      "titulo": "Arrays: map, filter, reduce, find, sort e as armadilhas",
+      "minutos": 11,
+      "ponte": "Você pensa em conjuntos: `WHERE` filtra, a lista do `SELECT` transforma, `SUM` agrega, `EXISTS` testa. Os métodos de array são o mesmo raciocínio aplicado a uma coleção em memória: `filter`, `map`, `reduce`, `some`. Onde quebra: não há otimizador nem índice. Cada método percorre o array inteiro, e filtrar em memória o que o banco filtraria é desperdício.",
+      "texto": "No código TypeScript do dia a dia, o laço `for` com índice é raro. O trabalho com coleção é feito com métodos que recebem uma função e devolvem um resultado **novo**, sem alterar o array original.\n\n| método | devolve | equivalente mental em SQL |\n|---|---|---|\n| `map(fn)` | array do mesmo tamanho, transformado | lista do `SELECT` |\n| `filter(fn)` | array com os que passaram | `WHERE` |\n| `find(fn)` | o **primeiro** que passou, ou `undefined` | `WHERE ... FETCH FIRST 1 ROW` |\n| `some(fn)` / `every(fn)` | booleano | `EXISTS` / `NOT EXISTS` do contrário |\n| `reduce(fn, inicial)` | um valor acumulado | `SUM`, `COUNT`, `GROUP BY` |\n| `flatMap(fn)` | `map` e depois achata um nível | `JOIN` que multiplica linhas |\n\n```js\nconst minutos = tarefas\n  .filter((t) => !t.feita)\n  .map((t) => t.minutos)\n  .reduce((soma, m) => soma + m, 0);\n```\n\n### Os detalhes que mordem\n\n- **`find` devolve `undefined`** quando não acha. O compilador obriga você a tratar, e está certo.\n- **`reduce` sem valor inicial** usa o primeiro elemento como acumulador e lança `TypeError` em array vazio. Passe sempre o inicial.\n- **`every` em array vazio é `true`** e `some` é `false`. É lógica correta (\"nenhum elemento contraria\"), mas \"todas as tarefas estão feitas\" numa lista vazia libera coisa indevida.\n- **Função com chaves precisa de `return`.** `map((n) => { n * 2; })` devolve um array de `undefined`.\n- **`map` passa três argumentos** para a função: elemento, índice e o array. `['1','2','3'].map(parseInt)` usa o índice como base numérica e devolve `[1, NaN, NaN]`.\n\n### `sort`: duas armadilhas num método só\n\n1. **`sort` muta o array original** e devolve a mesma referência. É a exceção perigosa entre os métodos acima. Também mutam: `reverse`, `splice`, `push`, `pop`, `shift`, `unshift`.\n2. **Sem função de comparação, `sort` ordena como texto.** Os números viram string, e `10` vem antes de `9`.\n\n```js\nnums.sort((a, b) => a - b);                    // numérico crescente\nnomes.sort((a, b) => a.localeCompare(b, 'pt-BR')); // texto com acento\n```\n\nPara não mutar, use as versões que devolvem cópia: `toSorted`, `toReversed`, `toSpliced` e `with` (ES2023, disponíveis no Node atual e nos navegadores atuais).\n\n### Critério de sênior\n\n- Cadeia de `filter` e `map` é clara e suficiente para listas de tela. Não troque por `reduce` para \"ganhar desempenho\" sem medir: `reduce` complicado é o código mais difícil de revisar que existe.\n- `find` dentro de `map` é um laço dentro de outro. Com milhares de itens, monte um `Map` por id antes.\n- Ordenar, filtrar e paginar dez mil linhas em memória é sinal de que a consulta devia ter feito isso. Você sabe disso melhor do que a maioria dos devs de front.",
+      "naPratica": "No Cockpit, o plano do dia chega da API já filtrado e ordenado pelo banco. O front só usa `map` para desenhar e `filter` para a aba \"pendentes\". Um `tarefas.sort(...)` direto sobre o dado que veio do TanStack Query muta o cache e embaralha outras telas: use `toSorted`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "`sort` sem e com função de comparação, e `toSorted`. O que sai?",
+          "codigo": "const nums = [10, 9, 1, 100, 25];\nconst ordenado = nums.sort();\nconsole.log(ordenado);\nconsole.log(nums === ordenado);\nconsole.log(nums.sort((a, b) => a - b));\n\nconst letras = ['b', 'a', 'c'];\nconst copia = letras.toSorted();\nconsole.log(letras, copia);\n",
+          "saida": "[ 1, 10, 100, 25, 9 ]\ntrue\n[ 1, 9, 10, 25, 100 ]\n[ 'b', 'a', 'c' ] [ 'a', 'b', 'c' ]\n",
+          "explicacao": "Sem comparador, `sort` compara como texto: `'100'` vem antes de `'25'`, que vem antes de `'9'`. Ele alterou `nums` e devolveu a mesma referência (`true`). Com `(a, b) => a - b` a ordem é numérica. `toSorted` devolveu uma cópia ordenada e deixou `letras` intacto."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Filtrar, transformar, somar, buscar e testar. Atenção à última linha, com array vazio.",
+          "codigo": "const tarefas = [\n  { titulo: 'A', min: 30, feita: true },\n  { titulo: 'B', min: 45, feita: false },\n  { titulo: 'C', min: 15, feita: true },\n];\n\nconst feitas = tarefas.filter((t) => t.feita).map((t) => t.titulo);\nconst total = tarefas.reduce((soma, t) => soma + t.min, 0);\nconsole.log(feitas, total);\nconsole.log(tarefas.find((t) => t.min > 100));\nconsole.log(tarefas.some((t) => !t.feita), tarefas.every((t) => t.feita));\nconsole.log([].every((t) => t.feita), [].some((t) => t.feita));\n",
+          "saida": "[ 'A', 'C' ] 90\nundefined\ntrue false\ntrue false\n",
+          "explicacao": "`filter` e `map` em cadeia dão os títulos das feitas; `reduce` com inicial `0` soma os minutos. `find` sem resultado devolve `undefined`, não lança erro. Em array vazio, `every` é `true` (nenhum elemento falhou no teste) e `some` é `false` (nenhum passou)."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Cinco linhas com cara de inocentes. Duas delas não fazem o que parecem.",
+          "codigo": "console.log(['1', '2', '3'].map(parseInt));\nconsole.log(['1', '2', '3'].map(Number));\nconsole.log([[1, 2], [3]].flatMap((x) => x));\nconsole.log(['a b', 'c'].flatMap((s) => s.split(' ')));\nconsole.log([1, 2, 3].map((n) => { n * 2; }));\n",
+          "saida": "[ 1, NaN, NaN ]\n[ 1, 2, 3 ]\n[ 1, 2, 3 ]\n[ 'a', 'b', 'c' ]\n[ undefined, undefined, undefined ]\n",
+          "explicacao": "`map` chama a função com (elemento, índice): `parseInt('2', 1)` e `parseInt('3', 2)` usam o índice como base e dão `NaN`. `Number` só olha o primeiro argumento. `flatMap` transforma e achata um nível. Na última linha, a arrow com chaves não tem `return`: cada volta devolve `undefined`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`find` pode não achar nada. O compilador deixa usar o resultado direto?",
+          "codigo": "const tarefas = [{ id: 1, titulo: 'A' }];\n\nconst t = tarefas.find((x) => x.id === 2);\nconsole.log(t.titulo);\n",
+          "compila": false,
+          "erro": "TS18048",
+          "linha": 4,
+          "explicacao": "O tipo de `find` é `T | undefined`. O compilador exige que você decida o que fazer quando não acha: um `if (!t)` que lança erro de \"não encontrado\", ou `t?.titulo` se a ausência for legítima."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um componente recebe `tarefas` por props e faz `const ordenadas = tarefas.sort((a, b) => a.ordem - b.ordem)`. Qual é o problema?",
+          "opcoes": [
+            "Nenhum: `sort` devolve um array novo ordenado",
+            "`sort` com função de comparação ordena como texto",
+            "`sort` altera o array recebido: o dono do dado (o pai ou o cache) fica com a lista reordenada sem saber",
+            "`sort` é assíncrono e `ordenadas` é uma Promise"
+          ],
+          "correta": 2,
+          "explicacao": "`sort` muta e devolve a mesma referência. O array pertence a quem passou, e alterá-lo é o bug de mutação de js-01. Use `tarefas.toSorted(...)` ou `[...tarefas].sort(...)`. A ordenação como texto só acontece **sem** função de comparação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A regra é: \"libera o fechamento do dia se todas as tarefas estiverem concluídas\". O código faz `if (tarefas.every((t) => t.feita)) liberar()`. O que acontece num dia sem nenhuma tarefa?",
+          "opcoes": [
+            "Libera: `every` em array vazio devolve `true`",
+            "Não libera: `every` em array vazio devolve `false`",
+            "Lança `TypeError`, como o `reduce` sem valor inicial",
+            "Devolve `undefined` e o `if` não entra"
+          ],
+          "correta": 0,
+          "explicacao": "`every` devolve `true` quando nenhum elemento reprova, e num array vazio nenhum reprova. Se dia vazio não deve liberar, a regra precisa dizer: `tarefas.length > 0 && tarefas.every(...)`. Quem lança erro em array vazio é o `reduce` sem valor inicial."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as duas armadilhas do `sort`?",
+          "verso": "Muta o array original, e sem função de comparação ordena como texto (`10` antes de `9`)."
+        },
+        {
+          "frente": "Como ordenar sem mutar?",
+          "verso": "`lista.toSorted(fn)` (ES2023) ou `[...lista].sort(fn)`."
+        },
+        {
+          "frente": "Por que `reduce` deve sempre receber o valor inicial?",
+          "verso": "Sem ele, o primeiro elemento vira o acumulador e um array vazio lança `TypeError`."
+        },
+        {
+          "frente": "`[].every(fn)` e `[].some(fn)` devolvem o quê?",
+          "verso": "`every` devolve `true` e `some` devolve `false`. Se lista vazia não pode passar, teste `length > 0` junto."
+        },
+        {
+          "frente": "Por que `['1','2','3'].map(parseInt)` dá `[1, NaN, NaN]`?",
+          "verso": "`map` passa (elemento, índice, array), e `parseInt` usa o segundo argumento como base. Use `map(Number)` ou `map((s) => parseInt(s, 10))`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Array",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array"
+        },
+        {
+          "titulo": "MDN — Array.prototype.sort()",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort"
+        }
+      ]
+    },
+    {
+      "id": "js-04",
+      "titulo": "Closures: a função que lembra",
+      "minutos": 9,
+      "ponte": "Um cursor com parâmetros guarda os valores com que foi aberto. Uma variável declarada no corpo de um *package* é privada, sobrevive entre as chamadas e só as rotinas do package a enxergam. *Closure* é isso dentro de uma função: variável privada que sobrevive. Onde quebra: o estado do package é um por sessão. Aqui, cada chamada da função de fora cria um estado novo e independente.",
+      "texto": "Uma função em JavaScript enxerga as variáveis do lugar onde foi **criada**, e continua enxergando depois que esse lugar terminou de executar. Esse par, a função mais as variáveis que ela alcança, se chama *closure* (fechamento).\n\n```js\nfunction criaContador() {\n  let n = 0;                 // privada: só a função abaixo alcança\n  return () => ++n;\n}\nconst proximo = criaContador();\nproximo(); // 1\nproximo(); // 2\n```\n\n`criaContador` já terminou, e `n` continua viva porque a função devolvida ainda a referencia. Ninguém de fora consegue ler ou alterar `n` sem passar por `proximo`. Chamar `criaContador()` de novo cria **outra** `n`.\n\n### O mecanismo, em uma frase\n\nA closure guarda a **variável**, não uma cópia do valor do momento. Se a variável mudar depois, a função enxerga o valor novo. Quase toda surpresa com closure vem de esquecer isso.\n\n### A armadilha clássica: laço com `var`\n\n`var` tem escopo de função: o laço inteiro compartilha **uma** variável `i`. Funções criadas dentro do laço enxergam todas a mesma `i`, que no fim vale o valor de saída. `let` tem escopo de bloco e o `for` cria uma variável nova **por volta**. É um dos motivos de `var` não ser mais usado: `const` por padrão, `let` quando precisa reatribuir.\n\n### Onde você usa closure de verdade\n\n- **Fábrica de função:** uma função que recebe a configuração e devolve outra já configurada. `const exigePapel = (papel) => (usuario) => usuario.papeis.includes(papel);`. É a base de *middleware*, de *guards* parametrizados e de validadores.\n- **Estado privado sem classe:** o contador acima. Um módulo que exporta funções sobre uma variável não exportada é a mesma ideia, e é o parente mais próximo do corpo de package.\n- **Callback que precisa de contexto:** `tarefas.filter((t) => t.donoId === usuario.id)`. A arrow alcança `usuario` sem você passar por parâmetro.\n- **Memoização:** guardar resultados já calculados num `Map` que só a função enxerga.\n\n### O custo\n\n- **Memória:** enquanto a função existir, tudo o que ela alcança fica vivo. Um *listener* que nunca é removido segura os dados que capturou. É a forma mais comum de vazamento de memória em Node e em React.\n- **Valor velho:** se a função foi criada numa execução antiga e continua em uso, ela enxerga as variáveis **daquela** execução. No React isso tem nome, *stale closure* (closure com dado vencido), e você vai encontrar em react-11.\n- **Cache sem limite:** um memo que nunca esvazia cresce até derrubar o processo. Memoize o que é caro e tem poucas entradas distintas, ou ponha limite.",
+      "naPratica": "No Cockpit, um guard parametrizado por papel e um validador configurável são fábricas de função. No front, todo handler de evento (`onClick={() => concluir(tarefa.id)}`) é uma closure sobre a `tarefa` daquela renderização. Entender isso é pré-requisito para os bugs de dado vencido do React.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Dois contadores criados pela mesma fábrica. Eles compartilham o `n`?",
+          "codigo": "function criaContador() {\n  let n = 0;\n  return { proximo: () => ++n, atual: () => n };\n}\n\nconst a = criaContador();\nconst b = criaContador();\na.proximo();\na.proximo();\nb.proximo();\nconsole.log(a.atual(), b.atual());\nconsole.log(a.n);\n",
+          "saida": "2 1\nundefined\n",
+          "explicacao": "Cada chamada de `criaContador` cria uma variável `n` nova. As duas funções de `a` compartilham a `n` de `a`; as de `b`, a de `b`. `a.n` é `undefined`: `n` não é campo do objeto, é uma variável privada alcançada só pelas duas funções."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Três funções criadas num laço com `var` e três com `let`. O que cada uma devolve?",
+          "codigo": "const comVar = [];\nfor (var i = 0; i < 3; i++) comVar.push(() => i);\n\nconst comLet = [];\nfor (let j = 0; j < 3; j++) comLet.push(() => j);\n\nconsole.log(comVar.map((f) => f()));\nconsole.log(comLet.map((f) => f()));\n",
+          "saida": "[ 3, 3, 3 ]\n[ 0, 1, 2 ]\n",
+          "explicacao": "Com `var` existe uma única `i` para o laço todo. As três funções guardam a variável, não o valor da volta, e quando são chamadas `i` já vale 3. Com `let`, cada volta tem a própria `j`, e cada função guarda a sua."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "A closure guarda a variável ou o valor? Duas funções, uma taxa que muda depois.",
+          "codigo": "let taxa = 10;\nconst comTaxaAtual = (v) => v + (v * taxa) / 100;\nconst comTaxaFixa = ((t) => (v) => v + (v * t) / 100)(taxa);\n\ntaxa = 50;\nconsole.log(comTaxaAtual(100), comTaxaFixa(100));\n",
+          "saida": "150 110\n",
+          "explicacao": "`comTaxaAtual` alcança a variável `taxa` e lê o valor na hora da chamada: 50. `comTaxaFixa` foi criada por uma fábrica que recebeu `taxa` como parâmetro `t`: o valor 10 foi copiado para uma variável nova, que ninguém mais altera. Fábrica de função é o jeito de congelar um valor."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Um memo com `Map` privado. Quantas vezes aparece `calculando`?",
+          "codigo": "function memo(fn) {\n  const cache = new Map();\n  return (x) => {\n    if (cache.has(x)) return cache.get(x);\n    console.log('calculando', x);\n    const r = fn(x);\n    cache.set(x, r);\n    return r;\n  };\n}\n\nconst dobro = memo((n) => n * 2);\nconsole.log(dobro(4));\nconsole.log(dobro(4));\nconsole.log(dobro(5));\n",
+          "saida": "calculando 4\n8\n8\ncalculando 5\n10\n",
+          "explicacao": "O `cache` vive na closure da função devolvida. A primeira chamada com 4 calcula e guarda; a segunda acha no cache e não calcula. O 5 é entrada nova. Repare que o cache nunca esvazia: com entradas ilimitadas, isso vira vazamento de memória."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um serviço registra `emissor.on('evento', (dados) => processa(dados, relatorioGrande))` a cada requisição e nunca remove o listener. O que acontece com o tempo?",
+          "opcoes": [
+            "Nada: o coletor de lixo libera `relatorioGrande` quando a requisição termina",
+            "A memória cresce: cada listener é uma closure viva que segura o seu `relatorioGrande`",
+            "O Node remove listeners antigos automaticamente depois de 10 registros",
+            "O listener passa a enxergar o `relatorioGrande` da requisição mais recente"
+          ],
+          "correta": 1,
+          "explicacao": "Enquanto o emissor guardar a função, tudo o que ela alcança continua vivo. O coletor de lixo só libera o que ninguém mais referencia. O Node apenas **avisa** quando passa de 10 listeners no mesmo evento, não remove. E cada closure enxerga as variáveis da execução em que foi criada, não a mais recente."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é uma closure?",
+          "verso": "Uma função mais as variáveis do lugar onde ela foi criada, que continuam vivas enquanto a função existir."
+        },
+        {
+          "frente": "A closure guarda o valor ou a variável?",
+          "verso": "A variável. Se ela mudar depois, a função enxerga o valor novo. Para congelar um valor, passe-o como parâmetro de uma fábrica."
+        },
+        {
+          "frente": "Por que funções criadas num `for (var i ...)` devolvem todas o mesmo `i`?",
+          "verso": "`var` tem escopo de função: há uma só `i` para o laço todo. `let` cria uma variável por volta."
+        },
+        {
+          "frente": "Qual o custo de memória de uma closure?",
+          "verso": "Tudo o que ela alcança fica vivo enquanto ela existir. Listener não removido e cache sem limite são os vazamentos típicos."
+        },
+        {
+          "frente": "O que é uma fábrica de função?",
+          "verso": "Função que recebe configuração e devolve outra função já configurada: `(papel) => (usuario) => ...`. Base de middleware e guards parametrizados."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Closures",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures"
+        },
+        {
+          "titulo": "MDN — let",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let"
+        }
+      ]
+    },
+    {
+      "id": "js-05",
+      "titulo": "this, arrow functions e classes",
+      "minutos": 11,
+      "ponte": "Num package, uma rotina chama a outra pelo nome e o estado do package está sempre lá: não existe \"de quem é esta chamada\". Numa trigger de Forms, `:SYSTEM.CURSOR_BLOCK` depende de onde o cursor está **na hora**. O `this` do JavaScript é parecido com o segundo caso: ele é decidido **na hora da chamada**, não onde a função foi escrita. Onde quebra: a mesma função pode ter um `this` diferente a cada chamada, ou nenhum.",
+      "texto": "`this` é um parâmetro escondido que toda função comum recebe. O valor dele não vem de onde a função foi declarada. Vem de **como ela foi chamada**.\n\n| forma da chamada | valor de `this` |\n|---|---|\n| `obj.metodo()` | `obj` (o que está antes do ponto) |\n| `funcao()` solta | `undefined` (em módulos e classes, que rodam em modo estrito) |\n| `new Classe()` | o objeto recém-criado |\n| `fn.call(x)` / `fn.bind(x)` | `x`, escolhido por você |\n\n### A armadilha: método extraído\n\n```js\nconst salvar = servico.salvar;  // tirou o método do objeto\nsalvar();                       // chamada solta: this é undefined\n```\n\nIsso acontece sem você perceber toda vez que passa um método como *callback*: `botao.onclick = servico.salvar`, `lista.map(servico.formata)`, `setTimeout(servico.fecha, 100)`. Quem chama depois é outro código, sem o objeto antes do ponto.\n\n### Arrow function não tem `this`\n\nA *arrow function* (`() => ...`) não recebe `this` próprio. Ela usa o `this` do lugar onde foi **criada**, como qualquer outra variável de closure (você viu em js-04). Por isso ela resolve o problema acima de dois jeitos:\n\n```js\nsetTimeout(() => servico.fecha(), 100);   // chama COM o objeto antes do ponto\n\nclass Servico {\n  fecha = () => { /* this é sempre a instância */ };\n}\n```\n\nO segundo formato, campo de classe com arrow, cria uma função por instância, já presa a ela. O contrário também vale: **não use arrow como método de objeto literal** esperando que `this` seja o objeto. Não será.\n\n### Classes\n\n`class` é a forma padrão de declarar objetos com comportamento. O NestJS inteiro é escrito com classes: controller, service, guard.\n\n```ts\nclass Contador {\n  #total = 0;                 // campo privado de verdade\n  readonly nome: string;\n  constructor(nome: string) { this.nome = nome; }\n  incrementa() { return ++this.#total; }\n  get total() { return this.#total; }\n}\n```\n\nExistem **dois** jeitos de dizer \"privado\", e eles não são iguais:\n\n- `#campo` é do JavaScript. É privado **em execução**: fora da classe, o acesso é erro de sintaxe, e o campo não aparece em `Object.keys` nem no `JSON.stringify`.\n- `private campo` é do TypeScript. Só o compilador reclama. Em execução é um campo comum, visível para qualquer um.\n\nNo código Nest você vai ver mais `private readonly`, por causa da injeção pelo construtor. Para estado que realmente não pode vazar, `#`.\n\n### Critério de sênior\n\n- Herança (`extends`) com mais de um nível quase sempre é arrependimento. Prefira compor: uma classe recebe a outra pelo construtor.\n- Se uma classe não tem estado, só funções, ela podia ser um módulo com funções exportadas. No Nest ela é classe por causa da injeção de dependência, e esse é um bom motivo. Fora dele, função simples é mais fácil de testar.\n- Não existe sobrecarga por assinatura em execução nem método realmente \"final\". O que protege o contrato é o tipo, e o teste.",
+      "naPratica": "No Nest, os métodos do service são chamados como `this.tarefas.criar(dto)`, com o objeto antes do ponto, e o `this` funciona. O defeito aparece quando alguém passa `this.tarefas.criar` como callback para um `map` ou para um agendador: o método chega solto e estoura `Cannot read properties of undefined`. A correção é `(dto) => this.tarefas.criar(dto)`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "O mesmo método chamado de três formas. O que sai em cada uma?",
+          "codigo": "const contador = {\n  n: 0,\n  inc() {\n    this.n++;\n    return this.n;\n  },\n};\n\nconsole.log(contador.inc());\n\nconst solto = contador.inc;\ntry {\n  solto();\n} catch (e) {\n  console.log(e.constructor.name);\n}\n\nconst preso = contador.inc.bind(contador);\nconsole.log(preso());\n",
+          "saida": "1\nTypeError\n2\n",
+          "explicacao": "`contador.inc()` tem o objeto antes do ponto: `this` é `contador`. `solto()` é a mesma função chamada sem objeto: `this` é `undefined` e `this.n` lança `TypeError`. `bind` devolve uma função nova com o `this` fixo, que funciona de qualquer lugar. O `n` foi a 2 porque a chamada solta falhou antes de incrementar."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Dentro de um método, um callback arrow e um callback `function`. Qual deles enxerga a instância?",
+          "codigo": "class Relatorio {\n  prefixo = '#';\n  itens = ['a', 'b'];\n\n  comArrow() {\n    return this.itens.map((x) => this.prefixo + x);\n  }\n  comFunction() {\n    return this.itens.map(function (x) {\n      return typeof this + x;\n    });\n  }\n}\n\nconst r = new Relatorio();\nconsole.log(r.comArrow());\nconsole.log(r.comFunction());\n",
+          "saida": "[ '#a', '#b' ]\n[ 'undefineda', 'undefinedb' ]\n",
+          "explicacao": "A arrow não tem `this` próprio: usa o do método `comArrow`, que é a instância. A `function` recebe o próprio `this`, decidido por quem a chama. Quem chama é o `map`, sem objeto, então `this` é `undefined`. É por isso que callback se escreve com arrow."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Um método comum, um campo arrow e um campo privado `#`. O que sobrevive à extração e o que aparece de fora?",
+          "codigo": "class Servico {\n  #chamadas = 0;\n  nome = 'tarefas';\n\n  metodo() {\n    return this?.nome;\n  }\n  campoArrow = () => this.nome;\n  conta() {\n    return ++this.#chamadas;\n  }\n}\n\nconst s = new Servico();\nconst { metodo, campoArrow } = s;\nconsole.log(metodo(), campoArrow());\n\ns.conta();\ns.conta();\nconsole.log(s.conta(), Object.keys(s));\nconsole.log(JSON.stringify(s));\n",
+          "saida": "undefined tarefas\n3 [ 'nome', 'campoArrow' ]\n{\"nome\":\"tarefas\"}\n",
+          "explicacao": "Extraído por desestruturação, `metodo` perde o `this` (o `?.` só evitou o erro e devolveu `undefined`). `campoArrow` foi criado no construtor, preso à instância, e continua funcionando. O campo `#chamadas` conta normalmente por dentro e não aparece em `Object.keys` nem no JSON. Métodos comuns também não aparecem: eles moram no protótipo, não na instância."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Acesso a campo `#` por fora da classe. Compila?",
+          "codigo": "class Conta {\n  #saldo = 0;\n  depositar(valor: number) {\n    this.#saldo += valor;\n  }\n}\n\nconst c = new Conta();\nc.depositar(50);\nc.#saldo = 1000;\n",
+          "compila": false,
+          "erro": "TS18013",
+          "linha": 10,
+          "explicacao": "`#saldo` só existe dentro do corpo da classe. O TypeScript recusa, e mesmo em JavaScript puro esta linha é erro de sintaxe: o arquivo nem chega a rodar. Com `private saldo`, só o compilador reclamaria, e em execução o campo estaria exposto."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num service do Nest: `ids.map(this.repositorio.buscar)` estoura com \"Cannot read properties of undefined\". Qual a correção mais direta?",
+          "opcoes": [
+            "Trocar `map` por `forEach`, que preserva o `this`",
+            "Declarar `buscar` como `async`",
+            "Escrever `ids.map((id) => this.repositorio.buscar(id))`",
+            "Marcar `repositorio` como `private readonly`"
+          ],
+          "correta": 2,
+          "explicacao": "Passar `this.repositorio.buscar` entrega só a função, sem o objeto. Dentro dela, `this` é `undefined`. A arrow chama o método **com** o objeto antes do ponto. `forEach` chama o callback do mesmo jeito que `map`, e `private readonly` só existe para o compilador."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual a diferença real entre `private token` (TypeScript) e `#token` (JavaScript)?",
+          "opcoes": [
+            "Nenhuma: o compilador converte `private` em `#`",
+            "`private` só é checado na compilação; `#` é privado também em execução",
+            "`#` só funciona em campos estáticos",
+            "`private` é mais seguro porque também esconde o campo do `JSON.stringify`"
+          ],
+          "correta": 1,
+          "explicacao": "`private` some quando os tipos são apagados: em execução o campo é comum, aparece em `Object.keys` e no JSON. `#` é da própria linguagem e bloqueia o acesso de fato. O compilador não converte um no outro."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que decide o valor de `this` numa função comum?",
+          "verso": "A forma da chamada: `obj.f()` dá `obj`; `f()` solta dá `undefined` (modo estrito); `new` dá o objeto novo."
+        },
+        {
+          "frente": "Por que um método passado como callback perde o `this`?",
+          "verso": "Você entrega só a função. Quem chama depois chama sem o objeto antes do ponto. Use `(x) => obj.metodo(x)`."
+        },
+        {
+          "frente": "Qual o `this` de uma arrow function?",
+          "verso": "O do lugar onde ela foi criada. Arrow não tem `this` próprio: captura como uma closure."
+        },
+        {
+          "frente": "`private x` × `#x`",
+          "verso": "`private` é só do compilador TypeScript. `#x` é privado em execução: inacessível de fora, fora de `Object.keys` e do JSON."
+        },
+        {
+          "frente": "Por que evitar herança profunda com `extends`?",
+          "verso": "O comportamento fica espalhado por vários níveis e qualquer mudança na base quebra as filhas. Compor (receber a outra classe pelo construtor) é mais fácil de testar e trocar."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — this",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/this"
+        },
+        {
+          "titulo": "MDN — Classes",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes"
+        },
+        {
+          "titulo": "MDN — Arrow function expressions",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions"
+        }
+      ]
+    },
+    {
+      "id": "js-06",
+      "titulo": "Event loop: por que o Node \"não espera\"",
+      "minutos": 9,
+      "ponte": "No PL/SQL cada linha termina antes da próxima começar: um bloco é uma fila única, de cima para baixo. No Node também existe uma fila única, mas uma linha pode apenas **agendar** um trabalho e seguir em frente. A analogia que ajuda: `DBMS_SCHEDULER` dentro do próprio programa. Onde ela quebra: aqui o agendado roda na **mesma thread**, logo depois que o código atual terminar.",
+      "texto": "O Node executa o seu JavaScript em **uma única thread**. Não existem duas linhas suas rodando ao mesmo tempo. O que existe é um laço, o *event loop* (laço de eventos), que repete três passos:\n\n1. Roda o código que está na **pilha** até ela esvaziar (o código síncrono).\n2. Esvazia **toda** a fila de *microtasks* (microtarefas): os `.then` de Promises e o que vem depois de cada `await`.\n3. Pega **uma** *macrotask* (macrotarefa): um `setTimeout`, a chegada de uma requisição, a resposta do banco. E volta ao passo 1.\n\nDisso saem três regras que resolvem a maioria das previsões:\n\n- **Síncrono primeiro.** Nada agendado roda enquanto o código atual não terminar.\n- **Microtask antes de macrotask.** Um `Promise.then` passa na frente de um `setTimeout(0)`, mesmo agendado depois.\n- **`await` devolve o controle.** Tudo o que vem depois do `await`, dentro da função, vira microtask. Quem chamou a função continua rodando.\n\n```ts\nconsole.log('A');\nsetTimeout(() => console.log('B'), 0);\nPromise.resolve().then(() => console.log('C'));\nconsole.log('D');\n// A, D, C, B\n```\n\n### Por que isso importa numa API\n\nEnquanto uma função sua está rodando código síncrono pesado (um laço de 2 segundos, um `JSON.parse` de 50 MB), **nenhuma outra requisição é atendida**: a thread é uma só. Por isso o Node é ótimo para trabalho de entrada e saída (banco, HTTP, arquivo), em que ele agenda e fica livre, e ruim para cálculo pesado, que deve ir para o banco, para uma fila ou para uma *worker thread*.\n\n### A armadilha clássica\n\n`forEach` chama a sua função e **ignora o que ela devolve**. Se a função for `async`, cada volta devolve uma Promise que ninguém espera: o código depois do `forEach` roda antes de o trabalho terminar. Para esperar em sequência, use `for...of` com `await`. Para esperar tudo em paralelo, `await Promise.all(lista.map(...))`.",
+      "naPratica": "No Cockpit, todo método de service que fala com o banco é `async`. Esquecer um `await` não dá erro de compilação: a resposta sai antes de o dado ser gravado e o erro do banco se perde. A regra de lint `no-floating-promises` existe para pegar exatamente isso.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Em que ordem as quatro palavras saem?",
+          "codigo": "setTimeout(() => console.log('timeout'), 0);\nPromise.resolve().then(() => console.log('promise'));\nqueueMicrotask(() => console.log('micro'));\nconsole.log('sync');\n",
+          "saida": "sync\npromise\nmicro\ntimeout\n",
+          "explicacao": "Síncrono primeiro (`sync`). Depois a fila de microtasks inteira, na ordem em que foram agendadas (`promise`, `micro`). Só então uma macrotask (`timeout`)."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O `forEach` com função `async` espera cada volta?",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\n\n[3, 1, 2].forEach(async (n) => {\n  await espera(n * 20);\n  console.log(n);\n});\nconsole.log('fim');\n",
+          "saida": "fim\n1\n2\n3\n",
+          "explicacao": "O `forEach` dispara as três funções e não espera nenhuma. `fim` sai primeiro; depois cada número sai quando o seu próprio timer vence (20, 40 e 60 ms). Com `for...of` e `await`, sairia 3, 1, 2, fim."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O que vem depois do `await` roda quando?",
+          "codigo": "async function f() {\n  console.log(1);\n  await null;\n  console.log(2);\n}\nf();\nconsole.log(3);\n",
+          "saida": "1\n3\n2\n",
+          "explicacao": "A função roda de forma síncrona até o primeiro `await` (imprime 1). O `await` devolve o controle a quem chamou (imprime 3). O resto da função é uma microtask (imprime 2)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma rota da API faz um laço síncrono que leva 3 segundos. O que acontece com as outras requisições nesse intervalo?",
+          "opcoes": [
+            "São atendidas normalmente por outras threads do Node",
+            "Ficam esperando: a thread do JavaScript é uma só e está ocupada",
+            "São recusadas com erro 503 automaticamente",
+            "São atendidas, porque o event loop interrompe o laço a cada 4 ms"
+          ],
+          "correta": 1,
+          "explicacao": "O event loop só pega a próxima tarefa quando a pilha esvazia. Código síncrono longo trava a API inteira. O Node não interrompe função sua no meio."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`setTimeout(fn, 0)` e `Promise.resolve().then(fn2)`: qual roda primeiro, e por quê?",
+          "verso": "`fn2`. Depois do código síncrono, o event loop esvazia toda a fila de microtasks (Promises) antes de pegar uma macrotask (timer)."
+        },
+        {
+          "frente": "`lista.forEach(async (x) => { await grava(x); })` espera as gravações?",
+          "verso": "Não. O `forEach` ignora a Promise que cada volta devolve. Use `for...of` com `await` (sequência) ou `await Promise.all(lista.map(...))` (paralelo)."
+        },
+        {
+          "frente": "Por que um cálculo pesado e síncrono derruba uma API Node?",
+          "verso": "A thread do JavaScript é uma só. Enquanto a pilha não esvazia, nenhuma outra requisição é atendida."
+        },
+        {
+          "frente": "Dentro de uma função `async`, o que acontece no `await`?",
+          "verso": "A função pausa e devolve o controle a quem chamou. O restante dela vira microtask, retomada quando a Promise resolver."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Node.js — The Node.js Event Loop",
+          "url": "https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick"
+        },
+        {
+          "titulo": "MDN — Usando Promises",
+          "url": "https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Guide/Using_promises"
+        }
+      ]
+    },
+    {
+      "id": "js-07",
+      "titulo": "Promises por dentro",
+      "minutos": 10,
+      "ponte": "Quando você submete um job no `DBMS_SCHEDULER`, recebe algo que representa um trabalho ainda não terminado, com um estado: rodando, concluído ou falhou. Uma *Promise* é isso para qualquer operação demorada. Onde quebra: você não fica consultando o estado. Você **registra** o que fazer quando ela terminar, e o erro viaja dentro dela até alguém tratar.",
+      "texto": "Uma *Promise* (promessa) é um objeto que representa um resultado que ainda não chegou. Ela tem três estados:\n\n- *pending* (pendente): o trabalho não terminou.\n- *fulfilled* (cumprida): terminou bem e tem um **valor**.\n- *rejected* (rejeitada): terminou mal e tem um **motivo**, quase sempre um `Error`.\n\nDepois que sai de pendente, ela está *settled* (assentada) e **nunca mais muda**. Chamar `resolve` duas vezes, ou `reject` depois de `resolve`, não faz nada.\n\n### Consumir\n\n`.then(fn)` registra o que fazer com o valor. `.catch(fn)` registra o que fazer com o erro. `.finally(fn)` roda nos dois casos. As funções registradas rodam **sempre depois** do código síncrono atual, como microtask (você viu em js-06), mesmo que a Promise já esteja cumprida.\n\n### O ponto central: `.then` devolve uma Promise nova\n\nCada `.then` devolve **outra** Promise. O destino dela depende do que a sua função fizer:\n\n| a função dentro do `.then` | a Promise nova |\n|---|---|\n| devolve um valor | cumpre com esse valor |\n| não devolve nada | cumpre com `undefined` |\n| devolve outra Promise | espera essa Promise e assume o resultado dela |\n| lança um erro | rejeita com esse erro |\n\nÉ isso que permite encadear passos, cada um recebendo o resultado do anterior. É também a origem do defeito mais comum: **esquecer o `return`** dentro de um `.then`. O passo seguinte recebe `undefined` e não espera o trabalho terminar.\n\n### O erro desce até o primeiro `.catch`\n\nQuando uma Promise da cadeia rejeita, os `.then` seguintes são **pulados** até o primeiro `.catch`. É o mesmo desenho de uma exceção que sobe até o primeiro bloco `EXCEPTION`. Detalhe importante: o `.catch` também devolve uma Promise nova. Se a função dele devolve um valor, a cadeia **volta ao normal** e os `.then` seguintes rodam. Para manter o erro, relance com `throw`.\n\n### Criar uma Promise\n\nNo dia a dia você quase nunca escreve `new Promise`: o driver do banco, o `fetch` e o Prisma já devolvem Promises. O uso legítimo é **promisificar** uma API antiga de *callback* (função passada para ser chamada no fim):\n\n```js\nconst espera = (ms) => new Promise((resolve) => setTimeout(resolve, ms));\n```\n\nA função passada ao construtor (o executor) roda **na hora, de forma síncrona**. Para APIs no padrão do Node, em que o callback recebe `(erro, resultado)`, existe `promisify` em `node:util`.\n\n### Critério de sênior\n\n- Não embrulhe uma Promise em `new Promise`. Se a função já devolve Promise, devolva-a. O embrulho só cria lugar para engolir erro.\n- Em código novo, escreva com `async`/`await` (js-08), que é outra sintaxe para a mesma coisa. Conhecer `.then` continua necessário: é o que explica por que função `async` sempre devolve Promise, e é o que `Promise.all` combina (js-09).\n- Uma Promise começa a trabalhar **quando é criada**, não quando você chama `.then`. E não pode ser cancelada por fora. Cancelamento é outro mecanismo, o `AbortController` (js-09).",
+      "naPratica": "No Cockpit, `prisma.tarefa.findMany()` devolve algo que se comporta como Promise. Quando um teste passa mesmo com o código errado, a causa costuma ser uma Promise devolvida sem `return` ou sem `await`: o teste termina antes de a verificação rodar.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Uma cadeia de `.then`. O que cada passo recebe?",
+          "codigo": "Promise.resolve(1)\n  .then((v) => v + 1)\n  .then((v) => {\n    console.log('a', v);\n  })\n  .then((v) => {\n    console.log('b', v);\n    return Promise.resolve(10);\n  })\n  .then((v) => console.log('c', v));\n",
+          "saida": "a 2\nb undefined\nc 10\n",
+          "explicacao": "O primeiro `.then` devolve 2. O segundo imprime e **não devolve nada**: o terceiro recebe `undefined`. O terceiro devolve uma Promise, e a cadeia espera por ela e entrega o valor de dentro (10), não a Promise."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Um erro no primeiro passo. Quais linhas rodam?",
+          "codigo": "Promise.resolve('ok')\n  .then(() => {\n    throw new Error('falhou no 1');\n  })\n  .then(() => console.log('passo 2'))\n  .catch((e) => {\n    console.log('catch:', e.message);\n    return 'recuperado';\n  })\n  .then((v) => console.log('depois:', v))\n  .finally(() => console.log('fim'));\n",
+          "saida": "catch: falhou no 1\ndepois: recuperado\nfim\n",
+          "explicacao": "O `throw` rejeita a Promise daquele passo. O `passo 2` é pulado e o erro desce até o `.catch`. Como o `.catch` devolveu um valor, a cadeia voltou ao normal: o `.then` seguinte roda com `recuperado`. O `.finally` roda de qualquer jeito."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "O executor do `new Promise` roda quando? E o segundo `resolve` faz o quê?",
+          "codigo": "const p = new Promise((resolve, reject) => {\n  console.log('executor');\n  resolve('primeiro');\n  resolve('segundo');\n  reject(new Error('tarde demais'));\n});\n\np.then((v) => console.log(v));\nconst p2 = p.then(() => 1);\nconsole.log(p === p2);\nconsole.log('fim do script');\n",
+          "saida": "executor\nfalse\nfim do script\nprimeiro\n",
+          "explicacao": "O executor roda na hora, de forma síncrona. O primeiro `resolve` assenta a Promise; o segundo `resolve` e o `reject` são ignorados. `.then` devolve uma Promise **nova** (`false`). O callback do `.then` só roda depois de todo o código síncrono, por isso `primeiro` sai por último."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Uma função antiga de callback, promisificada com `node:util`. O que sai, e em que ordem?",
+          "codigo": "import { promisify } from 'node:util';\n\nfunction buscaAntiga(id, callback) {\n  setTimeout(() => {\n    if (id < 0) callback(new Error('id invalido'));\n    else callback(null, { id, titulo: 'Tarefa ' + id });\n  }, 20);\n}\n\nconst busca = promisify(buscaAntiga);\n\nbusca(7)\n  .then((t) => console.log(t.titulo))\n  .then(() => busca(-1))\n  .then((t) => console.log('nao chega aqui', t))\n  .catch((e) => console.log('erro:', e.message));\n",
+          "saida": "Tarefa 7\nerro: id invalido\n",
+          "explicacao": "`promisify` converte o padrão `(erro, resultado)` em Promise: erro no primeiro argumento vira rejeição, o segundo vira o valor. A segunda busca só começa depois da primeira porque foi **devolvida** de dentro do `.then`. Ela rejeita, o `.then` seguinte é pulado e o `.catch` trata."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`salvar(dados).then((r) => { auditar(r); }).then(() => responder())`. `auditar` devolve uma Promise. Qual é o defeito?",
+          "opcoes": [
+            "Nenhum: o `.then` espera qualquer Promise criada dentro dele",
+            "`auditar` roda antes de `salvar` terminar",
+            "Falta o `return`: `responder` roda sem esperar `auditar`, e um erro de `auditar` não chega a nenhum `.catch` desta cadeia",
+            "O segundo `.then` recebe a Promise de `auditar` em vez do valor"
+          ],
+          "correta": 2,
+          "explicacao": "O `.then` só espera a Promise que a função **devolve**. Sem `return`, a função devolve `undefined`, a cadeia segue na hora e a Promise de `auditar` fica solta: se rejeitar, ninguém desta cadeia vê. Com `return auditar(r)`, ou com arrow sem chaves, a cadeia espera."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais os três estados de uma Promise?",
+          "verso": "Pendente, cumprida (com valor) e rejeitada (com motivo). Depois de assentada, nunca mais muda."
+        },
+        {
+          "frente": "O que `.then(fn)` devolve?",
+          "verso": "Uma Promise nova, que cumpre com o que `fn` devolver, espera se `fn` devolver Promise, e rejeita se `fn` lançar erro."
+        },
+        {
+          "frente": "Por que esquecer o `return` dentro de um `.then` é bug?",
+          "verso": "O passo seguinte recebe `undefined` e não espera o trabalho. A Promise interna fica solta e o erro dela se perde."
+        },
+        {
+          "frente": "O que acontece com a cadeia depois de um `.catch` que devolve um valor?",
+          "verso": "Ela volta ao normal: os `.then` seguintes rodam com esse valor. Para manter o erro, relance com `throw`."
+        },
+        {
+          "frente": "Quando o executor de `new Promise(executor)` roda?",
+          "verso": "Na hora, de forma síncrona. A Promise começa a trabalhar ao ser criada, não quando alguém chama `.then`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Promise",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise"
+        },
+        {
+          "titulo": "MDN — Using promises",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises"
+        },
+        {
+          "titulo": "Node.js — util.promisify",
+          "url": "https://nodejs.org/api/util.html"
+        }
+      ]
+    },
+    {
+      "id": "js-08",
+      "titulo": "async/await e tratamento de erro",
+      "minutos": 11,
+      "ponte": "`try`/`catch` com `await` é o seu bloco `BEGIN ... EXCEPTION WHEN ... END`: o erro sobe até o primeiro tratador. Onde quebra, em dois pontos. No PL/SQL toda chamada espera terminar. Aqui, se faltar o `await`, a execução **sai do `try`** antes de o erro acontecer e o tratador não pega nada. E o `catch` não desfaz transação nenhuma: não existe rollback implícito.",
+      "texto": "`async` e `await` são outra sintaxe para Promises (js-07), feita para o código assíncrono ser lido de cima para baixo.\n\n- Uma função `async` **sempre devolve uma Promise**. `return valor` cumpre a Promise. `throw erro` rejeita.\n- `await p` pausa a função até `p` assentar. Se cumprir, o `await` devolve o valor. Se rejeitar, o `await` **lança** o erro naquele ponto.\n\nÉ por causa do segundo item que `try`/`catch` volta a funcionar com código assíncrono:\n\n```ts\nasync function carregaPlano(dia: string) {\n  try {\n    return await api.buscaPlano(dia);\n  } catch (e) {\n    throw new Error(`Falha ao carregar o plano de ${dia}`, { cause: e });\n  }\n}\n```\n\n### Armadilha 1: `return` sem `await` dentro do `try`\n\n`return api.buscaPlano(dia)` devolve a Promise e **sai do `try`** imediatamente. Se ela rejeitar depois, o `catch` já ficou para trás e o erro passa direto para quem chamou. Dentro de `try`, escreva `return await`. Fora de `try`, o `await` no `return` é opcional.\n\n### Armadilha 2: a Promise solta\n\nChamar uma função `async` sem `await`, sem `return` e sem `.catch` deixa uma *floating promise* (Promise solta). Se ela rejeitar, ninguém trata: é uma *unhandled rejection* (rejeição não tratada). No Node atual, o padrão para isso é **encerrar o processo com erro**. Numa API, um `await` esquecido num caminho raro derruba o servidor para todos os usuários.\n\nA defesa é dupla: regra de lint que acusa Promise solta (`no-floating-promises`) e, quando a intenção é mesmo não esperar, deixar isso explícito com um `.catch` que registra o erro.\n\n### `finally`\n\nRoda sempre: com sucesso, com erro e mesmo quando o `try` ou o `catch` fazem `return`. É o lugar de liberar recurso: devolver conexão, soltar trava, fechar arquivo. Não faça `return` dentro do `finally`: ele substitui o retorno e engole o erro em andamento.\n\n### `Error` com `cause`\n\nQuando você captura um erro de baixo nível e lança outro com contexto de negócio, passe o original em `{ cause: e }`. A mensagem de cima diz **o que você estava fazendo**; a `cause` guarda **o que quebrou**, com a pilha original. Sem isso, o log mostra \"Falha ao carregar o plano\" e ninguém sabe se foi rede, banco ou dado.\n\n### Critério de sênior\n\n- **Capture só onde você sabe o que fazer:** traduzir o erro, tentar de novo, compensar. Um `catch` que só loga e segue em frente é pior do que não ter `catch`: a função devolve `undefined` e o defeito aparece três camadas depois.\n- No Nest, o normal é **deixar subir**. Um filtro de exceção global transforma o erro em resposta HTTP (você verá em nest-08).\n- Lance sempre `Error` ou uma subclasse, nunca string. String não tem pilha.\n- No TypeScript em modo `strict`, o `e` do `catch` é `unknown`. Estreite com `e instanceof Error` antes de ler `e.message`.\n- Transação: o `catch` não desfaz nada sozinho. Quem garante o rollback é o bloco de transação do ORM ou do driver, quando o erro sai de dentro dele.",
+      "naPratica": "No Cockpit, o service que conclui uma tarefa e grava o histórico roda as duas escritas dentro de uma transação e deixa o erro subir. O controller não tem `try`/`catch`: o filtro global devolve o status certo. O `await` esquecido é pego pelo lint antes do commit.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Duas funções iguais, exceto por um `await`. Qual delas trata o erro no próprio `catch`?",
+          "codigo": "const falha = async () => {\n  throw new Error('banco fora');\n};\n\nasync function semAwait() {\n  try {\n    return falha();\n  } catch {\n    return 'tratado dentro';\n  }\n}\nasync function comAwait() {\n  try {\n    return await falha();\n  } catch {\n    return 'tratado dentro';\n  }\n}\n\nconsole.log(await semAwait().catch((e) => 'vazou: ' + e.message));\nconsole.log(await comAwait().catch((e) => 'vazou: ' + e.message));\n",
+          "saida": "vazou: banco fora\ntratado dentro\n",
+          "explicacao": "Em `semAwait`, o `return falha()` entrega a Promise e sai do `try`. A rejeição acontece depois, fora do alcance do `catch`, e vaza para quem chamou. Em `comAwait`, o `await` espera dentro do `try`, a rejeição vira um erro lançado ali e o `catch` trata."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "`try`, `catch` com `return` e `finally`. Em que ordem as linhas saem?",
+          "codigo": "async function comRecurso() {\n  console.log('abre');\n  try {\n    console.log('usa');\n    throw new Error('quebrou');\n  } catch (e) {\n    console.log('trata', e.message);\n    return 'retorno do catch';\n  } finally {\n    console.log('fecha');\n  }\n}\n\nconsole.log(await comRecurso());\n",
+          "saida": "abre\nusa\ntrata quebrou\nfecha\nretorno do catch\n",
+          "explicacao": "O `finally` roda mesmo com o `return` dentro do `catch`: o valor de retorno fica guardado, o `finally` executa (`fecha`) e só então a função devolve. É por isso que liberação de recurso mora no `finally`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "terminaComErro": true,
+          "enunciado": "Uma função `async` que falha, chamada sem `await` e sem `.catch`. O timer de 50 ms chega a rodar? (O programa termina com erro de propósito; preveja só o que sai no `console.log`.)",
+          "codigo": "async function grava() {\n  throw new Error('violacao de chave');\n}\n\nconsole.log('antes');\ngrava();\nconsole.log('depois');\nsetTimeout(() => console.log('50 ms depois'), 50);\n",
+          "saida": "antes\ndepois\n",
+          "explicacao": "A chamada sem `await` não lança nada na linha dela: `depois` sai normalmente. A Promise rejeitada fica sem tratador, o Node detecta a rejeição não tratada logo após o código síncrono e **encerra o processo com erro**. O timer nunca roda. Numa API, isso é o servidor caindo."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Erro de negócio com a causa técnica guardada em `cause`. O que cada linha imprime?",
+          "codigo": "async function buscaNoBanco() {\n  throw new Error('conexao recusada');\n}\n\nasync function carregaPlano() {\n  try {\n    return await buscaNoBanco();\n  } catch (e) {\n    throw new Error('Falha ao carregar o plano do dia', { cause: e });\n  }\n}\n\ntry {\n  await carregaPlano();\n} catch (e) {\n  console.log(e.message);\n  console.log(e.cause.message);\n  console.log(e instanceof Error, e.cause instanceof Error);\n}\n",
+          "saida": "Falha ao carregar o plano do dia\nconexao recusada\ntrue true\n",
+          "explicacao": "O erro que chega em cima diz o que a aplicação estava fazendo. O original continua acessível em `cause`, com a mensagem e a pilha dele. Os dois são `Error`: quem loga consegue imprimir a cadeia inteira."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Em modo `strict`, qual é o tipo do `e` no `catch`? Este trecho compila?",
+          "codigo": "function leJson(texto: string): unknown {\n  try {\n    return JSON.parse(texto);\n  } catch (e) {\n    console.log(e.message);\n    return null;\n  }\n}\n",
+          "compila": false,
+          "erro": "TS18046",
+          "linha": 5,
+          "explicacao": "Em JavaScript dá para lançar qualquer coisa (`throw 'texto'`, `throw 42`), então o compilador trata `e` como `unknown`. Antes de ler `.message`, estreite: `if (e instanceof Error) console.log(e.message)`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em review você encontra `try { await enviaEmail(pedido); } catch (e) { console.log(e); }` no meio de um service, e a função segue normalmente depois. Qual é a melhor crítica?",
+          "opcoes": [
+            "Está correto: todo `await` deve ter `try`/`catch` em volta",
+            "Falta `return await` para o `catch` funcionar",
+            "O `catch` engole a falha: quem chamou acha que o e-mail saiu. Ou a falha é aceitável e isso deve estar dito e registrado com contexto, ou o erro deve subir",
+            "O `catch` deveria chamar `process.exit(1)` para não deixar o estado inconsistente"
+          ],
+          "correta": 2,
+          "explicacao": "O `await` já está dentro do `try`, então o `catch` funciona. O problema é a decisão: logar e seguir transforma erro em sucesso aparente. Se o envio é opcional, isso precisa ser uma escolha explícita, com log estruturado. Se não é, deixe subir. Envolver todo `await` em `try` é o hábito que cria esse defeito."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que uma função `async` sempre devolve?",
+          "verso": "Uma Promise. `return v` cumpre com `v`; `throw e` rejeita com `e`."
+        },
+        {
+          "frente": "Por que usar `return await` dentro de um `try`?",
+          "verso": "Sem o `await`, a função devolve a Promise e sai do `try`. Se ela rejeitar depois, o `catch` não pega."
+        },
+        {
+          "frente": "O que acontece no Node atual com uma Promise rejeitada que ninguém trata?",
+          "verso": "É uma unhandled rejection: por padrão o processo encerra com erro. Um `await` esquecido pode derrubar a API."
+        },
+        {
+          "frente": "Para que serve `new Error(msg, { cause: e })`?",
+          "verso": "A mensagem diz o que a aplicação fazia; `cause` guarda o erro original com a pilha. O log mostra o contexto e a causa."
+        },
+        {
+          "frente": "Quando um `catch` é legítimo?",
+          "verso": "Quando você sabe o que fazer: traduzir o erro, tentar de novo ou compensar. Logar e seguir em frente esconde o defeito."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — async function",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function"
+        },
+        {
+          "titulo": "MDN — Error: cause",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause"
+        },
+        {
+          "titulo": "Node.js — process: evento 'unhandledRejection'",
+          "url": "https://nodejs.org/api/process.html"
+        }
+      ]
+    },
+    {
+      "id": "js-09",
+      "titulo": "Concorrência: Promise.all, allSettled, race e limite de paralelismo",
+      "minutos": 12,
+      "ponte": "Num bloco PL/SQL, três consultas rodam uma depois da outra. Para rodar junto você submete jobs e depois confere cada um. Aqui, disparar três consultas e esperar as três é uma linha. Onde quebra: não são três threads. É uma thread só **esperando** três respostas ao mesmo tempo. E cada consulta simultânea ocupa uma conexão do *pool*, que é o recurso que você conhece bem do lado do banco.",
+      "texto": "Com `await`, a escolha entre sequência e paralelo está na forma de escrever.\n\n```ts\n// sequência: a segunda só começa quando a primeira termina\nconst tarefas = await buscaTarefas(dia);\nconst foco = await buscaFoco(dia);\n\n// paralelo: as duas começam já; você espera as duas\nconst [tarefas, foco] = await Promise.all([buscaTarefas(dia), buscaFoco(dia)]);\n```\n\nNa sequência o tempo total é a **soma**. No paralelo é o **maior**. A Promise começa a trabalhar quando é criada (js-07), então as duas chamadas dentro do array já estão em andamento antes de o `Promise.all` olhar para elas.\n\n### Os quatro combinadores\n\n| combinador | cumpre quando | rejeita quando | uso |\n|---|---|---|---|\n| `Promise.all` | todas cumprem (resultados na ordem do array) | a **primeira** rejeitar | preciso de tudo, ou nada serve |\n| `Promise.allSettled` | todas assentam | nunca | quero o resultado de cada uma, com sucesso ou erro |\n| `Promise.race` | a primeira assentar, se cumprir | a primeira assentar, se rejeitar | prazo (*timeout*) |\n| `Promise.any` | a primeira cumprir | todas rejeitarem | várias fontes, serve qualquer uma |\n\n### O que o `Promise.all` não faz\n\nEle **falha rápido** (*fail fast*): rejeita assim que uma rejeita. Mas **não cancela** as outras. Elas continuam rodando, gastando conexão, e o resultado delas é descartado. O mesmo vale para o `race`: a perdedora segue até o fim.\n\n### Cancelar de verdade: `AbortController`\n\nPromise não tem botão de cancelar. O mecanismo padrão é o `AbortController`: você cria um controlador, passa o `signal` dele para a operação e chama `abort()` quando desistir. A operação precisa **cooperar** observando o sinal. O `fetch` coopera, e drivers e clientes HTTP modernos também aceitam `signal`. Para prazo, existe o atalho `AbortSignal.timeout(ms)`.\n\n### Por que limitar o paralelismo\n\n`await Promise.all(ids.map((id) => buscaDetalhe(id)))` com 500 ids dispara **500 consultas de uma vez**. O pool de conexões tem um tamanho, digamos 10. As outras 490 ficam na fila do pool, as requisições de outros usuários também, e parte delas estoura o prazo de espera por conexão. Você já viu isso do outro lado: sessões demais derrubando o banco.\n\nAs saídas, em ordem de preferência:\n\n1. **Uma consulta só.** `WHERE id IN (...)` ou um `JOIN` resolvem 500 buscas numa ida ao banco. Paralelizar consulta que podia ser uma é o problema N+1 com outra roupa.\n2. **Lotes.** Fatiar a lista e fazer `Promise.all` de cada fatia, uma fatia por vez.\n3. **Limitador.** Uma função ou biblioteca pequena que mantém no máximo N em andamento.\n\n### Critério de sênior\n\n- Paralelize operações **independentes**. Se a segunda precisa do resultado da primeira, é sequência.\n- Dentro de **uma transação** todas as consultas usam a mesma conexão. Paralelizar ali não acelera e, conforme o driver, dá erro.\n- `Promise.all` em escritas deixa estado parcial quando uma falha: três gravaram, uma não. Se precisa ser tudo ou nada, é transação, não `Promise.all`.\n- Chamada externa sem prazo é espera infinita com conexão presa. Toda chamada HTTP de saída merece um `signal` com timeout.",
+      "naPratica": "No Cockpit, a tela inicial precisa do plano do dia, das tarefas atrasadas e da sessão de foco em aberto. São três leituras independentes: o service usa `Promise.all` e a rota responde no tempo da mais lenta. Já a reordenação de 40 tarefas vai numa transação, uma depois da outra.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "As mesmas esperas em sequência e em paralelo. Em que ordem os `fim` saem, e em que ordem vem o resultado do `Promise.all`?",
+          "codigo": "const espera = (nome, ms) =>\n  new Promise((r) => setTimeout(() => {\n    console.log('fim', nome);\n    r(nome);\n  }, ms));\n\nconsole.log('sequencia');\nawait espera('A', 60);\nawait espera('B', 20);\n\nconsole.log('paralelo');\nconst r = await Promise.all([espera('C', 60), espera('D', 20)]);\nconsole.log(r);\n",
+          "saida": "sequencia\nfim A\nfim B\nparalelo\nfim D\nfim C\n[ 'C', 'D' ]\n",
+          "explicacao": "Em sequência, B só começa depois de A terminar, mesmo sendo mais rápida. Em paralelo as duas começam juntas e D (20 ms) termina antes de C (60 ms). O array de resultados segue a **ordem do array de entrada**, não a ordem de chegada."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Uma das três falha. O que o `Promise.all` entrega, e o que o `allSettled` entrega?",
+          "codigo": "const ok = (v, ms) => new Promise((r) => setTimeout(() => r(v), ms));\nconst erro = (m, ms) =>\n  new Promise((_, rej) => setTimeout(() => rej(new Error(m)), ms));\n\ntry {\n  await Promise.all([ok('a', 60), erro('falhou b', 20), ok('c', 40)]);\n} catch (e) {\n  console.log('all:', e.message);\n}\n\nconst r = await Promise.allSettled([ok('a', 40), erro('falhou b', 20)]);\nconsole.log(r.map((x) => x.status));\nconsole.log(r[0].value, r[1].reason.message);\n",
+          "saida": "all: falhou b\n[ 'fulfilled', 'rejected' ]\na falhou b\n",
+          "explicacao": "O `Promise.all` rejeitou aos 20 ms, sem esperar `a` e `c` (que continuaram rodando, com o resultado descartado). O `allSettled` nunca rejeita: devolve um objeto por Promise, com `status` e `value` ou `reason`, e você decide o que fazer com cada falha."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Um prazo de 20 ms com `race` sobre uma operação de 80 ms. A operação é cancelada?",
+          "codigo": "const lenta = new Promise((r) => setTimeout(() => {\n  console.log('a lenta terminou o trabalho');\n  r('resposta');\n}, 80));\nconst prazo = (ms) =>\n  new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), ms));\n\ntry {\n  console.log(await Promise.race([lenta, prazo(20)]));\n} catch (e) {\n  console.log(e.message);\n}\nconsole.log(await lenta);\n",
+          "saida": "tempo esgotado\na lenta terminou o trabalho\nresposta\n",
+          "explicacao": "O `race` assentou com quem chegou primeiro, o prazo. A operação lenta **não foi cancelada**: continuou até o fim e cumpriu normalmente. `race` só deixa de esperar. Para interromper o trabalho, é preciso `AbortController`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Agora com `AbortController`: a operação observa o sinal. O que sai?",
+          "codigo": "const ctrl = new AbortController();\n\nfunction trabalho(signal) {\n  return new Promise((resolve, reject) => {\n    const t = setTimeout(() => {\n      console.log('trabalho concluido');\n      resolve('pronto');\n    }, 100);\n    signal.addEventListener('abort', () => {\n      clearTimeout(t);\n      reject(signal.reason);\n    });\n  });\n}\n\nsetTimeout(() => ctrl.abort(new Error('cancelado pelo usuario')), 20);\ntry {\n  await trabalho(ctrl.signal);\n} catch (e) {\n  console.log(e.message);\n}\nconsole.log(ctrl.signal.aborted);\n",
+          "saida": "cancelado pelo usuario\ntrue\n",
+          "explicacao": "Aos 20 ms o `abort()` dispara o evento no sinal. A operação coopera: limpa o próprio timer e rejeita com o motivo. `trabalho concluido` nunca aparece, porque o trabalho foi interrompido de fato. Cancelamento só existe quando a operação escuta o sinal."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Seis consultas simuladas. Qual o pico de consultas simultâneas sem limite e em lotes de 2?",
+          "codigo": "let ativas = 0;\nlet pico = 0;\nconst consulta = async (id) => {\n  ativas++;\n  pico = Math.max(pico, ativas);\n  await new Promise((r) => setTimeout(r, 20));\n  ativas--;\n  return id;\n};\n\nconst ids = [1, 2, 3, 4, 5, 6];\nawait Promise.all(ids.map(consulta));\nconsole.log('sem limite, pico:', pico);\n\npico = 0;\nfor (let i = 0; i < ids.length; i += 2) {\n  await Promise.all(ids.slice(i, i + 2).map(consulta));\n}\nconsole.log('lotes de 2, pico:', pico);\n",
+          "saida": "sem limite, pico: 6\nlotes de 2, pico: 2\n",
+          "explicacao": "`ids.map(consulta)` chama as seis de uma vez: todas ficam ativas antes de a primeira terminar. Com 500 ids, seriam 500 pedidos de conexão ao pool. Em lotes, só duas ficam ativas por vez, ao custo de mais tempo total. O tamanho do lote se escolhe olhando o tamanho do pool."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um endpoint grava quatro registros com `await Promise.all([grava(a), grava(b), grava(c), grava(d)])`, fora de transação. A gravação de `c` falha. Qual o estado final?",
+          "opcoes": [
+            "Nada é gravado: o `Promise.all` desfaz as outras ao rejeitar",
+            "`a` e `b` são gravados; `d` é cancelado",
+            "Indefinido entre os que não falharam: `a`, `b` e `d` seguem independentes e podem gravar. O endpoint devolve erro com estado parcial no banco",
+            "O `Promise.all` espera as quatro e só então rejeita"
+          ],
+          "correta": 2,
+          "explicacao": "`Promise.all` não é transação e não cancela nada: só para de esperar. As outras gravações continuam e podem concluir. Se a regra é tudo ou nada, as quatro escritas vão numa transação. Quem espera todas antes de responder é o `allSettled`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`Promise.all` × `Promise.allSettled`",
+          "verso": "`all` rejeita na primeira falha e entrega só valores. `allSettled` nunca rejeita e entrega `{ status, value ou reason }` de cada uma."
+        },
+        {
+          "frente": "Quando o `Promise.all` rejeita, o que acontece com as outras Promises?",
+          "verso": "Continuam rodando até o fim. Ele só deixa de esperar. Não cancela nem desfaz nada."
+        },
+        {
+          "frente": "Como cancelar de fato uma operação assíncrona?",
+          "verso": "Com `AbortController`: passa o `signal` para a operação e chama `abort()`. A operação precisa observar o sinal."
+        },
+        {
+          "frente": "Por que limitar o paralelismo contra o banco?",
+          "verso": "Cada consulta simultânea pede uma conexão do pool. `Promise.all` sobre 500 itens enfileira 500 pedidos e trava as outras requisições."
+        },
+        {
+          "frente": "Por que não usar `Promise.all` para escritas que precisam ser tudo ou nada?",
+          "verso": "Se uma falha, as outras podem ter gravado: fica estado parcial. Tudo ou nada é transação."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Promise.all()",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all"
+        },
+        {
+          "titulo": "MDN — Promise.allSettled()",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled"
+        },
+        {
+          "titulo": "MDN — AbortController",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController"
+        }
+      ]
+    },
+    {
+      "id": "js-10",
+      "titulo": "Node por dentro: processo, variáveis de ambiente, sinais e streams",
+      "minutos": 12,
+      "ponte": "Uma sessão Oracle nasce com parâmetros (`NLS_*`, contexto), faz o trabalho e pode ser encerrada por fora com um `KILL SESSION`. Um processo Node é o equivalente do lado da aplicação: nasce com variáveis de ambiente, termina com um código e recebe sinais do sistema operacional. Onde quebra: quando a sessão morre, o banco faz rollback e limpa tudo por você. Quando o processo Node morre, quem tem que terminar o trabalho em andamento e fechar as conexões é o seu código.",
+      "texto": "O Node é um programa comum do sistema operacional. O objeto global `process` é a janela do seu código para esse programa. Um sênior precisa de quatro coisas dele.\n\n### 1. Configuração: `process.env` e `process.argv`\n\n`process.env` traz as variáveis de ambiente. Duas características causam defeito:\n\n- **Tudo é string.** `process.env.PORTA` é `'3000'`, e `'false'` é uma string não vazia, portanto verdadeira num `if`.\n- **O que não foi definido é `undefined`**, sem erro. A aplicação sobe e quebra horas depois, na primeira vez que usa o valor.\n\nA regra de sênior: **ler e validar tudo na partida, num único lugar**, converter para o tipo certo e falhar na hora se faltar algo. O resto do código recebe um objeto de configuração tipado e nunca toca em `process.env`. No Nest isso é o módulo de configuração com esquema de validação (nest-10).\n\n`process.argv` é o array de argumentos da linha de comando. As duas primeiras posições são o executável e o script. Os seus argumentos começam no índice 2.\n\n### 2. Código de saída\n\nTodo processo termina com um número: **0 é sucesso**, qualquer outro é falha. É assim que o CI, o Docker e o script de deploy sabem se deu certo. Prefira `process.exitCode = 1` e deixar o processo terminar sozinho. `process.exit(1)` corta na hora, e escrita pendente em log ou arquivo pode se perder.\n\n### 3. Sinais e desligamento gracioso\n\nNum deploy, a plataforma (Docker, Kubernetes, o gerenciador de processos) manda `SIGTERM` para a instância antiga e espera alguns segundos. Se o processo não sair, manda `SIGKILL`, que não pode ser capturado. `SIGINT` é o Ctrl+C do terminal.\n\nSem tratar o `SIGTERM`, o processo morre no meio das requisições em andamento. O *graceful shutdown* (desligamento gracioso) é a sequência:\n\n1. Parar de aceitar conexões novas.\n2. Deixar terminar o que está em andamento, com um prazo.\n3. Fechar o pool do banco e outros recursos.\n4. Sair com código 0.\n\nNo Nest, isso é ligado com os *shutdown hooks* (nest-10 e prod-06).\n\n### 4. Streams e backpressure\n\n*Stream* (fluxo) é processar o dado **em pedaços**, sem carregar tudo na memória. É o seu cursor com `FETCH` em lotes: ler um arquivo de 2 GB ou exportar um milhão de linhas com memória constante.\n\nO problema que as streams resolvem se chama *backpressure* (contrapressão): quando a origem produz mais rápido do que o destino consome, os pedaços se acumulam na memória. O mecanismo: `write()` devolve `false` quando o buffer interno encheu, e o evento `drain` avisa quando pode continuar. Na prática você não faz isso à mão: usa `pipeline`, de `node:stream/promises`, que liga origem e destino, respeita a contrapressão e propaga erro.\n\n### Duas notas de ecossistema\n\n- **Prefixo `node:`.** `import { readFile } from 'node:fs/promises'` deixa explícito que o módulo é nativo do Node e não um pacote npm com o mesmo nome.\n- **Worker threads.** O JavaScript roda numa thread só (js-06). `node:worker_threads` cria outras, cada uma com o próprio event loop e a própria memória. Serve para **cálculo pesado de CPU** (compactar, gerar PDF, processar imagem). Não serve para I/O, que o Node já faz sem bloquear. Antes de criar um worker, pergunte se o trabalho não devia estar no banco ou numa fila.",
+      "naPratica": "No Cockpit, a API valida as variáveis de ambiente na partida e não sobe sem `DATABASE_URL`. Uma variável booleana lida como string (`if (process.env.SEED)`) é o tipo de defeito que só aparece em produção, quando alguém define `SEED=false` achando que desligou.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Variáveis de ambiente são strings. O que sai em cada linha? (O script roda sem argumentos.)",
+          "codigo": "process.env.PORTA = '3000';\nprocess.env.DEBUG = 'false';\n\nconsole.log(typeof process.env.PORTA, process.env.PORTA + 1);\nconsole.log(process.env.DEBUG ? 'debug ligado' : 'debug desligado');\nconsole.log(process.env.DEBUG === 'true' ? 'debug ligado' : 'debug desligado');\nconsole.log(process.env.NAO_EXISTE, Number(process.env.NAO_EXISTE ?? 3333));\nconsole.log(process.argv.length, process.argv.slice(2));\n",
+          "saida": "string 30001\ndebug ligado\ndebug desligado\nundefined 3333\n2 []\n",
+          "explicacao": "`'3000' + 1` concatena: `'30001'`. A string `'false'` não é vazia, então é verdadeira no teste. O jeito certo de ler um booleano é comparar com `'true'`. Variável não definida é `undefined`, e o `??` dá o padrão. `argv` tem sempre o executável e o script; os seus argumentos vêm depois."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "terminaComErro": true,
+          "enunciado": "`process.exitCode` definido no começo. O timer ainda roda? Com que código o processo sai? (Termina com código diferente de zero de propósito.)",
+          "codigo": "process.on('exit', (codigo) => console.log('saindo com', codigo));\n\nprocess.exitCode = 3;\nconsole.log('trabalho feito');\nsetTimeout(() => console.log('timer ainda roda'), 20);\n",
+          "saida": "trabalho feito\ntimer ainda roda\nsaindo com 3\n",
+          "explicacao": "`process.exitCode` só **marca** o código: o processo continua até não haver mais trabalho pendente, e o timer roda. Se a linha fosse `process.exit(3)`, o processo sairia ali e o timer nunca rodaria. Por isso `exitCode` é a forma segura."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Desligamento gracioso em miniatura. O `process.emit('SIGTERM')` simula a chegada do sinal. Em que ordem as mensagens saem?",
+          "codigo": "let emAndamento = 0;\nconst atende = async (id) => {\n  emAndamento++;\n  await new Promise((r) => setTimeout(r, 40));\n  console.log('requisicao', id, 'respondida');\n  emAndamento--;\n};\n\nprocess.on('SIGTERM', async () => {\n  console.log('SIGTERM: parando de aceitar, faltam', emAndamento);\n  while (emAndamento > 0) await new Promise((r) => setTimeout(r, 20));\n  console.log('pool fechado, saindo');\n});\n\natende(1);\natende(2);\nsetTimeout(() => process.emit('SIGTERM'), 10);\n",
+          "saida": "SIGTERM: parando de aceitar, faltam 2\nrequisicao 1 respondida\nrequisicao 2 respondida\npool fechado, saindo\n",
+          "explicacao": "O sinal chega aos 10 ms, com duas requisições no meio. O tratador não mata nada: espera as duas terminarem (40 ms) e só então fecha os recursos. Sem o tratador, o comportamento padrão do `SIGTERM` é encerrar o processo na hora, e as duas requisições ficariam sem resposta."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Um destino lento com buffer de 4 bytes. O que `write` devolve em cada chamada?",
+          "codigo": "import { Writable } from 'node:stream';\n\nconst lento = new Writable({\n  highWaterMark: 4,\n  write(pedaco, codificacao, pronto) {\n    setTimeout(pronto, 20);\n  },\n});\n\nconsole.log(lento.write('ab'));\nconsole.log(lento.write('cdef'));\nlento.once('drain', () => console.log('drain: pode escrever de novo'));\n",
+          "saida": "true\nfalse\ndrain: pode escrever de novo\n",
+          "explicacao": "Com 2 bytes no buffer (limite 4), `write` devolve `true`: pode mandar mais. Com 6, devolve `false`: o destino está pedindo para a origem parar. Quando o buffer esvazia, o evento `drain` libera. Isso é a contrapressão. Quem ignora o `false` e continua escrevendo acumula tudo na memória."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma rota gera um relatório em PDF que leva 4 segundos de CPU, e a API inteira trava enquanto isso. Qual é a análise de sênior?",
+          "opcoes": [
+            "Marcar a função como `async` resolve: ela passa a rodar em segundo plano",
+            "Usar `Promise.all` para dividir o cálculo em paralelo",
+            "É trabalho de CPU na thread única: tem que sair dela. Fila com um processo trabalhador, ou worker thread; `async` não muda nada em cálculo síncrono",
+            "Aumentar o pool de conexões do banco"
+          ],
+          "correta": 2,
+          "explicacao": "`async` e `Promise.all` organizam **espera** de I/O. Cálculo síncrono continua ocupando a única thread do JavaScript, e nenhuma outra requisição é atendida. A saída é tirar o cálculo dali: uma fila processada por outro processo, ou uma worker thread."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que ler `process.env` em vários pontos do código é considerado má prática?",
+          "opcoes": [
+            "Porque `process.env` é lento e deve ser lido uma única vez por desempenho",
+            "Porque variável ausente ou mal formatada só é descoberta quando aquele trecho roda, e cada ponto converte a string do seu jeito",
+            "Porque `process.env` só existe durante a partida do processo",
+            "Porque o TypeScript não permite acessar `process.env` fora do `main.ts`"
+          ],
+          "correta": 1,
+          "explicacao": "O problema é de confiabilidade, não de desempenho. Validar tudo na partida faz a aplicação falhar na hora, com uma mensagem clara, em vez de quebrar em produção num caminho raro. E a conversão de tipo fica num lugar só."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o tipo de `process.env.QUALQUER_COISA`?",
+          "verso": "`string` ou `undefined`. `'false'` e `'0'` são strings não vazias, portanto verdadeiras num `if`."
+        },
+        {
+          "frente": "Por que validar as variáveis de ambiente na partida?",
+          "verso": "Para falhar na hora, com mensagem clara, em vez de subir e quebrar horas depois no primeiro uso."
+        },
+        {
+          "frente": "Quais os 4 passos do desligamento gracioso ao receber `SIGTERM`?",
+          "verso": "Parar de aceitar conexões, terminar o que está em andamento (com prazo), fechar pool e recursos, sair com código 0."
+        },
+        {
+          "frente": "O que é backpressure?",
+          "verso": "O destino avisando a origem para parar: `write()` devolve `false` quando o buffer enche e `drain` libera. `pipeline` cuida disso sozinho."
+        },
+        {
+          "frente": "Quando usar worker thread?",
+          "verso": "Cálculo pesado de CPU que travaria a thread única. Nunca para I/O. Antes, considere banco ou fila."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Node.js — process",
+          "url": "https://nodejs.org/api/process.html"
+        },
+        {
+          "titulo": "Node.js — Stream",
+          "url": "https://nodejs.org/api/stream.html"
+        },
+        {
+          "titulo": "Node.js — Worker threads",
+          "url": "https://nodejs.org/api/worker_threads.html"
+        }
+      ]
+    },
+    {
+      "id": "js-11",
+      "titulo": "npm: package.json, semver, lockfile e scripts",
+      "minutos": 11,
+      "ponte": "Hoje o seu \"build\" é compilar um `.fmb` em `.fmx`, e ele só roda se as bibliotecas `.pll` anexadas estiverem no servidor, na versão certa. O `package.json` é essa lista de dependências, só que escrita, versionada e instalada por comando. Onde quebra: aqui uma aplicação pequena tem centenas de dependências indiretas, escritas por desconhecidos, e a versão pedida é uma **faixa**, não um número.",
+      "texto": "O npm é o gerenciador de pacotes do Node. Três arquivos contam a história inteira.\n\n| arquivo | o que é | vai para o git? |\n|---|---|---|\n| `package.json` | o que o projeto **pede**: dependências em faixas, scripts, metadados | sim |\n| `package-lock.json` | o que foi **instalado de fato**: versão exata de cada pacote, direto ou indireto | sim, sempre |\n| `node_modules/` | os pacotes baixados | nunca |\n\n### `dependencies` × `devDependencies`\n\n- `dependencies`: o que o código precisa **para rodar** (NestJS, Prisma, React).\n- `devDependencies`: o que só serve **para desenvolver e construir** (TypeScript, Vitest, lint, Prettier).\n\nA diferença aparece em produção: `npm ci --omit=dev` instala só o primeiro grupo, e a imagem fica menor e com menos superfície de ataque. Pôr no grupo errado ou infla a imagem, ou quebra a aplicação na subida por pacote ausente.\n\n### Semver e as faixas\n\n*Semantic versioning* (versionamento semântico) é o contrato `MAIOR.MENOR.CORREÇÃO`: a correção conserta sem mudar comportamento, a menor acrescenta sem quebrar, a maior pode quebrar.\n\n| no `package.json` | aceita |\n|---|---|\n| `^1.4.2` (padrão do `npm install`) | de `1.4.2` até antes de `2.0.0` |\n| `~1.4.2` | de `1.4.2` até antes de `1.5.0` |\n| `1.4.2` | exatamente essa |\n| `^0.3.1` | de `0.3.1` até antes de `0.4.0`: em `0.x`, a menor é tratada como quebra |\n\nSemver é uma **promessa do autor**, não uma garantia. Uma versão menor que quebra o seu código acontece.\n\n### O lockfile e `npm ci`\n\nSem lockfile, duas instalações do mesmo `package.json` em dias diferentes baixam versões diferentes, e \"na minha máquina funciona\" vira rotina. O `package-lock.json` grava a árvore exata, com o *hash* de cada pacote.\n\n- `npm install`: respeita o lock quando ele satisfaz o `package.json`, e **altera** o lock quando você adiciona ou atualiza algo. É o comando de quem está desenvolvendo.\n- `npm ci`: apaga `node_modules`, instala **exatamente** o lock e **falha** se o lock e o `package.json` divergirem. É o comando do CI e do deploy.\n\nEm review, mudança no lockfile sem mudança correspondente no `package.json` merece pergunta.\n\n### Scripts e `npx`\n\nA seção `scripts` dá nome aos comandos do projeto: `npm run build`, `npm run lint`, `npm test`. Dentro de um script, os executáveis de `node_modules/.bin` estão no caminho, por isso `\"build\": \"tsc -b\"` funciona sem instalar nada globalmente. Scripts com prefixo `pre` e `post` rodam antes e depois do script de mesmo nome.\n\n`npx comando` roda um executável do projeto. Se o pacote não estiver instalado, o `npx` **baixa e executa** na hora, o que é prático e também é rodar código de terceiro sem revisão. Confira o nome antes de dar Enter.\n\n### Auditoria, com critério\n\n`npm audit` cruza a sua árvore com o banco de vulnerabilidades conhecidas. Trate como triagem, não como placar:\n\n- Vulnerabilidade em dependência de produção, alcançável por entrada do usuário: prioridade.\n- Vulnerabilidade numa ferramenta de build que só roda na sua máquina: risco menor, avalie.\n- `npm audit fix --force` pode subir versão maior e quebrar o projeto. Nunca rode sem ler o que ele vai mudar.\n\nCada dependência nova é código de terceiro com acesso ao seu ambiente. A pergunta de sênior antes de `npm install`: isso justifica mais um pacote, ou são vinte linhas que eu escrevo e testo? (O assunto volta em seg-09.)",
+      "naPratica": "No Cockpit, o CI roda `npm ci` e reprova se alguém mexeu no `package.json` sem atualizar o lock. Os scripts da raiz (`build`, `lint`, `test`) chamam o script de mesmo nome em cada aplicação do monorepo. Quando um colega disser \"aqui funciona\", a primeira pergunta é: você instalou com `npm ci`?",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "Um modelo simplificado das faixas do semver. Quais versões publicadas cada faixa aceita?",
+          "codigo": "const num = (v) => v.split('.').map(Number);\n\nfunction aceita(faixa, versao) {\n  const [M, m, p] = num(faixa.slice(1));\n  const [vM, vm, vp] = num(versao);\n  const naoMenor = vM > M || (vM === M && (vm > m || (vm === m && vp >= p)));\n  if (!naoMenor) return false;\n  if (faixa[0] === '~') return vM === M && vm === m;\n  if (M > 0) return vM === M;\n  return vM === 0 && vm === m;\n}\n\nconst publicadas = ['1.4.1', '1.4.2', '1.4.9', '1.5.0', '2.0.0'];\nconsole.log(publicadas.filter((v) => aceita('^1.4.2', v)));\nconsole.log(publicadas.filter((v) => aceita('~1.4.2', v)));\nconsole.log(['0.3.1', '0.3.5', '0.4.0'].filter((v) => aceita('^0.3.1', v)));\n",
+          "saida": "[ '1.4.2', '1.4.9', '1.5.0' ]\n[ '1.4.2', '1.4.9' ]\n[ '0.3.1', '0.3.5' ]\n",
+          "explicacao": "`^` aceita qualquer versão igual ou acima da pedida dentro da mesma **maior**: `1.5.0` entra, `2.0.0` não. `~` trava também a **menor**: só correções. Em `0.x`, o `^` se comporta como `~`, porque antes da `1.0.0` uma versão menor pode quebrar. Nenhuma faixa aceita versão abaixo da pedida. (O modelo cobre os casos da lição; o npm real trata mais formatos.)"
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "O `package.json` pede `^2.1.0`. O lock registrou `2.1.4` há seis meses. Hoje existem as versões abaixo. O que cada comando instala? (Simulação.)",
+          "codigo": "const publicadas = ['2.1.0', '2.1.4', '2.3.0', '3.0.0'];\nconst naFaixa = publicadas.filter((v) => v.startsWith('2.'));\nconst maisNova = naFaixa.at(-1);\n\nfunction instala(comando, lock) {\n  if (comando === 'ci') {\n    if (!lock) return 'ERRO: npm ci exige lockfile';\n    return lock;\n  }\n  if (comando === 'install') return lock ?? maisNova;\n  if (comando === 'update') return maisNova;\n}\n\nconsole.log('npm ci, com lock:      ', instala('ci', '2.1.4'));\nconsole.log('npm install, com lock: ', instala('install', '2.1.4'));\nconsole.log('npm install, sem lock: ', instala('install', undefined));\nconsole.log('npm update:            ', instala('update', '2.1.4'));\nconsole.log('npm ci, sem lock:      ', instala('ci', undefined));\n",
+          "saida": "npm ci, com lock:       2.1.4\nnpm install, com lock:  2.1.4\nnpm install, sem lock:  2.3.0\nnpm update:             2.3.0\nnpm ci, sem lock:       ERRO: npm ci exige lockfile\n",
+          "explicacao": "Com lockfile, `ci` e `install` instalam a mesma versão de seis meses atrás: é o lock que garante a repetição. Sem lock, o `install` pega a mais nova **dentro da faixa** (`2.3.0`, nunca `3.0.0`). `npm update` sobe até o topo da faixa e regrava o lock. `npm ci` se recusa a trabalhar sem lock."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Leia a árvore de dependências do Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Na pasta `cockpit`, rode `npm ls --depth=0` e anote quantos pacotes diretos existem na raiz.",
+            "Rode `npm ls --all` e veja o tamanho da árvore completa. Compare com o número anterior.",
+            "Escolha um pacote indireto da lista e rode `npm explain <nome>` para ver quem o trouxe.",
+            "Rode `npm outdated` e classifique cada linha: correção, menor ou maior.",
+            "Rode `npm audit` (só leitura) e anote, para cada alerta, se o pacote é de produção ou de desenvolvimento.",
+            "Escreva o resultado em `estudo/npm-arvore.md`. Não rode `npm audit fix` nem `npm update`."
+          ],
+          "prontoQuando": "O arquivo tem o número de dependências diretas e totais, o caminho de um pacote indireto até a raiz e a classificação dos itens do `npm outdated`, e o `git status` do app mostra que nenhum arquivo do projeto mudou."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O pipeline de deploy usa `npm install`. Qual o risco em relação a `npm ci`?",
+          "opcoes": [
+            "Nenhum: com lockfile presente os dois comandos são idênticos em tudo",
+            "`npm install` pode alterar o lockfile e resolver versões diferentes das testadas se o lock e o `package.json` divergirem; `npm ci` falharia nesse caso",
+            "`npm install` não instala as `devDependencies`",
+            "`npm install` ignora o lockfile e sempre baixa a versão mais nova"
+          ],
+          "correta": 1,
+          "explicacao": "`npm install` respeita o lock quando pode, mas conserta divergências em silêncio e regrava o lock: o que sobe pode não ser o que foi testado. `npm ci` instala exatamente o lock ou falha. Ele não ignora o lockfile, e instala as `devDependencies` por padrão."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega adiciona o TypeScript e o Vitest em `dependencies`. O que isso causa?",
+          "opcoes": [
+            "Erro de instalação: o npm recusa ferramentas de build em `dependencies`",
+            "Nada muda em lugar nenhum",
+            "A instalação de produção com `--omit=dev` passa a incluir ferramentas que não rodam em produção: imagem maior e mais código exposto",
+            "Os testes deixam de rodar no CI"
+          ],
+          "correta": 2,
+          "explicacao": "O npm não valida em que grupo um pacote deveria estar. A consequência aparece na instalação de produção, que leva junto o que só serve para desenvolver. O erro inverso é mais barulhento: pacote de execução em `devDependencies` faz a aplicação cair na subida."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`^1.4.2` × `~1.4.2`",
+          "verso": "`^` aceita até antes de `2.0.0` (menores e correções). `~` aceita até antes de `1.5.0` (só correções)."
+        },
+        {
+          "frente": "Por que o `package-lock.json` vai para o git?",
+          "verso": "Ele grava a versão exata de toda a árvore. Sem ele, cada instalação resolve as faixas de novo e pode baixar versões diferentes."
+        },
+        {
+          "frente": "`npm install` × `npm ci`",
+          "verso": "`install` pode alterar o lock; é para desenvolver. `ci` apaga `node_modules`, instala exatamente o lock e falha se houver divergência; é para CI e deploy."
+        },
+        {
+          "frente": "`dependencies` × `devDependencies`",
+          "verso": "O que o código precisa para rodar × o que só serve para desenvolver e construir. Produção instala com `--omit=dev`."
+        },
+        {
+          "frente": "Qual o risco do `npx pacote-qualquer`?",
+          "verso": "Se o pacote não está instalado, o `npx` baixa e executa na hora: código de terceiro rodando na sua máquina sem revisão."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "npm Docs — package.json",
+          "url": "https://docs.npmjs.com/cli/v11/configuring-npm/package-json"
+        },
+        {
+          "titulo": "npm Docs — npm ci",
+          "url": "https://docs.npmjs.com/cli/v11/commands/npm-ci"
+        },
+        {
+          "titulo": "Node.js — An introduction to the npm package manager",
+          "url": "https://nodejs.org/en/learn/getting-started/an-introduction-to-the-npm-package-manager"
+        }
+      ]
+    }
+  ]
+}

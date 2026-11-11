@@ -1,0 +1,849 @@
+{
+  "licoes": [
+    {
+      "id": "prod-01",
+      "titulo": "Os 12 fatores",
+      "minutos": 10,
+      "ponte": "Hoje o seu deploy é compilar o objeto no banco e publicar um `.fmx`. O estado inteiro mora no banco, o servidor de aplicação é um só e a configuração foi feita uma vez por alguém que talvez nem esteja mais na equipe. Os 12 fatores são regras para uma aplicação que pode ser **destruída e recriada a qualquer momento**, em quantas cópias for preciso. A ponte: você já pratica a regra principal, estado no banco. Onde quebra: o banco deixa de ser o lugar onde a aplicação roda e vira um serviço que ela usa.",
+      "texto": "*The Twelve-Factor App* é um manifesto de 2011 com doze regras para aplicações que rodam como serviço. Continua sendo o vocabulário comum entre desenvolvimento e plataforma. Você não precisa decorar os doze. Cinco deles decidem se a sua aplicação é fácil ou difícil de operar.\n\n### 1. Configuração no ambiente\n\nTudo o que **muda entre ambientes** (URL do banco, segredos, endereço de outros serviços) vem de variável de ambiente, nunca do código nem de arquivo versionado. O teste do manifesto: o repositório poderia ser aberto ao público agora sem vazar credencial.\n\nA consequência prática é o princípio *build once, deploy many* (construa uma vez, publique várias): o **mesmo artefato** vai para homologação e produção, e só a configuração muda. Se você recompila para cada ambiente, o que testou não é o que publicou.\n\nValide a configuração **na subida** e falhe cedo (nest-10). Aplicação que sobe sem `DATABASE_URL` e só quebra na primeira requisição é pior que aplicação que não sobe.\n\n### 2. Processos sem estado\n\nO processo não guarda nada que precise sobreviver a ele. Sessão, arquivo enviado, contador, cache que não pode ser perdido: tudo vai para um serviço de apoio (banco, Redis, armazenamento de objetos). A memória e o disco local são rascunho.\n\nO motivo: em produção existem várias cópias atrás de um balanceador, e qualquer uma pode ser reiniciada. A requisição seguinte do mesmo usuário cai em outra cópia.\n\n### 3. Logs como fluxo\n\nA aplicação **não gerencia arquivo de log**. Ela escreve eventos na saída padrão (`stdout`), um por linha, e o ambiente decide para onde vão. Em contêiner, arquivo de log dentro do contêiner some junto com ele. O formato desses eventos é assunto de prod-05.\n\n### 4. Paridade entre desenvolvimento e produção\n\nQuanto mais parecido o ambiente local for com produção, menos surpresa no deploy. Mesmo banco e mesma versão principal, não SQLite local e Postgres em produção. Mesmo jeito de subir. É o que o contêiner e o compose entregam (prod-02 e prod-03).\n\n### 5. Descartabilidade\n\nO processo sobe rápido e desliga com educação: ao receber o sinal de término, para de aceitar trabalho novo, termina o que está em andamento e sai (prod-06). Subida rápida é o que permite escalar e fazer deploy sem janela.\n\n### Os outros, em uma linha\n\n| Fator | Ideia |\n|---|---|\n| Base de código | Um repositório, vários deploys |\n| Dependências | Declaradas e isoladas (`package.json` e lockfile) |\n| Serviços de apoio | Banco, fila e cache são recursos plugáveis por URL |\n| Build, release, run | Etapas separadas: artefato imutável + configuração = release |\n| Vínculo de porta | A aplicação expõe a própria porta, sem servidor de aplicação externo |\n| Concorrência | Escala por processos, não por um processo gigante |\n| Processos administrativos | Migration e script pontual rodam com o mesmo código e a mesma configuração |\n\n### Critério\n\nOs 12 fatores são um bom padrão, não uma lei. Dois pontos de atenção. O front foge da regra de configuração: o valor é fixado no build (front-08). E \"sem estado\" não quer dizer \"sem cache em memória\": cache que pode ser perdido e reconstruído é permitido. O que não pode é a **correção** do sistema depender dele.",
+      "naPratica": "No Cockpit, a API lê `DATABASE_URL` e os segredos do ambiente e valida na subida. O `.env` local fica fora do git, com um `.env.example` versionado mostrando os nomes sem os valores. No review, um `if (ambiente === 'producao')` espalhado pelo código é sinal de configuração no lugar errado.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma função de configuração que valida na subida. O ambiente é passado por parâmetro, para o teste não depender da máquina. O que sai?",
+          "codigo": "type Ambiente = Record<string, string | undefined>;\n\nfunction carregaConfig(env: Ambiente) {\n  const faltando = ['DATABASE_URL', 'JWT_SECRET'].filter((nome) => !env[nome]);\n  if (faltando.length) throw new Error('configuração ausente: ' + faltando.join(', '));\n  return { porta: Number(env.PORT ?? '3000'), banco: env.DATABASE_URL };\n}\n\nconsole.log(JSON.stringify(carregaConfig({ DATABASE_URL: 'postgres://dev', JWT_SECRET: 'x' })));\ntry {\n  carregaConfig({ PORT: '8080', JWT_SECRET: '' });\n} catch (e) {\n  console.log((e as Error).message);\n}\n",
+          "saida": "{\"porta\":3000,\"banco\":\"postgres://dev\"}\nconfiguração ausente: DATABASE_URL, JWT_SECRET\n",
+          "explicacao": "Na primeira chamada `PORT` não veio e o padrão 3000 é aplicado: padrão só para o que é seguro assumir. Na segunda, `DATABASE_URL` não existe e `JWT_SECRET` é texto vazio, que também conta como ausente. A função lança antes de a aplicação aceitar qualquer requisição. Segredo nunca recebe valor padrão."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas cópias da API atrás de um balanceador que alterna as requisições. Cada cópia conta as visitas em memória. O que o usuário vê em cinco chamadas?",
+          "codigo": "const criaInstancia = () => {\n  let visitas = 0;\n  return () => ++visitas;\n};\n\nconst instancias = [criaInstancia(), criaInstancia()];\nconst respostas = [0, 1, 2, 3, 4].map((i) => instancias[i % 2]!());\n\nconsole.log(respostas.join(' '));\n",
+          "saida": "1 1 2 2 3\n",
+          "explicacao": "Cada cópia tem a própria variável. O usuário faz cinco chamadas e vê o contador andar 1, 1, 2, 2, 3. Com uma cópia só, em desenvolvimento, o defeito não aparece. O mesmo vale para sessão em memória, limite de requisições por usuário e arquivo gravado em disco local: o estado precisa ir para um serviço compartilhado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A equipe gera um build para homologação e, depois de aprovado, gera outro build do mesmo commit para produção. Qual fator isso contraria, e qual o risco?",
+          "opcoes": [
+            "Nenhum: como o commit é o mesmo, os dois builds são idênticos",
+            "Build, release, run: o artefato de produção não é o que foi testado, e pode diferir por dependência ou ambiente de build",
+            "Logs como fluxo: os dois builds vão gerar logs em lugares diferentes",
+            "Descartabilidade: o segundo build demora mais para subir"
+          ],
+          "correta": 1,
+          "explicacao": "O artefato deve ser construído uma vez e promovido entre ambientes, mudando só a configuração. Dois builds do mesmo commit podem diferir: uma dependência transitiva atualizada, uma imagem base nova, uma variável do ambiente de build. A primeira opção é a crença que causa o incidente."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o upload de anexos está gravando numa pasta do servidor da API e funciona. Tem algum problema em deixar assim?\" Responda com o critério, não só com sim ou não.",
+          "pontos": [
+            "Disse que funciona enquanto existir uma cópia só da API e ela nunca for recriada",
+            "Explicou o defeito com duas cópias: o arquivo está em uma e a requisição cai na outra",
+            "Citou que em contêiner o disco local some quando o contêiner é recriado, inclusive em todo deploy",
+            "Propôs o destino correto: armazenamento compartilhado, com o banco guardando só a referência",
+            "Dimensionou: se o plano é uma instância única com volume persistente, dá para conviver, sabendo o limite"
+          ],
+          "modelo": "Funciona hoje porque temos uma cópia só da API e ela nunca foi recriada. O problema aparece em dois momentos. Com duas cópias atrás do balanceador, o arquivo fica gravado em uma e o download cai na outra. E em contêiner o disco local é descartado a cada deploy, então os anexos somem na próxima publicação. O processo tem que ser sem estado: o arquivo vai para um armazenamento compartilhado e o banco guarda a referência. Se a decisão for ficar com uma instância e um volume persistente por enquanto, dá para conviver, mas isso tem que estar escrito como limite conhecido, com o custo de mudar depois."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Os cinco fatores que mais pesam no dia a dia",
+          "verso": "Configuração no ambiente, processos sem estado, logs como fluxo, paridade dev/prod e descartabilidade."
+        },
+        {
+          "frente": "Por que o mesmo artefato deve ir para homologação e produção?",
+          "verso": "Para publicar exatamente o que foi testado. Recompilar por ambiente abre espaço para diferença de dependência e de build."
+        },
+        {
+          "frente": "O que \"processo sem estado\" proíbe e o que permite?",
+          "verso": "Proíbe depender de memória ou disco local para a correção (sessão, arquivo, contador). Permite cache que pode ser perdido e reconstruído."
+        },
+        {
+          "frente": "Onde a aplicação escreve log, segundo os 12 fatores?",
+          "verso": "Na saída padrão, um evento por linha. O ambiente coleta e encaminha. A aplicação não gerencia arquivo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "The Twelve-Factor App",
+          "url": "https://12factor.net/"
+        },
+        {
+          "titulo": "The Twelve-Factor App — Config",
+          "url": "https://12factor.net/config"
+        }
+      ]
+    },
+    {
+      "id": "prod-02",
+      "titulo": "Contêiner e Docker: imagem e Dockerfile multi-estágio",
+      "minutos": 12,
+      "ponte": "O `.fmx` só roda se o servidor tiver a versão certa do runtime do Forms, as bibliotecas e as variáveis de ambiente no lugar. Uma **imagem** de contêiner é o compilado **com o runtime e todas as dependências dentro**: o que roda na sua máquina é byte a byte o que roda em produção. Onde quebra: a imagem não leva o banco nem os dados. Ela é só o executável e o ambiente dele.",
+      "texto": "O Docker não está instalado na sua máquina. Esta lição é de leitura e escrita de arquivo: o objetivo é você ler e criticar um Dockerfile em um review.\n\n### Três palavras\n\n| Termo | O que é | Paralelo |\n|---|---|---|\n| **Imagem** | Pacote imutável: sistema de arquivos com runtime, dependências e o seu código, mais o comando de partida | O programa instalado |\n| **Contêiner** | Um **processo** rodando a partir de uma imagem, isolado dos outros | O programa em execução |\n| **VM** (máquina virtual) | Um computador inteiro simulado, com o próprio sistema operacional | Outro servidor |\n\nO contêiner **não é uma VM leve**. Ele compartilha o núcleo do sistema hospedeiro, e o isolamento é feito pelo próprio núcleo. Por isso sobe em segundos e pesa megabytes. O custo: o isolamento é mais fraco que o de uma VM. Contêiner não é fronteira de segurança forte.\n\nDuas propriedades guiam todo o resto. A imagem é **imutável**: versão nova é imagem nova, com outra etiqueta. O contêiner é **descartável**: o que ele grava no próprio disco some quando é removido.\n\n### Camadas e cache\n\nCada instrução do Dockerfile gera uma **camada**. No build seguinte, uma camada é reaproveitada se a instrução e os arquivos que ela usa não mudaram. Quando uma camada muda, **todas as seguintes** são refeitas.\n\nDisso sai a regra de ordem: o que muda pouco vem antes, o que muda sempre vem depois. Copiar o código inteiro antes de instalar dependências refaz a instalação a cada linha alterada.\n\n### Dockerfile multi-estágio para Node\n\n```text\n# Estágio 1: tem tudo para compilar\nFROM node:24-slim AS build\nWORKDIR /app\nCOPY package.json package-lock.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\n\n# Estágio 2: só o necessário para rodar\nFROM node:24-slim\nWORKDIR /app\nENV NODE_ENV=production\nCOPY package.json package-lock.json ./\nRUN npm ci --omit=dev\nCOPY --from=build /app/dist ./dist\nUSER node\nEXPOSE 3000\nCMD [\"node\", \"dist/main.js\"]\n```\n\nO que observar:\n\n- **Dois `FROM`.** O primeiro estágio tem compilador, dependências de desenvolvimento e fontes. A imagem final só recebe o que o `COPY --from=build` traz. Menor para baixar e com menos superfície de ataque.\n- **Manifestos antes do código.** `package.json` e o lockfile entram primeiro. Enquanto eles não mudam, a camada do `npm ci` vem do cache.\n- **`npm ci`**, não `npm install`: instala exatamente o que o lockfile diz (js-11).\n- **`USER node`.** Por padrão o processo roda como root dentro do contêiner. A imagem oficial do Node já traz o usuário `node`, sem privilégio.\n- **`CMD` com `node` direto**, em forma de lista. Com `npm start`, o npm fica entre o sistema e a sua aplicação e o sinal de término pode não chegar a ela (prod-06).\n- **Etiqueta fixa na imagem base.** `node:24-slim`, nunca `node:latest`, que muda sem aviso.\n\nEm um monorepo com Prisma, o exemplo real tem mais passos: workspaces e geração do cliente. A estrutura em dois estágios é a mesma.\n\n### `.dockerignore`\n\nO `COPY . .` copia tudo o que está no diretório de build. O `.dockerignore` lista o que fica de fora: `node_modules`, `dist`, `.git`, e principalmente `.env`. Sem ele, o build fica lento e um segredo local acaba gravado em uma camada.\n\n### Armadilha: segredo na imagem\n\n`ENV JWT_SECRET=...` ou `COPY .env` gravam o segredo em uma camada, e quem tem a imagem lê. Apagar o arquivo em uma instrução posterior **não remove** da camada anterior. Configuração entra quando o contêiner sobe (prod-01), não no build.",
+      "naPratica": "No review de um Dockerfile, confira cinco itens: multi-estágio, manifestos copiados antes do código, usuário não-root, `.dockerignore` cobrindo `.env` e `node_modules`, e nenhum segredo em `ENV` ou `COPY`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma simulação do cache de camadas: a partir da primeira instrução afetada, tudo é refeito. O que acontece ao mudar um arquivo de código? E ao mudar o `package.json`?",
+          "codigo": "const passos = [\n  'FROM node:24-slim',\n  'COPY package.json package-lock.json',\n  'RUN npm ci',\n  'COPY src',\n  'RUN npm run build',\n];\n\nfunction build(arquivoAlterado: string): string {\n  let refaz = false;\n  return passos\n    .map((p) => {\n      if (p.startsWith('COPY') && p.includes(arquivoAlterado)) refaz = true;\n      return refaz ? 'REFAZ' : 'cache';\n    })\n    .join(' ');\n}\n\nconsole.log(build('src'));\nconsole.log(build('package.json'));\n",
+          "saida": "cache cache cache REFAZ REFAZ\ncache REFAZ REFAZ REFAZ REFAZ\n",
+          "explicacao": "Mudar um arquivo de código só invalida a cópia do código e a compilação: a instalação de dependências, que é o passo demorado, vem do cache. Mudar o `package.json` invalida a segunda camada e tudo depois dela. Se o Dockerfile copiasse tudo antes do `npm ci`, qualquer mudança cairia no segundo caso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual o principal ganho de um Dockerfile multi-estágio para uma API Node?",
+          "opcoes": [
+            "O build roda em paralelo e termina mais rápido",
+            "A imagem final não leva compilador, dependências de desenvolvimento nem fontes: fica menor e com menos superfície de ataque",
+            "Permite rodar dois processos no mesmo contêiner",
+            "Dispensa o uso de `.dockerignore`"
+          ],
+          "correta": 1,
+          "explicacao": "O estágio de build é descartado. Só o que é copiado explicitamente dele chega à imagem final. Velocidade de build depende do cache de camadas, não do número de estágios. E o `.dockerignore` continua necessário, porque controla o que entra no primeiro estágio."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um Dockerfile tem `COPY .env .` e, três linhas depois, `RUN rm .env`. O segredo está protegido na imagem final?",
+          "opcoes": [
+            "Sim, o arquivo foi removido antes do fim do build",
+            "Sim, desde que a imagem não seja publicada com a etiqueta `latest`",
+            "Não: a camada do `COPY` continua na imagem com o arquivo, e a remoção é só mais uma camada por cima",
+            "Não, mas basta rodar o contêiner como usuário não-root para ninguém ler"
+          ],
+          "correta": 2,
+          "explicacao": "As camadas se acumulam. Remover um arquivo cria uma camada que o esconde, sem apagar a anterior, e quem tem a imagem inspeciona camada por camada. Usuário não-root protege o contêiner em execução, não o conteúdo da imagem."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, por que complicar com Docker? A gente sempre instalou o runtime no servidor e copiou o compilado, e funcionava.\" O que você responde?",
+          "pontos": [
+            "Reconheceu que o modelo antigo funciona com um servidor estável e pouca mudança",
+            "Explicou o ganho central: o artefato leva o runtime e as dependências, e o que foi testado é o que roda",
+            "Citou reprodutibilidade: servidor novo ou segunda cópia em minutos, sem roteiro de instalação manual",
+            "Citou rollback: voltar é subir a imagem anterior",
+            "Nomeou o custo: build mais elaborado, registro de imagens e algo novo para a equipe aprender"
+          ],
+          "modelo": "Funcionava porque era um servidor só, que quase não mudava e que alguém conhecia de cor. O que o contêiner muda é o que a gente entrega: não só o compilado, mas o compilado com o Node na versão certa e todas as dependências, em um pacote fechado. O que passou no teste é exatamente o que roda em produção. Subir uma segunda cópia ou um servidor novo vira questão de minutos, sem roteiro de instalação. E voltar atrás é subir a imagem anterior. O custo existe: tem um Dockerfile para manter, um registro de imagens e uma curva de aprendizado. Para uma aplicação que vai ter deploy frequente, eu acho que se paga."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Escreva e comente um Dockerfile (sem rodar)",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/prod-02/Dockerfile` copiando de memória a estrutura em dois estágios da lição. Não rode `docker`: ele não está instalado.",
+            "Acima de cada instrução, escreva um comentário de uma linha dizendo por que ela está naquela posição.",
+            "Crie `estudo/prod-02/.dockerignore` com pelo menos cinco entradas e um comentário dizendo o que cada uma evita.",
+            "Escreva em `notas.md` o que mudaria para o `apps/api` real do Cockpit (workspaces, geração do cliente Prisma) como lista de dúvidas, sem tentar resolver."
+          ],
+          "prontoQuando": "O Dockerfile tem dois `FROM`, os manifestos são copiados antes do código, há `USER` não-root, o `CMD` chama `node` direto, e toda instrução tem o seu comentário."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Imagem × contêiner",
+          "verso": "Imagem: pacote imutável com runtime, dependências e código. Contêiner: um processo rodando a partir dela, isolado e descartável."
+        },
+        {
+          "frente": "Por que copiar `package.json` e o lockfile antes do resto do código?",
+          "verso": "Para a camada do `npm ci` vir do cache enquanto as dependências não mudam. Camada alterada refaz todas as seguintes."
+        },
+        {
+          "frente": "O que um build multi-estágio deixa fora da imagem final?",
+          "verso": "Compilador, dependências de desenvolvimento e fontes. Só entra o que o `COPY --from` traz."
+        },
+        {
+          "frente": "Por que `CMD [\"node\", \"dist/main.js\"]` e não `npm start`?",
+          "verso": "Com o npm no meio, o sinal de término pode não chegar à aplicação, e o desligamento gracioso não acontece."
+        },
+        {
+          "frente": "Por que um segredo nunca entra por `ENV` ou `COPY` no Dockerfile?",
+          "verso": "Fica gravado em uma camada da imagem, legível por quem a tem. Apagar depois não remove a camada anterior."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Docker Docs — Multi-stage builds",
+          "url": "https://docs.docker.com/build/building/multi-stage/"
+        },
+        {
+          "titulo": "Docker Docs — Building best practices",
+          "url": "https://docs.docker.com/build/building/best-practices/"
+        }
+      ]
+    },
+    {
+      "id": "prod-03",
+      "titulo": "docker compose e o ambiente local",
+      "minutos": 10,
+      "ponte": "Para um desenvolvedor novo trabalhar no sistema atual, alguém instala o client, configura o `tnsnames.ora`, cria o usuário e passa um roteiro de várias páginas. O *compose* é esse roteiro escrito como **arquivo executável**: um comando sobe a API, o banco e o cache com as versões certas. Onde a analogia quebra: o banco do compose é local, vazio e descartável. Não é o banco compartilhado de desenvolvimento com dado de todo mundo.",
+      "texto": "Um contêiner sozinho raramente basta. A API precisa de um Postgres e de um Redis. O `docker compose` descreve o conjunto em um arquivo `compose.yaml` versionado junto do código. O Docker não está instalado na sua máquina, então aqui o trabalho é ler e escrever o arquivo.\n\n```text\nservices:\n  api:\n    build: ./apps/api\n    ports:\n      - \"3000:3000\"\n    environment:\n      DATABASE_URL: postgres://cockpit:cockpit@db:5432/cockpit\n      REDIS_URL: redis://redis:6379\n    depends_on:\n      db:\n        condition: service_healthy\n      redis:\n        condition: service_started\n\n  db:\n    image: postgres:17\n    environment:\n      POSTGRES_USER: cockpit\n      POSTGRES_PASSWORD: cockpit\n      POSTGRES_DB: cockpit\n    volumes:\n      - dados_pg:/var/lib/postgresql/data\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U cockpit\"]\n      interval: 5s\n      timeout: 3s\n      retries: 10\n\n  redis:\n    image: redis:7\n\nvolumes:\n  dados_pg:\n```\n\n### Rede\n\nO compose cria uma rede privada para o projeto, e **o nome do serviço vira nome de host**. Dentro da rede, a API alcança o banco em `db:5432`. O erro clássico é pôr `localhost` na `DATABASE_URL` da API. Dentro de um contêiner, `localhost` é o próprio contêiner, e não há banco ali.\n\n`ports` publica uma porta para a **sua máquina**, no formato porta do hospedeiro e porta do contêiner. Não é necessário para os serviços conversarem entre si. No exemplo, o banco não publica porta: só a API o alcança. Publique a porta do banco quando quiser abrir um cliente SQL a partir da sua máquina.\n\n### Volumes\n\nO disco do contêiner é descartável. O **volume nomeado** `dados_pg` guarda o diretório de dados do Postgres fora do contêiner: recriar o serviço mantém as tabelas. Remover o volume apaga o banco local, e isso é útil para recomeçar do zero.\n\nExiste também o *bind mount*, que espelha uma pasta da sua máquina dentro do contêiner. É usado em desenvolvimento para o código editado aparecer sem novo build.\n\n### Healthcheck e ordem de subida\n\n`depends_on` simples só garante que o contêiner do banco **foi iniciado**, não que o banco **aceita conexão**. O Postgres leva alguns segundos para ficar pronto. O `healthcheck` roda um comando dentro do contêiner para dizer quando ele está saudável, e `condition: service_healthy` faz a API esperar por isso.\n\nIsso resolve a subida local. Não dispensa a aplicação de lidar com o banco indisponível em produção, onde ele pode cair depois de a API já estar no ar.\n\n### Para que serve\n\n- **Ambiente local igual para todos.** Clonar, subir, trabalhar. Paridade com produção (prod-01).\n- **Dependências em teste.** O e2e da API roda contra um Postgres de verdade (test-05), inclusive no CI.\n- **Uso misto.** Muita equipe roda só banco e Redis no compose e a API direto na máquina, pela rapidez do recarregamento.\n\n### O limite\n\nO compose gerencia contêineres em **uma máquina**. Não distribui entre servidores, não substitui instância que morreu em outro nó e não escala sozinho. Para um sistema pequeno em um servidor único, ele pode ser o ambiente de produção, com backup do volume e um plano para a parada durante o deploy. Acima disso entra um orquestrador (prod-09).\n\nA senha `cockpit` no arquivo é aceitável porque o banco é local e descartável. A mesma prática em um compose de produção é vazamento: lá o segredo vem do ambiente.",
+      "naPratica": "O Cockpit pode ter um `compose.yaml` na raiz com Postgres e Redis. A regra de review: nenhuma credencial real no arquivo, imagem com versão fixa, volume nomeado para o banco e healthcheck em todo serviço de que outro depende.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A ordem de subida respeita o `depends_on`. Com as dependências abaixo, em que ordem os serviços sobem?",
+          "codigo": "const dependeDe: Record<string, string[]> = {\n  web: ['api'],\n  api: ['db', 'redis'],\n  db: [],\n  redis: [],\n};\n\nconst ordem: string[] = [];\nfunction sobe(servico: string) {\n  if (ordem.includes(servico)) return;\n  for (const d of dependeDe[servico] ?? []) sobe(d);\n  ordem.push(servico);\n}\n\nObject.keys(dependeDe).forEach(sobe);\nconsole.log(ordem.join(' > '));\n",
+          "saida": "db > redis > api > web\n",
+          "explicacao": "Um serviço só entra na lista depois de todas as suas dependências. `web` é o primeiro a ser visitado, mas puxa `api`, que puxa `db` e `redis`. Essa ordem garante só a partida. Para esperar o banco aceitar conexão, é preciso healthcheck e `condition: service_healthy`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Dentro do compose, a API não conecta no banco com `DATABASE_URL=postgres://cockpit:cockpit@localhost:5432/cockpit`. O banco está no ar. Qual o problema?",
+          "opcoes": [
+            "Falta publicar a porta 5432 do banco com `ports`",
+            "Dentro do contêiner da API, `localhost` é o próprio contêiner; o host do banco é o nome do serviço, `db`",
+            "O Postgres não aceita conexão de outro contêiner por padrão",
+            "A senha não pode ser igual ao nome do usuário"
+          ],
+          "correta": 1,
+          "explicacao": "Cada contêiner tem a própria interface de rede. O compose resolve o nome do serviço como host na rede do projeto. Publicar a porta é a correção tentadora, mas ela expõe o banco para a sua máquina e não muda o que `localhost` significa dentro da API."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O serviço `db` não declara nenhum volume. O que acontece com as tabelas quando o contêiner do banco é removido e recriado?",
+          "opcoes": [
+            "Ficam preservadas, porque a imagem do Postgres guarda os dados",
+            "São perdidas, porque o disco do contêiner é descartado junto com ele",
+            "Ficam preservadas se o healthcheck estiver configurado",
+            "São movidas para o contêiner da API"
+          ],
+          "correta": 1,
+          "explicacao": "A imagem é imutável e não guarda dado nenhum. O que o contêiner grava fica na camada dele e some quando ele é removido. O volume nomeado existe para o diretório de dados sobreviver à recriação. Algumas imagens criam um volume anônimo por conta própria, mas depender disso é perder o controle sobre onde o dado está."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o compose está funcionando redondo na máquina de todo mundo. Dá para usar o mesmo arquivo em produção?\" Qual a sua resposta?",
+          "pontos": [
+            "Respondeu com depende: para um servidor único e um sistema pequeno é viável",
+            "Listou o que o compose não faz: distribuir entre máquinas, repor instância em outro nó, escalar, atualizar sem parada",
+            "Separou o arquivo local do de produção: sem senha no arquivo, sem bind mount de código, imagem versionada em vez de build local",
+            "Citou o banco: em produção costuma ficar fora do compose, em serviço gerenciado ou servidor próprio, com backup",
+            "Deu o gatilho para migrar: precisar de mais de uma máquina ou de deploy sem parada"
+          ],
+          "modelo": "O mesmo arquivo, não. A mesma ferramenta, depende do tamanho. Para um sistema pequeno em um servidor só, compose em produção é uma escolha honesta e barata. O que ele não faz: distribuir entre máquinas, repor uma instância que caiu em outro servidor, escalar e trocar de versão sem parada. E o arquivo de produção é outro: imagem versionada vinda do registro em vez de build local, segredos pelo ambiente, sem pasta de código montada. O banco eu tiraria do compose e poria em um serviço gerenciado ou servidor próprio, com backup testado. O gatilho para sair do compose é precisar de mais de uma máquina ou de deploy sem derrubar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Escreva o compose do Cockpit (sem rodar)",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/prod-03/compose.yaml` com os serviços `db` (Postgres) e `redis`. Não rode `docker`: ele não está instalado.",
+            "Dê ao `db` um volume nomeado, um healthcheck e versão fixa de imagem.",
+            "Acrescente o serviço `api` com `depends_on` esperando o banco saudável e a `DATABASE_URL` apontando para o host correto.",
+            "Em `notas.md`, escreva o que mudaria nesse arquivo para ele servir a produção em um servidor único."
+          ],
+          "prontoQuando": "O arquivo tem três serviços, nenhum `localhost` nas URLs internas, volume nomeado declarado nas duas pontas e uma lista de pelo menos quatro mudanças para produção."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Dentro do compose, qual o host do banco para a API?",
+          "verso": "O nome do serviço (`db`). `localhost` dentro de um contêiner é o próprio contêiner."
+        },
+        {
+          "frente": "Por que `depends_on` simples não basta para a API subir depois do banco?",
+          "verso": "Ele garante que o contêiner iniciou, não que o banco aceita conexão. É preciso healthcheck e `condition: service_healthy`."
+        },
+        {
+          "frente": "Para que serve um volume nomeado?",
+          "verso": "Guardar dado fora do contêiner descartável. Recriar o serviço mantém o banco; remover o volume apaga."
+        },
+        {
+          "frente": "Qual o limite do compose em produção?",
+          "verso": "Gerencia uma máquina só: não distribui, não repõe instância em outro nó, não escala nem atualiza sem parada."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Docker Docs — Docker Compose",
+          "url": "https://docs.docker.com/compose/"
+        },
+        {
+          "titulo": "Docker Docs — Compose file reference",
+          "url": "https://docs.docker.com/reference/compose-file/"
+        }
+      ]
+    },
+    {
+      "id": "prod-04",
+      "titulo": "Deploy: build, migrations e zero downtime",
+      "minutos": 12,
+      "ponte": "No seu deploy de hoje, o `ALTER TABLE`, a package recompilada e o `.fmx` novo entram na mesma janela, com o sistema parado ou quase. Código e estrutura mudam juntos. Sem janela, isso deixa de ser possível: durante alguns minutos a **versão antiga e a nova do código rodam ao mesmo tempo sobre o mesmo banco**. Você já viveu um pedaço disso: package inválida porque a coluna mudou antes de o código ser recompilado. O desenho inteiro do deploy moderno existe para esse intervalo.",
+      "texto": "### O pipeline\n\n```text\ncommit -> build -> testes -> imagem -> migrate deploy -> subir versão nova -> verificar\n```\n\n1. **Build e testes.** Lint, tipos, testes. Falhou, para aqui (ferr-05).\n2. **Imagem.** Construída **uma vez**, etiquetada com o identificador do commit e enviada ao registro. É ela que vai para todos os ambientes (prod-01).\n3. **Migrations.** `prisma migrate deploy` aplica as migrations pendentes, em um passo próprio do pipeline, executado **uma vez**. Não deixe cada instância aplicar migration ao subir: com várias cópias, todas tentam ao mesmo tempo, e uma migration lenta vira falha de partida.\n4. **Subir.** Trocar as instâncias antigas pelas novas.\n5. **Verificar.** Health, taxa de erro e latência nos primeiros minutos (prod-05).\n\n### Zero downtime\n\nA troca sem parada mais comum é a atualização gradual (*rolling update*): sobe uma instância nova, espera ela ficar pronta, tira uma antiga do balanceador, espera as requisições em andamento terminarem, desliga. Repete até trocar todas.\n\nTrês pré-requisitos:\n\n- **Mais de uma instância.** Com uma só, alguém fica sem atendimento.\n- **Readiness e desligamento gracioso** funcionando (prod-06).\n- **Versões vizinhas compatíveis.** Durante a troca, antiga e nova atendem juntas, com o **mesmo banco**.\n\nO terceiro é o que pega quem vem do deploy com janela.\n\n### Migration × código: expand/contract\n\nComo as duas versões convivem, **toda mudança de estrutura precisa ser compatível com o código que já está rodando**. A migration entra **antes** do código novo, e o código antigo tem que continuar funcionando com a estrutura nova.\n\nMudança que só acrescenta (tabela nova, coluna nova que aceita nulo ou tem valor padrão) é segura. Mudança destrutiva (remover, renomear, tornar obrigatória) é dividida em deploys, no padrão *expand/contract* (expandir e contrair), que você viu aplicado a API em http-09.\n\nRenomear a coluna `nome` para `titulo`:\n\n| Deploy | Banco | Código |\n|---|---|---|\n| 1. Expandir | Cria `titulo`, mantém `nome` | Grava nas duas, lê de `nome` |\n| 2. Preencher | Copia `nome` para `titulo` nas linhas antigas, em lotes | Sem mudança |\n| 3. Virar | Sem mudança | Lê e grava só em `titulo` |\n| 4. Contrair | Remove `nome` | Sem mudança |\n\nQuatro deploys para uma mudança que com janela seria um `ALTER TABLE ... RENAME COLUMN`. Esse é o preço de não parar. Em um sistema que pode parar dez minutos de madrugada, a janela pode ser a escolha certa. Decida sabendo quanto custa cada uma.\n\nAs travas seguem valendo, e você as conhece melhor que a maioria: um `ALTER TABLE` que bloqueia uma tabela grande derruba a aplicação sem que nenhuma instância tenha caído (dados-03).\n\n### Rollback\n\nVoltar o **código** é barato quando a imagem anterior está no registro: basta subi-la de novo. Só funciona se o banco ainda for compatível com ela, e é isso que o expand/contract garante. Depois de um passo de expansão, o código anterior continua rodando.\n\nVoltar o **banco** é outra conversa. Uma migration de *down* que remove uma coluna perde os dados gravados nela desde o deploy. Na prática, estrutura se corrige **para a frente**, com uma migration nova. O passo de contração é o ponto sem volta: por isso ele vai por último, sozinho, dias depois, quando ninguém mais lê a coluna.",
+      "naPratica": "No Cockpit, o pipeline roda `prisma migrate deploy` como passo próprio antes de subir a imagem nova. No review de uma migration, a pergunta é: o código que está em produção agora continua funcionando depois que esta migration rodar?",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Três estados do banco durante a renomeação e duas versões do código. Quais versões funcionam em cada estado?",
+          "codigo": "const esquemas: Record<string, string[]> = {\n  antigo: ['nome'],\n  expandido: ['nome', 'titulo'],\n  contraido: ['titulo'],\n};\nconst colunasQueUsa: Record<string, string[]> = { v1: ['nome'], v2: ['titulo'] };\n\nfor (const [esquema, colunas] of Object.entries(esquemas)) {\n  const funcionam = Object.entries(colunasQueUsa)\n    .filter(([, usa]) => usa.every((c) => colunas.includes(c)))\n    .map(([versao]) => versao);\n  console.log(esquema + ':', funcionam.join(' e '));\n}\n",
+          "saida": "antigo: v1\nexpandido: v1 e v2\ncontraido: v2\n",
+          "explicacao": "Só o estado expandido aceita as duas versões. É nele que o banco precisa estar enquanto v1 e v2 atendem juntas, e é ele que permite voltar para a v1 se a v2 der problema. Renomear direto pula do estado antigo para o contraído: nenhum instante serve às duas versões, e a v1 quebra assim que a migration roda."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um deploy precisa adicionar uma coluna e o código que a usa. Em que ordem aplicar, com atualização gradual?",
+          "opcoes": [
+            "Código novo primeiro, migration depois, para a coluna só existir quando houver uso",
+            "Migration primeiro, com a coluna aceitando nulo ou com valor padrão; depois o código novo",
+            "Os dois ao mesmo tempo, na mesma transação",
+            "Tanto faz, desde que seja no mesmo pipeline"
+          ],
+          "correta": 1,
+          "explicacao": "O código novo falha se a coluna não existe, então a estrutura vem antes. E a migration precisa ser compatível com o código antigo que ainda está no ar: coluna nova obrigatória e sem padrão quebraria os `INSERT` dele. Não existe \"ao mesmo tempo\": deploy de código e DDL não compartilham transação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que não deixar a própria aplicação rodar as migrations ao iniciar, quando há várias instâncias?",
+          "opcoes": [
+            "Porque o Prisma não permite rodar migration de dentro da aplicação",
+            "Porque várias instâncias sobem juntas e disputam a migration, e uma migration lenta ou com erro vira falha de partida de todas",
+            "Porque migrations só podem ser aplicadas por um DBA",
+            "Porque a aplicação não tem acesso ao banco na subida"
+          ],
+          "correta": 1,
+          "explicacao": "A migration é um evento do deploy, não de cada processo. Acoplada à partida, ela roda uma vez por instância, atrasa o readiness e transforma um erro de DDL em aplicação fora do ar. Como passo próprio do pipeline, ela roda uma vez, e a falha interrompe o deploy antes de trocar qualquer instância."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, como a gente sobe essa versão sem derrubar ninguém? Ela muda a estrutura de uma tabela.\" Dê o plano em um minuto.",
+          "pontos": [
+            "Perguntou ou afirmou que tipo de mudança é: só acrescenta ou é destrutiva",
+            "Disse que as duas versões do código convivem durante a troca, sobre o mesmo banco",
+            "Ordem: migration compatível primeiro, código depois, remoção por último em outro deploy",
+            "Citou os pré-requisitos da troca: mais de uma instância, readiness e desligamento gracioso",
+            "Disse como voltar: imagem anterior, possível porque o banco ainda é compatível",
+            "Avaliou o custo contra uma janela curta"
+          ],
+          "modelo": "Depende do tipo de mudança. Se só acrescenta coluna ou tabela, é direto: a migration entra primeiro, com a coluna aceitando nulo, e o código novo sobe depois em atualização gradual. Se remove ou renomeia, eu divido: um deploy cria a estrutura nova e o código grava nas duas, depois copio o histórico, depois o código passa a usar só a nova, e a remoção fica para um deploy separado, dias depois. O motivo é que durante a troca a versão antiga e a nova atendem juntas no mesmo banco. Para voltar, basta subir a imagem anterior, porque o banco continua compatível. São mais deploys. Se uma janela de dez minutos for aceitável, vale comparar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Planeje uma mudança destrutiva em deploys",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/prod-04-plano.md`, descreva a mudança: a coluna `prioridade` de uma tabela de tarefas deixa de ser texto livre e passa a ser um número de 1 a 3.",
+            "Escreva a tabela de deploys no formato da lição (banco e código em cada passo).",
+            "Para cada passo, anote: a versão anterior do código continua funcionando depois dele?",
+            "Marque qual passo é o ponto sem volta e o que você conferiria antes de executá-lo."
+          ],
+          "prontoQuando": "O plano tem pelo menos quatro passos, todo passo antes da contração mantém a versão anterior funcionando, e o ponto sem volta tem uma verificação objetiva."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que migration e código precisam ser compatíveis entre versões vizinhas?",
+          "verso": "Sem janela, a versão antiga e a nova atendem ao mesmo tempo sobre o mesmo banco durante a troca."
+        },
+        {
+          "frente": "Os passos do expand/contract para renomear uma coluna",
+          "verso": "Expandir (cria a nova, grava nas duas), preencher o histórico, virar a leitura, contrair (remove a antiga) em deploy separado."
+        },
+        {
+          "frente": "Onde roda `prisma migrate deploy`?",
+          "verso": "Em um passo próprio do pipeline, uma vez, antes de subir o código novo. Não na partida de cada instância."
+        },
+        {
+          "frente": "Voltar o código × voltar o banco",
+          "verso": "Código: subir a imagem anterior, se o banco ainda for compatível. Banco: corrige-se para a frente, porque desfazer DDL perde dado."
+        },
+        {
+          "frente": "Três pré-requisitos de uma atualização gradual sem parada",
+          "verso": "Mais de uma instância, readiness com desligamento gracioso, e versões vizinhas compatíveis com o mesmo banco."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Parallel Change (expand and contract)",
+          "url": "https://martinfowler.com/bliki/ParallelChange.html"
+        },
+        {
+          "titulo": "Prisma — Prisma Migrate",
+          "url": "https://www.prisma.io/docs/orm/prisma-migrate"
+        }
+      ]
+    },
+    {
+      "id": "prod-05",
+      "titulo": "Observabilidade: logs, métricas, traces e OpenTelemetry",
+      "minutos": 12,
+      "ponte": "Quando um processo fica lento no banco, você não adivinha. Liga o trace da sessão, lê o plano com os tempos, abre o AWR do período e compara com um dia bom. Observabilidade é levar esse mesmo hábito para a **aplicação**: o trace de uma requisição é o trace de sessão do lado de fora do banco. Onde quebra: o banco já vem instrumentado de fábrica. Na aplicação, nada é registrado se você não instrumentar antes do problema.",
+      "texto": "Monitorar responde \"está no ar?\". Observar responde \"**por que** está lento para este usuário, nesta rota, desde as 15h?\", sem publicar código novo para descobrir. Isso se apoia em três sinais.\n\n### Os três sinais\n\n| Sinal | O que é | Responde | Paralelo |\n|---|---|---|---|\n| **Log** | Evento com data e contexto | O que aconteceu nesta requisição | Tabela de log, alert log |\n| **Métrica** | Número agregado ao longo do tempo | Quanto, com que frequência, qual a tendência | AWR, estatísticas do sistema |\n| **Trace** | O caminho de uma requisição, com o tempo de cada etapa | Onde o tempo foi gasto | Trace de sessão com tempos por etapa |\n\nEles se completam. A métrica **avisa** que o p95 subiu. O trace mostra **em qual etapa**. O log conta **o que** aconteceu naquela etapa.\n\n### Log estruturado e correlação\n\nLog em texto livre serve para ler um de cada vez. Em produção são milhões de linhas de várias instâncias misturadas. O log estruturado é um objeto JSON por linha, na saída padrão (prod-01):\n\n```json\n{\"nivel\":\"info\",\"msg\":\"tarefa criada\",\"requestId\":\"a1f3\",\"usuarioId\":42,\"ms\":38}\n```\n\nO campo que muda tudo é o **identificador de correlação** (`requestId`): gerado na entrada da requisição, ou aceito de um cabeçalho, e incluído em **toda** linha de log daquela requisição. Filtrar por ele reconstrói a história de um atendimento no meio de todos os outros.\n\nNo Node, com uma thread atendendo várias requisições intercaladas (js-06), o identificador não pode ficar em variável global: seria sobrescrito pela requisição vizinha. O `AsyncLocalStorage` guarda um contexto que acompanha a cadeia de chamadas assíncronas de cada requisição, sem passar parâmetro por toda função.\n\nO que **não** entra no log: senha, token, documento pessoal, corpo inteiro de requisição (seg-08).\n\n### Métricas RED\n\nPara um serviço que atende requisições, comece por três números por rota:\n\n- ***Rate*** (taxa): requisições por segundo.\n- ***Errors*** (erros): proporção que falha.\n- ***Duration*** (duração): distribuição do tempo de resposta, em percentis, nunca só a média (prod-07).\n\nCuidado com a **cardinalidade**: cada combinação de rótulos é uma série guardada. Rótulo com id de usuário ou com a URL completa cria milhões de séries. Use o padrão da rota (`/tarefas/:id`), não o caminho real.\n\n### Trace distribuído\n\nUm trace é uma árvore de *spans* (trechos): a requisição HTTP, dentro dela a consulta ao banco, dentro dela a chamada a outro serviço. Cada span tem início, duração e atributos. O identificador do trace viaja entre serviços em um cabeçalho padronizado pelo W3C, o `traceparent`. É isso que permite ver, em um desenho só, que dos 900 ms da requisição, 820 ms foram uma consulta.\n\nTrace de tudo custa caro. Em volume alto usa-se **amostragem**: guardar uma fração, de preferência com as requisições lentas e com erro.\n\n### OpenTelemetry\n\nO OpenTelemetry (OTel) é o padrão aberto para **gerar e exportar** os três sinais: uma API, SDKs por linguagem, instrumentação automática para HTTP e clientes de banco, e um protocolo de envio (OTLP). Ele não armazena nem desenha gráfico. Isso é trabalho da ferramenta que recebe os dados.\n\nO ganho é não se prender a fornecedor: a aplicação é instrumentada uma vez, e trocar de ferramenta é trocar o destino da exportação. O custo: configuração inicial que não é trivial e SDKs em evolução. Confira o estado de cada sinal para Node na documentação antes de adotar.\n\n### Por onde começar\n\n1. Log estruturado com `requestId` em toda linha.\n2. Métricas RED por rota, com alerta em taxa de erro e p95.\n3. Trace, quando houver mais de um serviço ou quando o log não explicar a lentidão.\n\nAlerta bom é sobre **sintoma que o usuário sente** (erro, lentidão), não sobre causa provável (CPU alta). Alerta que dispara sem ação possível ensina a equipe a ignorar alerta.",
+      "naPratica": "No Cockpit, o primeiro passo é um interceptor ou middleware que cria o `requestId`, guarda no `AsyncLocalStorage`, devolve no cabeçalho da resposta e escreve uma linha de log por requisição com rota, status e duração. Com isso, \"deu erro às 15h\" vira uma busca.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas requisições intercaladas na mesma thread. O `log` não recebe o `requestId` por parâmetro. Cada linha sai com o identificador certo?",
+          "codigo": "import { AsyncLocalStorage } from 'node:async_hooks';\n\nconst contexto = new AsyncLocalStorage<{ requestId: string }>();\nconst espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\nconst log = (msg: string) =>\n  console.log(JSON.stringify({ msg, requestId: contexto.getStore()?.requestId }));\n\nasync function buscaTarefas() {\n  await espera(20);\n  log('consulta');\n}\n\nasync function atende(requestId: string, ms: number) {\n  await contexto.run({ requestId }, async () => {\n    log('inicio');\n    await espera(ms);\n    await buscaTarefas();\n    log('fim');\n  });\n}\n\nawait Promise.all([atende('req-a', 60), atende('req-b', 20)]);\n",
+          "saida": "{\"msg\":\"inicio\",\"requestId\":\"req-a\"}\n{\"msg\":\"inicio\",\"requestId\":\"req-b\"}\n{\"msg\":\"consulta\",\"requestId\":\"req-b\"}\n{\"msg\":\"fim\",\"requestId\":\"req-b\"}\n{\"msg\":\"consulta\",\"requestId\":\"req-a\"}\n{\"msg\":\"fim\",\"requestId\":\"req-a\"}\n",
+          "explicacao": "As duas requisições se intercalam: `req-b` é mais rápida e termina no meio de `req-a`. Mesmo assim cada linha sai com o identificador da sua requisição, inclusive a de `buscaTarefas`, que não recebeu nada por parâmetro. O contexto criado em `run` acompanha os `await` daquela cadeia. Com uma variável global, a segunda requisição teria sobrescrito a primeira."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Cinco requisições em uma janela de 10 segundos. Calcule as métricas RED. Repare no que a média esconde.",
+          "codigo": "const janelaSeg = 10;\nconst reqs = [\n  { status: 200, ms: 40 },\n  { status: 200, ms: 55 },\n  { status: 500, ms: 900 },\n  { status: 200, ms: 35 },\n  { status: 404, ms: 20 },\n];\n\nconst taxa = reqs.length / janelaSeg;\nconst erros = reqs.filter((r) => r.status >= 500).length;\nconst media = reqs.reduce((soma, r) => soma + r.ms, 0) / reqs.length;\n\nconsole.log('Rate:', taxa, 'req/s');\nconsole.log('Errors:', erros, 'de', reqs.length);\nconsole.log('Duration média:', media, 'ms');\n",
+          "saida": "Rate: 0.5 req/s\nErrors: 1 de 5\nDuration média: 210 ms\n",
+          "explicacao": "O 404 não conta como erro do serviço: o cliente pediu algo que não existe, e a API respondeu certo. Só o 5xx entra. A média de 210 ms não descreve ninguém: quatro requisições levaram menos de 60 ms e uma levou 900. Por isso a duração é acompanhada em percentis (prod-07)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um usuário relata lentidão ao salvar. A métrica de p95 da rota confirma o aumento. Qual sinal mostra **em qual etapa** da requisição o tempo foi gasto?",
+          "opcoes": [
+            "A métrica de taxa de requisições",
+            "O trace, com a duração de cada span",
+            "O log de nível `error`",
+            "O health check da aplicação"
+          ],
+          "correta": 1,
+          "explicacao": "O trace decompõe uma requisição em etapas com tempo: handler, consulta ao banco, chamada externa. A métrica avisa que piorou, mas é agregada. O log de erro é a opção tentadora, só que lentidão não gera erro."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Alguém propõe adicionar o rótulo `usuarioId` à métrica de duração das requisições, para ver a latência por usuário. Qual o problema?",
+          "opcoes": [
+            "Métricas não aceitam rótulos numéricos",
+            "Cada valor distinto do rótulo cria uma série: a cardinalidade explode, com custo e lentidão no sistema de métricas",
+            "O rótulo tornaria a métrica imprecisa",
+            "Nenhum, é a prática recomendada"
+          ],
+          "correta": 1,
+          "explicacao": "Métrica é agregação barata porque tem poucas dimensões. Um rótulo com milhares de valores cria milhares de séries por métrica. A pergunta \"como foi para este usuário\" é respondida por log e trace, que carregam o `usuarioId` como atributo de um evento."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, um usuário disse que o sistema ficou muito lento ontem por volta das 15h. Como a gente descobre o que foi?\" Descreva o caminho, e o que fazer se os dados não existirem.",
+          "pontos": [
+            "Começou pela métrica: p95 e taxa de erro por rota no horário, para confirmar e delimitar",
+            "Desceu para o trace ou o log de uma requisição lenta do período, via identificador de correlação",
+            "Cruzou com o banco usando o que já sabe: sessões, consultas lentas e travas no mesmo intervalo",
+            "Verificou eventos no horário: deploy, job, pico de uso",
+            "Disse o que fazer se não houver dado: admitir, instrumentar o mínimo e esperar a próxima ocorrência"
+          ],
+          "modelo": "Primeiro eu confirmo e delimito: olho o p95 e a taxa de erro por rota ontem às 15h. Isso diz se foi geral ou de uma rota. Depois pego uma requisição lenta desse intervalo e sigo o trace ou os logs pelo identificador de correlação, para ver em que etapa o tempo ficou. Se foi no banco, cruzo com o que eu já sei fazer: consultas lentas e travas no mesmo horário. Também confiro se teve deploy ou job rodando. Se a gente não tiver esses dados, a resposta honesta é que não dá para saber. Aí o trabalho é colocar log estruturado com identificador e duração por rota, para a próxima ocorrência não ficar sem resposta."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Os três sinais e a pergunta que cada um responde",
+          "verso": "Métrica: quanto e com que tendência. Trace: onde o tempo foi gasto. Log: o que aconteceu naquela requisição."
+        },
+        {
+          "frente": "Por que o `requestId` tem que estar em toda linha de log?",
+          "verso": "Para reconstruir a história de uma requisição no meio de milhões de linhas, de várias instâncias, intercaladas."
+        },
+        {
+          "frente": "O que são as métricas RED?",
+          "verso": "*Rate* (requisições por segundo), *Errors* (proporção de falhas) e *Duration* (tempo de resposta em percentis), por rota."
+        },
+        {
+          "frente": "O que o OpenTelemetry é, e o que não é?",
+          "verso": "É o padrão para gerar e exportar logs, métricas e traces. Não armazena nem exibe: isso é da ferramenta que recebe."
+        },
+        {
+          "frente": "Por que evitar rótulo de alta cardinalidade em métrica?",
+          "verso": "Cada combinação de valores vira uma série guardada. Id de usuário ou URL completa criam milhões de séries."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OpenTelemetry — Signals",
+          "url": "https://opentelemetry.io/docs/concepts/signals/"
+        },
+        {
+          "titulo": "OpenTelemetry — What is OpenTelemetry?",
+          "url": "https://opentelemetry.io/docs/what-is-opentelemetry/"
+        },
+        {
+          "titulo": "Node.js — Asynchronous context tracking",
+          "url": "https://nodejs.org/api/async_context.html"
+        }
+      ]
+    },
+    {
+      "id": "prod-06",
+      "titulo": "Health, readiness e desligamento gracioso",
+      "minutos": 11,
+      "ponte": "Você já viu o que acontece com `ALTER SYSTEM KILL SESSION` no meio de uma transação longa: o trabalho é desfeito e o usuário recebe erro. Um `SHUTDOWN IMMEDIATE` faz isso com todo mundo. Desligamento gracioso é o equivalente de avisar, parar de aceitar conexão nova e esperar quem está no meio terminar. Onde quebra: no banco, o `ROLLBACK` protege o dado. Na aplicação, uma requisição cortada no meio pode já ter chamado um serviço externo que não desfaz.",
+      "texto": "Em produção, alguém precisa responder duas perguntas sobre cada instância, o tempo todo: **ela está viva?** e **ela pode receber requisição agora?** São perguntas diferentes, com consequências diferentes.\n\n### Liveness × readiness\n\n| Sonda | Pergunta | Se falhar | O que checa |\n|---|---|---|---|\n| ***Liveness*** (vida) | O processo está travado sem volta? | A plataforma **reinicia** a instância | Só o próprio processo: consegue responder |\n| ***Readiness*** (prontidão) | Pode atender agora? | A instância **sai do balanceador**, sem reiniciar | O que é indispensável para atender: conexão com o banco |\n\nA regra que evita o pior incidente: **liveness não checa dependência externa.** Se o liveness consulta o banco e o banco fica lento, todas as instâncias falham juntas, a plataforma reinicia todas, elas sobem abrindo conexões ao mesmo tempo e o banco, que já estava mal, piora. Uma lentidão vira queda total.\n\nO readiness pode checar o banco, com critério. Timeout curto, consulta trivial, e só dependência sem a qual **nenhuma** rota funciona. Se o Redis é só cache, a aplicação segue atendendo sem ele, e ele não entra.\n\nExiste ainda a sonda de partida (*startup*), para aplicações que demoram a subir: enquanto ela não passa, as outras não são avaliadas.\n\nNo NestJS há um módulo oficial de health check com indicadores prontos. O formato da resposta importa pouco. O que importa é o **código HTTP**: 200 ou 503.\n\n### O desligamento\n\nEm todo deploy e em toda redução de escala, a plataforma encerra instâncias. Ela envia o sinal `SIGTERM` (pedido educado), espera um prazo e então envia `SIGKILL`, que não pode ser interceptado. No Kubernetes o prazo padrão é de 30 segundos. No `docker stop`, 10.\n\nO processo Node que ignora o `SIGTERM` é morto no meio das requisições, e os usuários recebem erro de conexão. A sequência correta ao receber o sinal:\n\n1. **Marcar readiness como não pronto.** O balanceador para de mandar requisição nova.\n2. **Parar de aceitar conexão nova** e esperar as requisições em andamento terminarem (`server.close()`).\n3. **Fechar os recursos:** pool do banco, consumidores de fila, timers.\n4. **Sair**, com um limite de tempo próprio menor que o prazo da plataforma.\n\nNo Nest, `app.enableShutdownHooks()` liga a escuta dos sinais, e os hooks de ciclo de vida (`onModuleDestroy`, `beforeApplicationShutdown`) são o lugar de fechar recursos (nest-10).\n\n### As armadilhas\n\n- **O sinal não chega.** Com `CMD npm start`, o processo principal do contêiner é o npm, não a sua aplicação (prod-02). Use `node` direto.\n- **A corrida do balanceador.** Entre a instância receber o `SIGTERM` e o balanceador parar de mandar tráfego passam alguns segundos. Se o processo fecha a porta na hora, as requisições desse intervalo são recusadas. Por isso muita equipe espera alguns segundos entre marcar \"não pronto\" e fechar o servidor.\n- **Conexões *keep-alive*.** Uma conexão ociosa mantida aberta pelo cliente pode segurar o fechamento. Confira o comportamento na versão do Node em uso.\n- **Trabalho mais longo que o prazo.** Uma requisição de 2 minutos não termina em 30 segundos. Trabalho longo vai para fila (nest-15), onde o job interrompido volta a ser processado.\n\n### Critério\n\nO desligamento gracioso reduz o erro em deploy, não elimina. O cliente ainda precisa repetir requisição idempotente que falhou (http-02). E não protege de queda abrupta, como falta de memória ou falha de máquina. O sistema tem que estar correto também quando o processo morre sem aviso. O gracioso é a cortesia. A consistência vem de transação e idempotência.",
+      "naPratica": "No Cockpit, a API terá `/health/live` (só responde) e `/health/ready` (confere o banco com timeout curto), e chamará `enableShutdownHooks()`. Se cada deploy gerar um punhado de erros 502, a causa quase sempre está nesta lição.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um servidor `node:http` com uma rota lenta. O sinal é **simulado** chamando a função que o tratador de `SIGTERM` chamaria. O que acontece com a requisição em andamento e com uma conexão nova?",
+          "codigo": "import http from 'node:http';\n\nlet pronto = true;\nconst servidor = http.createServer((req, res) => {\n  res.setHeader('connection', 'close');\n  if (req.url === '/ready') { res.statusCode = pronto ? 200 : 503; res.end(); return; }\n  setTimeout(() => res.end('ok'), 80);\n});\n\nfunction aoReceberSigterm() { // em produção: process.on('SIGTERM', aoReceberSigterm)\n  pronto = false;\n  return new Promise<void>((fechou) => servidor.close(() => fechou()));\n}\n\nservidor.listen(0, '127.0.0.1', async () => {\n  const base = 'http://127.0.0.1:' + (servidor.address() as { port: number }).port;\n  console.log('ready antes:', (await fetch(base + '/ready')).status);\n  const lenta = fetch(base + '/trabalho').then((r) => r.text());\n  await new Promise((r) => setTimeout(r, 30));\n  const fechou = aoReceberSigterm();\n  const nova = await fetch(base + '/ready').then((r) => r.status, () => 'recusada');\n  console.log('conexão nova:', nova);\n  console.log('em andamento:', await lenta);\n  await fechou;\n  console.log('servidor fechado');\n});\n",
+          "saida": "ready antes: 200\nconexão nova: recusada\nem andamento: ok\nservidor fechado\n",
+          "explicacao": "`servidor.close()` para de aceitar conexão nova na hora, e a tentativa seguinte é recusada. A requisição que já estava em andamento termina normalmente com `ok`, e só então o callback de fechamento roda. A conexão recusada é a corrida do balanceador: em produção, o readiness passa a 503 primeiro e o servidor só fecha depois de o tráfego parar de chegar."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O liveness de uma API executa `SELECT 1` no banco. O banco fica lento por dois minutos. O que tende a acontecer?",
+          "opcoes": [
+            "Nada: o liveness só reinicia se o processo travar",
+            "As instâncias saem do balanceador e voltam sozinhas quando o banco normalizar",
+            "Todas as instâncias falham no liveness, são reiniciadas juntas e reconectam ao mesmo tempo em um banco já sobrecarregado",
+            "A plataforma reinicia o banco"
+          ],
+          "correta": 2,
+          "explicacao": "Falha de liveness significa reiniciar. Reiniciar a aplicação não conserta o banco, derruba as requisições que ainda funcionavam e gera uma onda de reconexão. A segunda opção descreve o comportamento do readiness, que é a sonda certa para depender do banco."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A aplicação trata `SIGTERM` corretamente, mas em produção o contêiner sempre é morto depois do prazo, com requisições cortadas. O Dockerfile termina com `CMD npm run start:prod`. Qual a causa mais provável?",
+          "opcoes": [
+            "O prazo padrão da plataforma é curto demais",
+            "O processo principal do contêiner é o npm (ou um shell), e o sinal não chega ao processo Node",
+            "O Node não suporta `SIGTERM` dentro de contêiner",
+            "Faltou publicar a porta com `EXPOSE`"
+          ],
+          "correta": 1,
+          "explicacao": "O sinal é entregue ao processo principal do contêiner. Com o npm ou um shell nessa posição, a aplicação pode nunca ser avisada e só encontra o `SIGKILL` no fim do prazo. A correção é o `CMD` em forma de lista chamando `node` direto. Aumentar o prazo só atrasa o mesmo corte."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, toda vez que a gente faz deploy alguns usuários tomam erro 502. São poucos, mas acontece sempre. O que pode ser?\" Liste as hipóteses na ordem em que você investigaria.",
+          "pontos": [
+            "Identificou o padrão: erro só durante a troca de instâncias aponta para o desligamento ou para a entrada da instância nova",
+            "Hipótese 1: a aplicação não trata `SIGTERM`, ou o sinal não chega (processo principal é o npm)",
+            "Hipótese 2: a instância fecha a porta antes de o balanceador parar de mandar tráfego",
+            "Hipótese 3: a instância nova recebe tráfego antes de estar pronta (readiness ausente ou otimista)",
+            "Disse como confirmar: logs do desligamento, horário dos erros contra o horário da troca",
+            "Citou o complemento: repetição de requisição idempotente no cliente"
+          ],
+          "modelo": "Erro só na hora do deploy é quase sempre a troca de instâncias. Eu olharia três coisas, nesta ordem. Primeiro, se a aplicação recebe e trata o sinal de término: se o contêiner sobe com npm na frente, o sinal nem chega e o processo é morto com requisição no meio. Segundo, a corrida com o balanceador: a instância fecha a porta enquanto ele ainda manda tráfego por alguns segundos. A correção é marcar não pronto, esperar um pouco e só então fechar. Terceiro, o outro lado: a instância nova recebendo requisição antes de estar pronta, por falta de readiness. Para confirmar, cruzo o horário dos 502 com os logs de desligamento e de subida. E o cliente deveria repetir chamadas idempotentes."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Liveness × readiness: o que acontece quando cada uma falha?",
+          "verso": "Liveness: a instância é reiniciada. Readiness: a instância sai do balanceador, sem reiniciar."
+        },
+        {
+          "frente": "Por que o liveness não deve checar o banco?",
+          "verso": "Banco lento faria todas as instâncias serem reiniciadas juntas e reconectarem em massa: uma lentidão vira queda total."
+        },
+        {
+          "frente": "A sequência do desligamento gracioso",
+          "verso": "Marcar não pronto, parar de aceitar conexão e esperar as requisições em andamento, fechar recursos, sair antes do prazo da plataforma."
+        },
+        {
+          "frente": "`SIGTERM` × `SIGKILL`",
+          "verso": "`SIGTERM`: pedido de término, pode ser tratado. `SIGKILL`: vem depois do prazo, não pode ser interceptado."
+        },
+        {
+          "frente": "Por que o desligamento gracioso não basta para a consistência?",
+          "verso": "O processo também morre sem aviso (memória, máquina). A consistência vem de transação e idempotência."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Kubernetes — Configure Liveness, Readiness and Startup Probes",
+          "url": "https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/"
+        },
+        {
+          "titulo": "NestJS — Lifecycle Events",
+          "url": "https://docs.nestjs.com/fundamentals/lifecycle-events"
+        },
+        {
+          "titulo": "Node.js — Process: Signal events",
+          "url": "https://nodejs.org/api/process.html"
+        }
+      ]
+    },
+    {
+      "id": "prod-07",
+      "titulo": "Performance e carga: medir e os gargalos típicos do Node",
+      "minutos": 12,
+      "ponte": "Você não cria índice porque \"acha\" que a consulta está lenta. Você lê o plano, vê os tempos reais e ataca o maior custo. Na aplicação a disciplina é a mesma, e a boa notícia é que a maior parte dos problemas de performance de uma API continua sendo **de banco**, o seu terreno. O que é novo: uma única thread atende todo mundo, então um cálculo pesado de um usuário atrasa todos os outros.",
+      "texto": "### Medir antes\n\nDuas grandezas descrevem a performance de um serviço:\n\n- **Latência:** quanto tempo uma requisição leva.\n- **Vazão** (*throughput*): quantas requisições por segundo o serviço atende.\n\nLatência nunca é um número. É uma distribuição, e a **média mente**: cem requisições de 10 ms e uma de 5 segundos têm média de 59 ms, que não descreve nenhuma delas. Use percentis:\n\n| Percentil | Leitura |\n|---|---|\n| p50 (mediana) | Metade das requisições é mais rápida que isto: o caso típico |\n| p95 | 1 em cada 20 é mais lenta que isto |\n| p99 | 1 em cada 100 é mais lenta: a cauda |\n\nA cauda importa mais do que parece. Uma tela que dispara dez requisições tem boa chance de pegar pelo menos uma no p95. E os usuários mais ativos, com mais dados, são os que vivem na cauda.\n\nDefina o alvo antes de otimizar: \"p95 da listagem abaixo de 300 ms com 50 usuários simultâneos\". Sem alvo, otimização não tem fim nem prioridade.\n\n### Os gargalos típicos, em ordem de frequência\n\n**1. Banco.** Quase sempre.\n\n- **N+1:** uma consulta para a lista e uma para cada item (dados-07). Com ORM é fácil criar sem perceber.\n- **Falta de índice** e consulta que traz mais colunas e linhas do que a tela usa (dados-08).\n- **Pool de conexões esgotado** (dados-10): as requisições esperam por uma conexão livre. O sintoma engana: a consulta é rápida no banco e a requisição é lenta na API.\n\n**2. Event loop bloqueado.** O Node atende todas as requisições em uma thread (js-06). Código síncrono demorado trava todo mundo: `JSON.parse` de um corpo enorme, laço sobre centenas de milhares de itens, função de criptografia síncrona, expressão regular com retrocesso excessivo. O sintoma é característico: **todas** as rotas ficam lentas juntas, inclusive o health, com CPU em 100% de um núcleo.\n\n**3. Payload grande.** Devolver 5 MB de JSON custa serialização, que bloqueia o event loop, mais rede e memória. Geralmente é falta de paginação ou de escolha de campos.\n\n**4. Falta de paginação.** A listagem funciona com 200 linhas em desenvolvimento e cai com 200 mil em produção. Toda listagem tem limite máximo imposto pelo servidor (http-07).\n\n**5. Chamadas em série que poderiam ser paralelas.** Três `await` independentes, um depois do outro, somam os tempos. `Promise.all` leva o tempo do maior (js-09).\n\n**6. Trabalho pesado dentro da requisição.** Gerar relatório, enviar e-mail, processar arquivo: vai para fila (nest-15), e a resposta sai na hora.\n\n### Teste de carga\n\nTeste de carga simula muitos usuários para responder **até onde aguenta** e **o que quebra primeiro**. Existem ferramentas próprias para isso. Escolha com a equipe e confira a documentação. Os tipos:\n\n- **Carga:** o volume esperado, por alguns minutos. O sistema cumpre o alvo.\n- **Estresse:** aumentar até quebrar. Descobre o limite e o modo de falha.\n- **Resistência:** carga moderada por horas. Revela vazamento de memória e de conexão.\n\nCuidados que decidem se o teste vale alguma coisa: ambiente e **volume de dados** parecidos com produção (banco vazio é sempre rápido), cenário realista com mistura de leitura e escrita, e o gerador de carga em outra máquina. Nunca contra produção sem combinar.\n\n### O ciclo\n\n1. Medir e achar o maior custo (métrica por rota, trace, `EXPLAIN ANALYZE`).\n2. Formular **uma** hipótese.\n3. Mudar **uma** coisa.\n4. Medir de novo, com a mesma carga.\n\n### Critério\n\nNão otimize o que não mediu. Cache e mais máquinas vêm **depois** de corrigir consulta e paginação. Cache em cima de consulta ruim esconde o problema e adiciona o de invalidação (arq-09). Mais instâncias com o mesmo banco no limite só aumentam a fila no banco.",
+      "naPratica": "No Cockpit, registre a duração por rota desde o início e olhe o p95, não a média. Quando uma tela ficar lenta, a primeira pergunta é quantas consultas ao banco aquela requisição faz, e a segunda é quanto tempo cada uma leva.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Vinte tempos de resposta em milissegundos. Calcule a média e os percentis pelo método do posto mais próximo.",
+          "codigo": "const ms = [12, 15, 11, 14, 13, 16, 12, 900, 15, 13, 14, 12, 11, 13, 15, 14, 12, 16, 13, 1200];\n\nconst ordenado = [...ms].sort((a, b) => a - b);\nconst percentil = (p: number) => ordenado[Math.ceil((p / 100) * ordenado.length) - 1];\nconst media = ms.reduce((soma, x) => soma + x, 0) / ms.length;\n\nconsole.log('média:', media);\nconsole.log('p50:', percentil(50));\nconsole.log('p95:', percentil(95));\nconsole.log('p99:', percentil(99));\n",
+          "saida": "média: 117.05\np50: 13\np95: 900\np99: 1200\n",
+          "explicacao": "A requisição típica leva 13 ms. A média de 117 ms é nove vezes maior que o caso comum e sete vezes menor que os casos ruins: não descreve ninguém. O p95 e o p99 mostram a cauda, que é onde está o problema. Repare no `sort((a, b) => a - b)`: sem a função de comparação, o `sort` ordenaria os números como texto (js-03)."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Dez requisições chegam juntas. Cada uma faz uma consulta de 50 ms, e o pool tem 2 conexões. Quanto cada requisição espera por uma conexão?",
+          "codigo": "const pool = 2;\nconst consultaMs = 50;\nconst chegadas = 10;\n\nconst esperas = Array.from({ length: chegadas }, (_, i) => Math.floor(i / pool) * consultaMs);\n\nconsole.log(esperas.join(' '));\nconsole.log('última resposta em', (esperas.at(-1) ?? 0) + consultaMs, 'ms');\n",
+          "saida": "0 0 50 50 100 100 150 150 200 200\núltima resposta em 250 ms\n",
+          "explicacao": "A consulta leva 50 ms para todas, e o banco diria que está tudo rápido. Mas só duas rodam por vez: as demais ficam na fila do pool. A última requisição leva 250 ms, dos quais 200 foram espera. Esse é o sintoma do pool esgotado: consulta rápida, requisição lenta. Aumentar o pool sem olhar o limite do banco só move a fila de lugar."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em produção, **todas** as rotas da API ficam lentas ao mesmo tempo por alguns segundos, inclusive o health, que não acessa o banco. Um núcleo de CPU vai a 100%. Qual a hipótese mais forte?",
+          "opcoes": [
+            "Falta de índice em uma tabela grande",
+            "Event loop bloqueado por algum processamento síncrono pesado",
+            "Pool de conexões do banco esgotado",
+            "Falta de paginação em uma listagem"
+          ],
+          "correta": 1,
+          "explicacao": "O health não toca no banco e mesmo assim ficou lento: o problema está no próprio processo. Uma thread ocupada com código síncrono não atende ninguém, e isso aparece como um núcleo em 100%. Pool esgotado deixaria lentas só as rotas que usam banco, com CPU baixa na aplicação."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a API está lenta. Vamos dobrar o número de instâncias para resolver?\" O que você responde antes de alguém aprovar o custo?",
+          "pontos": [
+            "Pediu a medida: qual rota, qual percentil, desde quando",
+            "Disse que mais instâncias só ajudam se o gargalo for CPU da própria API",
+            "Explicou que, se o gargalo é o banco, mais instâncias aumentam a pressão sobre ele",
+            "Listou o que verificar primeiro: número de consultas por requisição, consultas lentas, pool, paginação",
+            "Propôs um passo curto e mensurável antes da decisão"
+          ],
+          "modelo": "Antes de dobrar, eu quero saber onde está o tempo. Mais instâncias resolvem quando o gargalo é processamento da própria API, e na maioria dos casos não é: é banco. Se cada requisição faz cinquenta consultas, ou uma consulta sem índice, dobrar a API só manda o dobro de carga para o mesmo banco, e piora. Eu olharia o p95 por rota para ver se é geral ou localizado, quantas consultas a rota lenta faz, o tempo de cada uma e se o pool está esgotando. Isso é coisa de um dia. Se o resultado mostrar CPU da API no limite com banco folgado, aí sim escalar é a resposta certa, e a gente aprova sabendo por quê."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que a média de latência engana?",
+          "verso": "Latência é uma distribuição com cauda longa. Poucas requisições muito lentas puxam a média para um valor que não descreve nenhuma."
+        },
+        {
+          "frente": "O que significa p95 = 300 ms?",
+          "verso": "95% das requisições levam até 300 ms. Uma em cada vinte é mais lenta que isso."
+        },
+        {
+          "frente": "Sintoma de event loop bloqueado × pool esgotado",
+          "verso": "Event loop: todas as rotas lentas, até o health, com um núcleo em 100%. Pool: só rotas com banco lentas, consulta rápida no banco, CPU baixa."
+        },
+        {
+          "frente": "Os gargalos mais comuns de uma API Node, em ordem",
+          "verso": "Banco (N+1, índice, pool), event loop bloqueado, payload grande, falta de paginação, chamadas em série, trabalho pesado na requisição."
+        },
+        {
+          "frente": "Por que cache e mais instâncias vêm depois de corrigir a consulta?",
+          "verso": "Cache esconde a consulta ruim e traz a invalidação. Mais instâncias com o banco no limite só aumentam a fila no banco."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Node.js — Don't Block the Event Loop",
+          "url": "https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop"
+        },
+        {
+          "titulo": "PostgreSQL — Using EXPLAIN",
+          "url": "https://www.postgresql.org/docs/current/using-explain.html"
+        }
+      ]
+    },
+    {
+      "id": "prod-08",
+      "titulo": "Estratégias de release: feature flag, canary, blue-green e rollback",
+      "minutos": 11,
+      "ponte": "Você já fez isso com tabela de parâmetro: o código novo sobe junto com um parâmetro desligado, e alguém liga para uma filial primeiro, depois para todas. Isso é uma *feature flag* (chave de funcionalidade). A ideia desta lição é a que está por trás: **publicar o código e liberar a funcionalidade são dois momentos diferentes**. Onde quebra: a sua tabela de parâmetro costuma ficar para sempre. Flag de release tem que ter data para morrer.",
+      "texto": "### Deploy não é release\n\n- ***Deploy*:** o código novo está rodando em produção. Decisão técnica.\n- ***Release*** (liberação): o usuário passa a ver o comportamento novo. Decisão de produto.\n\nQuando os dois acontecem juntos, todo deploy é um evento de risco, e por isso acontece pouco e com muita coisa dentro. Separados, o deploy vira rotina pequena e frequente, e a liberação é feita com controle. As técnicas abaixo são formas de separar ou de reduzir o alcance de um erro.\n\n### Feature flag\n\nUma condição no código, controlada por configuração, que escolhe entre o comportamento antigo e o novo **em tempo de execução**:\n\n```ts\nif (flags.ligada('plano-do-dia-v2', usuario.id)) {\n  return this.planoV2(usuario);\n}\nreturn this.planoV1(usuario);\n```\n\nO que ela permite: publicar código incompleto desligado, liberar para a equipe primeiro, liberar para uma porcentagem de usuários, e **desligar em segundos** quando dá problema, sem deploy.\n\nNa liberação por porcentagem, a decisão tem que ser **estável por usuário**: quem entrou nos 10% continua dentro aos 25%. Isso é feito com um hash do identificador, não com sorteio a cada requisição.\n\nO custo é real:\n\n- Cada flag dobra os caminhos do código. Dez flags independentes são mais de mil combinações, e ninguém testa todas.\n- Flag esquecida vira código morto com cara de vivo. **Toda flag de release nasce com dono e data de remoção.**\n- Flag não resolve mudança de estrutura de banco. Isso continua sendo expand/contract (prod-04).\n- A avaliação da flag precisa de comportamento definido quando o serviço de flags falha: um valor padrão seguro.\n\n### Canary\n\nA versão nova sobe em **poucas instâncias** e recebe uma fração pequena do tráfego real, por exemplo 5%. Compara-se taxa de erro e latência com a versão estável. Sem piora, a fração aumenta. Com piora, o tráfego volta todo para a versão estável, e 95% dos usuários nunca viram o problema.\n\nPré-requisitos: balanceador que divida tráfego por peso, métricas por versão (prod-05), e volume suficiente para 5% significar alguma coisa. Com dez usuários por hora, canary não mede nada.\n\n### Blue-green\n\nDois ambientes completos: *blue* (atual) e *green* (novo). O green sobe inteiro, é testado sem tráfego, e a **troca é de uma vez**, virando o balanceador. Voltar é virar de novo.\n\nGanho: troca e retorno instantâneos, sem mistura de versões entre instâncias. Custo: o dobro de infraestrutura durante a troca. E o banco é **um só**, compartilhado pelos dois ambientes, então a compatibilidade de estrutura continua obrigatória.\n\n| Técnica | Controla | Volta em | Custo principal |\n|---|---|---|---|\n| Atualização gradual | Nada: troca as instâncias aos poucos | Minutos (novo deploy) | Baixo |\n| Feature flag | Quem vê a funcionalidade | Segundos | Complexidade no código |\n| Canary | Quanto tráfego vê a versão | Segundos a minutos | Roteamento e métricas por versão |\n| Blue-green | O momento da troca | Segundos | Infraestrutura duplicada |\n\nElas se combinam. O arranjo comum é atualização gradual para o deploy e flag para a liberação.\n\n### Rollback × roll-forward\n\nQuando a versão nova dá problema:\n\n- ***Rollback*:** voltar à versão anterior. Rápido e conhecido. É o padrão quando há usuário afetado: **primeiro estancar, depois entender**.\n- ***Roll-forward*:** corrigir e publicar uma versão nova. Necessário quando voltar não é possível: a migration já contraiu a estrutura, ou a versão nova já gravou dado que a antiga não entende.\n\nPara o rollback ser uma opção real, três condições: a imagem anterior disponível, o banco compatível com ela, e um procedimento **já testado**. Rollback que nunca foi executado é uma hipótese.\n\nA pergunta de sênior em todo planejamento de entrega: **como eu volto, e a partir de que ponto não volto mais?**",
+      "naPratica": "No Cockpit, uma flag simples lida da configuração já permite publicar uma tela nova desligada e ligar só para você. No trabalho, leve para o planejamento de cada entrega a pergunta do ponto sem volta e peça que ela seja respondida por escrito.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Liberação por porcentagem com decisão estável: cada usuário cai em um balde de 0 a 99 calculado a partir do nome. Quem vê a funcionalidade em cada etapa?",
+          "codigo": "const balde = (id: string) => [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100, 0);\nconst ligada = (id: string, porcentagem: number) => balde(id) < porcentagem;\n\nconst usuarios = ['ana', 'bia', 'davi', 'eva', 'gil', 'hugo'];\n\nfor (const pct of [0, 10, 25, 50, 100]) {\n  const quem = usuarios.filter((u) => ligada(u, pct));\n  console.log(pct + '%:', quem.join(',') || '-');\n}\n",
+          "saida": "0%: -\n10%: hugo\n25%: ana,eva,hugo\n50%: ana,bia,eva,gil,hugo\n100%: ana,bia,davi,eva,gil,hugo\n",
+          "explicacao": "O balde de cada usuário é fixo, porque depende só do nome. Aumentar a porcentagem só **acrescenta** gente: quem entrou aos 10% continua dentro aos 25% e aos 50%. Com um sorteio a cada requisição, o mesmo usuário veria a tela nova em um clique e a antiga no seguinte. Com seis usuários as proporções não batem com a porcentagem. Com milhares, aproximam."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma versão nova executou a migration que remove uma coluna antiga e, uma hora depois, apresenta um defeito grave. Por que o rollback para a imagem anterior não é uma opção simples?",
+          "opcoes": [
+            "Porque a imagem anterior já foi apagada do registro",
+            "Porque o código anterior depende da coluna removida, e o banco não é mais compatível com ele",
+            "Porque rollback só funciona com blue-green",
+            "Porque a plataforma não permite publicar uma versão mais antiga"
+          ],
+          "correta": 1,
+          "explicacao": "Voltar o código exige que o banco ainda sirva ao código antigo. A contração é o ponto sem volta: depois dela, o caminho é corrigir para a frente. Por isso a remoção vai em um deploy separado, depois de a versão nova estar estável."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em qual cenário o canary agrega **menos** valor?",
+          "opcoes": [
+            "API com milhares de requisições por minuto e métricas por versão",
+            "Sistema interno com vinte usuários e poucas requisições por hora",
+            "Serviço com histórico de regressões de performance",
+            "Mudança em uma rota crítica de alto tráfego"
+          ],
+          "correta": 1,
+          "explicacao": "Canary decide comparando métricas de uma fração do tráfego. Com pouco volume, 5% é uma requisição ou nenhuma, e a comparação não tem valor estatístico. Para sistema pequeno, flag ligada primeiro para um grupo conhecido de usuários dá mais informação com menos infraestrutura."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, subiu a versão nova há vinte minutos e começou a dar erro para alguns usuários. A gente volta a versão ou corrige e sobe de novo?\" Decida e justifique.",
+          "pontos": [
+            "Regra padrão: com usuário afetado, estancar primeiro e investigar depois",
+            "Verificou se dá para voltar: houve migration destrutiva ou dado novo que a versão antiga não lê?",
+            "Considerou a opção mais barata: desligar a flag, se a mudança está atrás de uma",
+            "Disse quando o roll-forward é a escolha: rollback impossível, ou correção trivial e segura",
+            "Citou o depois: preservar evidências e fazer a análise sem culpados"
+          ],
+          "modelo": "Com usuário tomando erro, o padrão é estancar primeiro e entender depois. Então a primeira pergunta é se dá para voltar. Se a mudança está atrás de uma flag, desligo a flag e ganho tempo sem deploy. Se não está, confiro se a versão nova rodou migration destrutiva ou gravou dado em formato que a anterior não entende. Se não, volto a imagem anterior agora. Corrigir para a frente só se o rollback for impossível, ou se a correção for de uma linha, óbvia, e o pipeline levar poucos minutos. Mesmo assim com alguém revisando. Antes de voltar, guardo os logs e os identificadores das requisições com erro para a análise."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Plano de liberação com ponto sem volta",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/prod-08-liberacao.md`, escolha uma funcionalidade do Cockpit que mude tela e banco (por exemplo, tarefas recorrentes).",
+            "Escreva os passos de deploy e, separadamente, os passos de liberação (para quem liga, em que ordem, com que critério para avançar).",
+            "Para cada passo, responda: como eu volto daqui?",
+            "Marque o ponto sem volta e escreva a data prevista de remoção da flag."
+          ],
+          "prontoQuando": "O plano separa deploy de liberação, todo passo antes do ponto sem volta tem um caminho de retorno escrito, e a flag tem dono e data de remoção."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Deploy × release",
+          "verso": "Deploy: o código novo está rodando em produção. Release: o usuário passa a ver o comportamento novo. Separar os dois reduz o risco de cada deploy."
+        },
+        {
+          "frente": "Por que toda flag de release precisa de dono e data de remoção?",
+          "verso": "Cada flag dobra os caminhos do código. Flag esquecida vira código morto que ninguém ousa apagar e combinações que ninguém testa."
+        },
+        {
+          "frente": "Canary × blue-green",
+          "verso": "Canary: fração pequena do tráfego na versão nova, aumentando aos poucos. Blue-green: dois ambientes completos e troca de uma vez."
+        },
+        {
+          "frente": "Quando o roll-forward é obrigatório?",
+          "verso": "Quando não dá para voltar: a migration já contraiu a estrutura, ou a versão nova gravou dado que a antiga não entende."
+        },
+        {
+          "frente": "Qual pergunta fazer em todo planejamento de entrega?",
+          "verso": "\"Como eu volto, e a partir de que ponto não volto mais?\""
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Feature Toggles (Pete Hodgson)",
+          "url": "https://martinfowler.com/articles/feature-toggles.html"
+        },
+        {
+          "titulo": "Martin Fowler — Blue Green Deployment",
+          "url": "https://martinfowler.com/bliki/BlueGreenDeployment.html"
+        },
+        {
+          "titulo": "Martin Fowler — Canary Release",
+          "url": "https://martinfowler.com/bliki/CanaryRelease.html"
+        }
+      ]
+    },
+    {
+      "id": "prod-09",
+      "titulo": "Nuvem e Kubernetes: o vocabulário mínimo",
+      "minutos": 11,
+      "ponte": "Você conversa com DBA usando instância, tablespace, listener e RAC sem nunca ter instalado um RAC. É esse o nível desta lição: vocabulário para entender o que a equipe de plataforma diz e fazer a pergunta certa. A analogia útil: o RAC mantém várias instâncias servindo o mesmo banco e redireciona quando uma cai. O Kubernetes faz isso com **processos sem estado**. Onde quebra: o RAC protege o estado. O Kubernetes parte do princípio de que o seu processo não tem nenhum.",
+      "texto": "### Nuvem\n\n| Termo | Significado |\n|---|---|\n| **Região** | Uma localização geográfica do provedor. Define latência para o usuário e onde o dado reside, o que tem implicação legal |\n| **Zona de disponibilidade** | Um ou mais datacenters isolados dentro da região. Espalhar instâncias entre zonas protege da queda de uma |\n| ***Load balancer*** (balanceador de carga) | Recebe o tráfego e distribui entre as instâncias saudáveis, com base no health check (prod-06) |\n| ***Autoscaling*** | Aumentar e reduzir o número de instâncias conforme uma métrica |\n| **Serviço gerenciado** | O provedor opera para você: banco com backup e atualização, fila, cache. Você paga mais e opera menos |\n\nEscalar na **horizontal** é ter mais instâncias. Na **vertical**, uma instância maior. A horizontal exige processo sem estado (prod-01). O banco relacional, na prática, escala primeiro na vertical.\n\n### Kubernetes\n\nO Kubernetes (K8s) é um **orquestrador de contêineres**. Você descreve em arquivos o **estado desejado** (\"três cópias desta imagem, com esta configuração\"), e ele trabalha continuamente para a realidade ficar igual à descrição. Caiu uma cópia, ele sobe outra. É um modelo declarativo, a mesma virada do React (react-01), aplicada à infraestrutura.\n\n| Objeto | O que é |\n|---|---|\n| ***Pod*** | A menor unidade: um ou mais contêineres que rodam juntos e compartilham rede. Na prática, uma cópia da sua aplicação. É descartável e tem IP que muda |\n| ***Deployment*** | Declara qual imagem e quantas réplicas. Cuida da atualização gradual e do retorno à versão anterior |\n| ***Service*** | Um nome e um endereço **estáveis** na frente de um conjunto de pods, que mudam o tempo todo. Faz o balanceamento interno |\n| ***Ingress*** | A entrada HTTP de fora do cluster: roteia por domínio e caminho para os services |\n| ***ConfigMap*** | Configuração não sensível, entregue ao pod como variável de ambiente ou arquivo |\n| ***Secret*** | O mesmo, para dado sensível. Por padrão é só codificado em base64, **não** criptografado: a proteção depende de como o cluster foi configurado |\n| ***Namespace*** | Separação lógica dentro do cluster: por equipe ou por ambiente |\n\nO caminho de uma requisição: balanceador da nuvem, ingress, service, pod.\n\nTudo o que você viu nesta trilha encaixa aqui. A imagem (prod-02) é o que o deployment roda. A configuração pelo ambiente (prod-01) chega por ConfigMap e Secret. As sondas (prod-06) decidem quem recebe tráfego e quem é reiniciado. O autoscaling horizontal ajusta as réplicas a partir de uma métrica.\n\n### Serverless × contêiner\n\n| | Contêiner sempre ligado | *Serverless* (função sob demanda) |\n|---|---|---|\n| Cobrança | Pelo tempo ligado | Por execução |\n| Ocioso | Custa | Custa zero ou quase |\n| Partida | Já está no ar | Pode ter partida a frio, com latência na primeira chamada |\n| Conexão com banco | Pool estável | Cada instância abre a sua: esgota o banco com facilidade sem um pool externo |\n| Bom para | API com tráfego constante, tempo real, trabalho longo | Tráfego esporádico, tarefas disparadas por evento |\n\nEntre os dois existem as plataformas que rodam o seu contêiner sem você administrar cluster. Para a maioria das aplicações pequenas e médias, é o ponto de equilíbrio.\n\n### Quando NÃO precisa de Kubernetes\n\nO Kubernetes resolve problema de **escala organizacional e operacional**: muitos serviços, muitas equipes, necessidade de padronizar deploy, rede e escala. O preço é uma plataforma inteira para operar, com atualização, rede, segurança e observabilidade próprias. Alguém tem que ser dono disso.\n\nVocê provavelmente não precisa quando:\n\n- É **um** monólito modular com um banco (arq-01).\n- A equipe é pequena e ninguém vai se dedicar à plataforma.\n- O tráfego cabe em poucas instâncias e é previsível.\n- Uma plataforma gerenciada de contêiner, ou um servidor com compose, atende os requisitos de disponibilidade.\n\nPassa a fazer sentido quando há muitos serviços com ciclos de deploy independentes, uma equipe de plataforma que já opera o cluster, ou requisitos de escala e isolamento que as opções simples não atendem. Se a empresa **já tem** um cluster operado por uma equipe, usar o que existe costuma ser mais barato que criar um caminho paralelo.\n\nA ordem de escolha de um sênior: a opção mais simples que cumpre os requisitos de disponibilidade, escala e custo. E o requisito vem com número. \"Alta disponibilidade\" não é requisito. \"Pode ficar fora quinze minutos por mês\" é.",
+      "naPratica": "Para o Cockpit, um app pessoal com um usuário, a resposta honesta é uma plataforma gerenciada de contêiner com Postgres gerenciado, ou um servidor único com compose. Saber dizer isso, e saber dizer quando a resposta muda, vale mais que saber escrever um manifesto de cluster.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A regra documentada do autoscaling horizontal do Kubernetes: réplicas desejadas = teto(réplicas atuais × métrica atual ÷ métrica alvo). O alvo é 60% de CPU. O que sai?",
+          "codigo": "const desejadas = (atuais: number, metricaAtual: number, alvo: number) =>\n  Math.ceil(atuais * (metricaAtual / alvo));\n\nconsole.log(desejadas(3, 90, 60));\nconsole.log(desejadas(5, 30, 60));\nconsole.log(desejadas(4, 60, 60));\nconsole.log(desejadas(1, 61, 60));\n",
+          "saida": "5\n3\n4\n2\n",
+          "explicacao": "Com 3 réplicas a 90% e alvo de 60%, a conta dá 4,5, e o teto leva a 5. Com 5 réplicas a 30%, dá 2,5 e reduz para 3. No alvo, nada muda. A última linha mostra o efeito do teto: 1% acima do alvo já pede a segunda réplica. Na prática o autoscaler aplica tolerância e janelas de estabilização para não oscilar, e sempre respeita o mínimo e o máximo configurados."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Os pods de uma aplicação são recriados com frequência e mudam de IP. Qual objeto dá aos outros componentes um endereço estável para alcançá-los?",
+          "opcoes": [
+            "Deployment",
+            "ConfigMap",
+            "Service",
+            "Namespace"
+          ],
+          "correta": 2,
+          "explicacao": "O service oferece nome e endereço estáveis e distribui as chamadas entre os pods saudáveis do conjunto. O deployment é a opção tentadora, mas ele cuida de **quantas** réplicas existem e de qual imagem rodam, não de como alcançá-las."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma equipe guarda a senha do banco em um Secret do Kubernetes e conclui que ela está criptografada. Essa conclusão está correta?",
+          "opcoes": [
+            "Sim, Secret é sempre criptografado em repouso",
+            "Não necessariamente: por padrão o valor é só codificado em base64, e a proteção depende de criptografia em repouso e controle de acesso configurados no cluster",
+            "Sim, desde que o Secret esteja em um namespace separado",
+            "Não, Secret é idêntico a ConfigMap e não deve ser usado"
+          ],
+          "correta": 1,
+          "explicacao": "Base64 é codificação, não criptografia: qualquer um com acesso de leitura ao objeto decodifica. O Secret é o lugar certo para dado sensível porque pode receber controle de acesso e criptografia em repouso, mas isso é configuração do cluster. É uma boa pergunta para fazer à equipe de plataforma."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, estamos desenhando a aplicação nova. Precisamos de Kubernetes?\" Responda com critério.",
+          "pontos": [
+            "Devolveu a pergunta para os requisitos: quantos serviços, quanto tráfego, quanta indisponibilidade é aceitável, com número",
+            "Disse o que o Kubernetes resolve: muitos serviços e equipes, padronização, escala e reposição automáticas",
+            "Nomeou o custo: uma plataforma inteira para operar, que precisa de dono",
+            "Deu as alternativas mais simples: plataforma gerenciada de contêiner ou servidor com compose",
+            "Considerou o contexto: se a empresa já opera um cluster, usar o existente muda a conta",
+            "Disse o gatilho para rever a decisão"
+          ],
+          "modelo": "Depende de três números: quantos serviços vamos ter, quanto tráfego esperamos e quanto tempo fora do ar é aceitável por mês. Kubernetes resolve bem o cenário de muitos serviços e muitas equipes que precisam de deploy, rede e escala padronizados. O preço é operar uma plataforma inteira, e alguém tem que ser dono dela. Para um monólito modular com um banco e uma equipe pequena, uma plataforma gerenciada de contêiner entrega o que a gente precisa com uma fração do esforço. Agora, se a empresa já tem um cluster operado por uma equipe de plataforma, eu usaria o que existe em vez de criar um caminho paralelo. Eu reveria a decisão quando tivermos vários serviços com ciclos de deploy independentes."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Traduza o Cockpit para o vocabulário de plataforma",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/prod-09-vocabulario.md`, monte uma tabela com os termos: região, load balancer, pod, deployment, service, ingress, configmap, secret.",
+            "Para cada termo, escreva em uma linha o que ele seria no Cockpit se o app rodasse em um cluster (qual imagem, quais variáveis, qual domínio).",
+            "Escreva três perguntas que você faria à equipe de plataforma antes de publicar uma API nova.",
+            "Feche com um parágrafo: qual hospedagem você escolheria para o Cockpit hoje e o que faria você mudar de ideia."
+          ],
+          "prontoQuando": "A tabela tem os oito termos com exemplo concreto, as três perguntas existem, e o parágrafo final nomeia um critério mensurável para mudar de opção."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Pod, deployment e service em uma linha cada",
+          "verso": "Pod: uma cópia descartável da aplicação. Deployment: qual imagem e quantas réplicas. Service: endereço estável na frente dos pods."
+        },
+        {
+          "frente": "Qual o modelo de funcionamento do Kubernetes?",
+          "verso": "Declarativo: você descreve o estado desejado e ele trabalha continuamente para a realidade ficar igual."
+        },
+        {
+          "frente": "Por que um Secret do Kubernetes não é automaticamente seguro?",
+          "verso": "Por padrão o valor é só codificado em base64. A proteção vem de criptografia em repouso e controle de acesso configurados no cluster."
+        },
+        {
+          "frente": "Quando NÃO precisa de Kubernetes?",
+          "verso": "Um monólito com um banco, equipe pequena sem dono para a plataforma, tráfego previsível, e uma opção gerenciada que cumpre os requisitos."
+        },
+        {
+          "frente": "Por que serverless e banco relacional exigem cuidado?",
+          "verso": "Cada instância da função abre a própria conexão. Em pico, esgota o limite do banco sem um pool externo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Kubernetes — Concepts",
+          "url": "https://kubernetes.io/docs/concepts/"
+        },
+        {
+          "titulo": "Kubernetes — Horizontal Pod Autoscaling",
+          "url": "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/"
+        },
+        {
+          "titulo": "Kubernetes — Secrets",
+          "url": "https://kubernetes.io/docs/concepts/configuration/secret/"
+        }
+      ]
+    }
+  ]
+}

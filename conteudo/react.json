@@ -1,0 +1,1681 @@
+{
+  "licoes": [
+    {
+      "id": "react-01",
+      "titulo": "Declarativo × imperativo: a maior virada",
+      "minutos": 10,
+      "ponte": "No Forms, uma trigger `WHEN-VALIDATE-ITEM` chama `SET_ITEM_PROPERTY` para habilitar um botão e `GO_BLOCK` para mudar o foco: você dá ordens à tela. Em React você não dá ordens. Você declara que o botão está habilitado **quando** o nome está preenchido, e o React executa as ordens por você. A analogia mais próxima no seu mundo é a *view*: ninguém atualiza a view, atualiza a tabela e a view reflete. Onde quebra: a view é recalculada pelo banco quando alguém consulta; o componente é recalculado pelo React a cada mudança de estado, com regras próprias (react-03 e react-06).",
+      "texto": "No Forms você **manda** a tela mudar. Cada trigger é um comando: quando o usuário sai do campo, desabilite aquele botão; quando a consulta volta, mostre aquele canvas. Esse é o estilo **imperativo**: você escreve os passos da mudança.\n\nO React inverte a direção. Você escreve uma função que recebe o **estado** (os dados que podem mudar) e devolve **como a tela deve estar** para aquele estado. Quando o estado muda, o React chama a função de novo e ajusta a tela sozinho. Esse é o estilo **declarativo**, resumido na fórmula **UI = f(estado)**.\n\n### A mesma tela nos dois estilos\n\nUm cadastro com um campo de nome e um botão Salvar. O botão só fica ativo com o nome preenchido e, enquanto grava, mostra `Salvando...`.\n\nImperativo, como numa trigger ou em JavaScript puro mexendo no DOM (a árvore de elementos da página):\n\n```js\ncampo.addEventListener('input', () => {\n  botao.disabled = campo.value.trim() === '';\n});\nbotao.addEventListener('click', async () => {\n  botao.disabled = true;\n  botao.textContent = 'Salvando...';\n  await salvar(campo.value);\n  botao.textContent = 'Salvar';\n  botao.disabled = false; // e se o campo ficou vazio enquanto gravava?\n});\n```\n\nDeclarativo, em React:\n\n```tsx\nfunction Cadastro() {\n  const [nome, setNome] = useState('');\n  const [salvando, setSalvando] = useState(false);\n  const podeSalvar = nome.trim() !== '' && !salvando;\n\n  async function aoSalvar() {\n    setSalvando(true);\n    await salvar(nome);\n    setSalvando(false);\n  }\n\n  return (\n    <>\n      <input value={nome} onChange={(e) => setNome(e.target.value)} />\n      <button disabled={!podeSalvar} onClick={aoSalvar}>\n        {salvando ? 'Salvando...' : 'Salvar'}\n      </button>\n    </>\n  );\n}\n```\n\n### Por que vale a troca, e quanto custa\n\nNo estilo imperativo, a regra do botão fica **espalhada** por todos os eventos que podem afetá-la. Com dois estados e dois eventos funciona. Com seis estados, cada evento novo precisa lembrar de todas as combinações. O defeito típico é a tela parar num estado que nenhum caminho previu: o botão ativo com o campo vazio, o aviso que não some.\n\nNo declarativo a regra mora em **um lugar** (`podeSalvar`). Não existe \"esqueci de reabilitar\": a cada mudança, a tela é recalculada inteira a partir do estado. Você troca \"que passos levam a tela de A para B\" por \"como é a tela em B\".\n\nO custo: você perde o comando direto. Não existe `SET_ITEM_PROPERTY` em React. Para mudar a tela, você muda o estado, e a tela vem atrás. No começo parece uma volta maior. A volta se paga na terceira regra que cruza com as duas primeiras.\n\n### A armadilha de quem vem do Forms\n\nProcurar o comando: \"como eu desabilito o botão daqui?\", \"como eu pulo para a outra aba?\". Em React a pergunta que resolve é outra: **qual estado descreve isso, e quem é o dono dele?** Aba ativa é um estado. Botão desabilitado é um cálculo sobre estados. Mensagem de erro visível é um estado (ou um cálculo). O restante da trilha é aprender a responder essa pergunta com critério.",
+      "naPratica": "Ao desenhar uma tela do Cockpit, liste primeiro os estados (tarefa selecionada, filtro, salvando, erro) e só depois o JSX. Se você se pegar querendo \"mandar\" num elemento, pare: falta um estado no seu desenho.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Estilo imperativo: cada evento ajusta um pedaço da tela. O usuário digita um nome longo e depois troca por um curto. O que a tela mostra no fim?",
+          "codigo": "const tela = { botaoAtivo: false, aviso: '' };\n\nfunction aoDigitar(nome: string) {\n  tela.botaoAtivo = nome !== '';\n  if (nome.length > 5) tela.aviso = 'nome longo';\n}\n\naoDigitar('Fernanda');\nconsole.log(JSON.stringify(tela));\naoDigitar('Ana');\nconsole.log(JSON.stringify(tela));\n",
+          "saida": "{\"botaoAtivo\":true,\"aviso\":\"nome longo\"}\n{\"botaoAtivo\":true,\"aviso\":\"nome longo\"}\n",
+          "explicacao": "O handler liga o aviso, mas nenhum caminho o desliga. Com `Ana` o aviso continua na tela. É o defeito clássico do imperativo: cada evento precisa lembrar de desfazer o que outro fez."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Estilo declarativo: a tela é calculada do estado. Mesma sequência, mais um salvamento. O que sai?",
+          "codigo": "type Estado = { nome: string; salvando: boolean };\n\nfunction tela(e: Estado): string {\n  const podeSalvar = e.nome !== '' && !e.salvando;\n  const aviso = e.nome.length > 5 ? ' aviso=nome longo' : '';\n  return `botao=${podeSalvar ? 'ativo' : 'inativo'}${aviso}`;\n}\n\nlet estado: Estado = { nome: 'Fernanda', salvando: false };\nconsole.log(tela(estado));\nestado = { ...estado, nome: 'Ana' };\nconsole.log(tela(estado));\nestado = { ...estado, salvando: true };\nconsole.log(tela(estado));\n",
+          "saida": "botao=ativo aviso=nome longo\nbotao=ativo\nbotao=inativo\n",
+          "explicacao": "Ninguém \"desligou\" o aviso: ele não aparece porque, para o estado `Ana`, a função não o produz. A tela é sempre o resultado de `tela(estado)`. Não há resto de um estado anterior."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Numa tela React, um botão precisa ficar desabilitado enquanto a gravação está em andamento. Qual é o caminho?",
+          "opcoes": [
+            "Guardar uma referência ao botão e fazer `botao.disabled = true` no início do handler",
+            "Ter um estado `salvando` e escrever `disabled={salvando}` no JSX",
+            "Chamar uma função do React equivalente ao `SET_ITEM_PROPERTY` passando o id do botão",
+            "Remover o botão do DOM com `document.querySelector` e recolocá-lo depois"
+          ],
+          "correta": 1,
+          "explicacao": "A tela é função do estado: o botão está desabilitado quando `salvando` é verdadeiro. A primeira opção funciona em JavaScript puro, mas briga com o React: na próxima renderização ele recalcula o botão e sobrescreve o que você fez à mão."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual é o principal ganho do estilo declarativo numa tela com muitas regras cruzadas?",
+          "opcoes": [
+            "A tela roda mais rápido, porque o React atualiza menos elementos que o código manual",
+            "Você escreve menos linhas em qualquer tela, mesmo nas simples",
+            "Cada regra de exibição mora em um lugar e é recalculada do estado, sem depender da ordem dos eventos",
+            "Os eventos deixam de existir: o React detecta sozinho o que o usuário quer"
+          ],
+          "correta": 2,
+          "explicacao": "O ganho é de consistência: a tela não guarda resto de estado anterior. Velocidade não é o argumento (código manual bem feito pode ser mais rápido), e em tela trivial o React pode até ter mais linhas."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, no Forms eu desabilitava o campo com uma linha. Por que em React eu tenho que criar um estado só para isso? Não é mais trabalho?\"",
+          "pontos": [
+            "Explicou UI = f(estado): a tela é recalculada do estado a cada mudança",
+            "Disse o problema do imperativo: regra espalhada pelos eventos e estados que ninguém previu",
+            "Admitiu o custo: em tela simples é mais cerimônia",
+            "Deu o critério: o ganho aparece quando regras se cruzam",
+            "Avisou que mexer no elemento à mão briga com a próxima renderização"
+          ],
+          "modelo": "Em tela simples é mais trabalho mesmo, não vou negar. A diferença aparece quando as regras se cruzam. No Forms, a regra de quando o campo fica desabilitado está espalhada em cada trigger que mexe nele, e todo evento novo precisa lembrar de todas as combinações. Em React eu escrevo a regra uma vez, como um cálculo sobre o estado, e a tela inteira é recalculada a cada mudança. Não sobra resto de estado anterior. E tem um motivo prático: se eu desabilitar o elemento à mão, a próxima renderização recalcula e desfaz. Então o estado não é burocracia, é o único lugar de onde a tela sai."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que significa UI = f(estado)?",
+          "verso": "A tela é o resultado de uma função aplicada ao estado atual. Para mudar a tela, muda-se o estado; o React recalcula e ajusta o DOM."
+        },
+        {
+          "frente": "Por que o estilo imperativo gera telas em estado inconsistente?",
+          "verso": "A regra de exibição fica espalhada pelos eventos. Basta um caminho esquecer de desfazer o que outro fez (aviso que não some, botão que não reabilita)."
+        },
+        {
+          "frente": "Qual é o equivalente em React do `SET_ITEM_PROPERTY`?",
+          "verso": "Não existe. Você muda o estado e descreve no JSX como o item fica para aquele estado (`disabled={salvando}`)."
+        },
+        {
+          "frente": "Que pergunta substitui \"como eu mando a tela fazer X?\" em React?",
+          "verso": "Qual estado descreve X, e qual componente é o dono dele?"
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Reacting to Input with State",
+          "url": "https://react.dev/learn/reacting-to-input-with-state"
+        },
+        {
+          "titulo": "React — Thinking in React",
+          "url": "https://react.dev/learn/thinking-in-react"
+        }
+      ]
+    },
+    {
+      "id": "react-02",
+      "titulo": "Componentes, JSX e props",
+      "minutos": 10,
+      "ponte": "Um componente lembra uma *program unit* que desenha um pedaço de tela: recebe parâmetros e devolve o que mostrar. As props são como parâmetros `IN`: quem recebe só lê. Compor componentes lembra reutilizar um bloco por *object library*. Onde quebra: no Forms o item existe e você altera as propriedades dele ao longo do tempo. Em React o componente **não é o item**: é a função que descreve o item, chamada de novo a cada renderização.",
+      "texto": "Um **componente** é uma função JavaScript que devolve a descrição de um pedaço de tela. Nome com inicial maiúscula, recebe um objeto de **props** (os parâmetros) e devolve JSX.\n\n```tsx\ntype EtiquetaProps = { texto: string; urgente?: boolean };\n\nfunction Etiqueta({ texto, urgente = false }: EtiquetaProps) {\n  return <span className={urgente ? 'vermelho' : 'cinza'}>{texto}</span>;\n}\n\n// uso\n<Etiqueta texto=\"Pagar boleto\" urgente />\n```\n\n### JSX é açúcar para chamada de função\n\nJSX parece HTML, mas é JavaScript. O compilador troca cada tag por uma chamada de função que monta um objeto simples:\n\n```ts\n// <Etiqueta texto=\"Pagar boleto\" urgente />  vira algo como:\njsx(Etiqueta, { texto: 'Pagar boleto', urgente: true });\n// e o resultado é um objeto: { type: Etiqueta, props: { texto: ..., urgente: true } }\n```\n\nEsse objeto se chama **elemento**. Ele não é a tela, é a **descrição** da tela. O React lê a árvore de elementos, chama cada componente quando precisa e só então toca o DOM. Consequências práticas:\n\n- Dentro de `{ }` cabe qualquer **expressão** JavaScript: variável, ternário, `lista.map(...)`. Não cabe `if` nem `for`, que são instruções.\n- Os atributos seguem o DOM em JavaScript: `className`, `htmlFor`, `onClick`.\n- Um componente devolve **um** elemento raiz. Para devolver vários sem criar uma `div`, use o fragmento `<>...</>`.\n\n### Props são somente leitura\n\nO componente nunca altera as próprias props. Se ele precisa avisar o pai de alguma coisa, o pai passa uma **função** por prop (`aoClicar`, `onChange`) e o filho a chama. O dado desce, o evento sobe. Essa regra de mão única é o que torna a tela previsível: para saber de onde vem um valor, você sobe a árvore.\n\nO componente também precisa ser **puro** durante a renderização: mesmas props e mesmo estado, mesmo JSX, sem alterar nada fora dele. O React pode chamá-lo mais de uma vez (react-06).\n\n### Composição\n\nTudo o que vai entre a tag de abertura e a de fechamento chega na prop especial `children`:\n\n```tsx\nfunction Cartao({ titulo, children }: { titulo: string; children: React.ReactNode }) {\n  return (\n    <section className=\"cartao\">\n      <h2>{titulo}</h2>\n      {children}\n    </section>\n  );\n}\n\n<Cartao titulo=\"Hoje\">\n  <Etiqueta texto=\"Pagar boleto\" urgente />\n</Cartao>\n```\n\n`Cartao` não sabe o que tem dentro dele. É assim que se monta uma tela em React: componentes pequenos, encaixados. Não existe herança de componente na prática.\n\n### Critério de sênior\n\n- **Tipar as props** é a documentação que o compilador confere. Prop obrigatória esquecida vira erro de compilação, não defeito em produção.\n- Quando duas props só fazem sentido juntas, use **união discriminada** (você viu na trilha de TypeScript): `{ tipo: 'erro'; aoTentarDeNovo: () => void } | { tipo: 'sucesso' }`.\n- Não quebre em componentes cedo demais. Extraia quando o pedaço tem nome claro, é repetido ou tem estado próprio. Um componente de 80 linhas legível é melhor que cinco de 15 que você precisa abrir em sequência.\n- Componente com mais de 6 ou 7 props costuma estar fazendo coisa demais, ou pedindo `children`.",
+      "naPratica": "No Cockpit, `apps/web` é uma árvore de componentes: página, lista, linha de tarefa, botão. Ao revisar um PR, confira se as props estão tipadas, se nenhum componente altera prop e se o que varia de um uso para outro entra por prop ou `children`, não por cópia do componente.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `jsx` de brinquedo: monta o elemento e, se o tipo for um componente (função), chama-o com as props. O que as duas linhas imprimem?",
+          "codigo": "type Props = Record<string, unknown>;\ntype Elemento = { tipo: string; props: Props };\n\nfunction jsx(tipo: string | ((p: any) => Elemento), props: Props): Elemento {\n  return typeof tipo === 'function' ? tipo(props) : { tipo, props };\n}\n\nfunction Etiqueta(props: { texto: string; urgente?: boolean }): Elemento {\n  const cor = props.urgente ? 'vermelho' : 'cinza';\n  return jsx('span', { className: cor, children: props.texto });\n}\n\nconsole.log(JSON.stringify(jsx(Etiqueta, { texto: 'Pagar boleto', urgente: true })));\nconsole.log(JSON.stringify(jsx(Etiqueta, { texto: 'Ler e-mail' })));\n",
+          "saida": "{\"tipo\":\"span\",\"props\":{\"className\":\"vermelho\",\"children\":\"Pagar boleto\"}}\n{\"tipo\":\"span\",\"props\":{\"className\":\"cinza\",\"children\":\"Ler e-mail\"}}\n",
+          "explicacao": "O componente é só uma função chamada com um objeto de props, e o que ele devolve é um objeto que descreve a tela. Sem `urgente`, a prop vem `undefined` e a cor cai em `cinza`. Simplificação do brinquedo: o React de verdade não chama o componente dentro do `jsx`; ele guarda `{ type: Etiqueta, props }` e chama depois, na renderização."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Props são somente leitura. O componente tenta \"arrumar\" a prop que recebeu. Compila?",
+          "codigo": "type TituloProps = Readonly<{ texto: string; nivel: 1 | 2 }>;\n\nfunction Titulo(props: TituloProps): string {\n  props.texto = props.texto.toUpperCase();\n  return `h${props.nivel}: ${props.texto}`;\n}\n\nTitulo({ texto: 'Plano do dia', nivel: 1 });\n",
+          "compila": false,
+          "erro": "TS2540",
+          "linha": 4,
+          "explicacao": "`Readonly` proíbe atribuir a `props.texto`. Mesmo sem o `Readonly`, alterar prop é erro de desenho em React: a prop pertence ao pai. O certo é calcular um valor novo: `const maiusculo = props.texto.toUpperCase()`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Props como união discriminada: o aviso de erro exige o botão de tentar de novo. A chamada abaixo compila?",
+          "codigo": "type AvisoProps =\n  | { tipo: 'sucesso'; mensagem: string }\n  | { tipo: 'erro'; mensagem: string; aoTentarDeNovo: () => void };\n\nfunction Aviso(props: AvisoProps): string {\n  if (props.tipo === 'erro') return `${props.mensagem} [Tentar de novo]`;\n  return props.mensagem;\n}\n\nAviso({ tipo: 'sucesso', mensagem: 'Gravado' });\nAviso({ tipo: 'erro', mensagem: 'Falha ao gravar' });\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 11,
+          "explicacao": "Com `tipo: 'erro'`, a prop `aoTentarDeNovo` é obrigatória. O compilador recusa a segunda chamada. Com uma prop opcional solta (`aoTentarDeNovo?`), o aviso de erro sem botão passaria e só seria notado na tela."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um componente filho precisa avisar o pai de que o usuário clicou em Excluir. Como?",
+          "opcoes": [
+            "O filho altera uma prop `excluido = true` e o pai percebe a mudança",
+            "O filho importa o estado do pai e o modifica diretamente",
+            "O filho dispara um evento global com `window.dispatchEvent` e o pai escuta",
+            "O pai passa uma função por prop (`aoExcluir`) e o filho a chama"
+          ],
+          "correta": 3,
+          "explicacao": "Dado desce por prop, evento sobe por função passada como prop. Alterar prop não avisa ninguém (e é proibido). Evento global funciona, mas esconde a ligação entre pai e filho, que é o que a prop deixa explícito."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Primeiros componentes num rascunho Vite",
+          "minutos": 20,
+          "passos": [
+            "Em `estudo/`, rode `npm create vite@latest react-estudo` e escolha React com TypeScript. Depois `npm install` e `npm run dev` dentro da pasta.",
+            "Crie `Etiqueta.tsx` com as props `texto: string` e `urgente?: boolean`.",
+            "Crie `Cartao.tsx` com `titulo: string` e `children: React.ReactNode`.",
+            "No `App.tsx`, monte dois cartões com duas etiquetas em cada um.",
+            "Apague a prop `texto` de um uso e leia o erro que o editor mostra."
+          ],
+          "prontoQuando": "A página mostra dois cartões com etiquetas, e você viu o erro de compilação de prop obrigatória faltando antes de corrigi-lo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é um componente React?",
+          "verso": "Uma função com inicial maiúscula que recebe um objeto de props e devolve JSX (a descrição de um pedaço de tela)."
+        },
+        {
+          "frente": "Em que o JSX `<Etiqueta texto=\"x\" />` se transforma?",
+          "verso": "Numa chamada de função que cria um objeto (elemento) do tipo `{ type: Etiqueta, props: { texto: 'x' } }`. É descrição, não é a tela."
+        },
+        {
+          "frente": "Por que um componente não pode alterar as próprias props?",
+          "verso": "A prop pertence ao pai. O fluxo é de mão única: dado desce por prop, evento sobe por função. Isso mantém a origem de cada valor rastreável."
+        },
+        {
+          "frente": "O que chega na prop `children`?",
+          "verso": "O que foi escrito entre a tag de abertura e a de fechamento do componente. É a base da composição."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Your First Component",
+          "url": "https://react.dev/learn/your-first-component"
+        },
+        {
+          "titulo": "React — Passing Props to a Component",
+          "url": "https://react.dev/learn/passing-props-to-a-component"
+        },
+        {
+          "titulo": "React — Writing Markup with JSX",
+          "url": "https://react.dev/learn/writing-markup-with-jsx"
+        }
+      ]
+    },
+    {
+      "id": "react-03",
+      "titulo": "Estado é uma foto (state as a snapshot)",
+      "minutos": 10,
+      "ponte": "No Forms, `:BLOCO.TOTAL := :BLOCO.TOTAL + 1` muda o item na hora, e a linha seguinte já lê o valor novo. Em React, o estado se parece mais com a **consistência de leitura** do Oracle: uma consulta enxerga os dados como estavam quando ela começou, mesmo que alguém grave no meio. Cada renderização enxerga o estado como estava quando ela começou. Onde quebra: não há transação nem bloqueio. `setX` é só um pedido de nova renderização.",
+      "texto": "Variável local não serve para guardar o que a tela precisa lembrar: a função do componente roda de novo a cada renderização e a variável nasce zerada. O **estado** é a memória que o React guarda para o componente, fora da função.\n\n```tsx\nconst [count, setCount] = useState(0);\n```\n\n`useState` devolve duas coisas: o valor **desta renderização** e a função que pede a troca. O `0` é o valor inicial, usado só na primeira vez (a montagem).\n\n### O que `setCount` faz de verdade\n\n`setCount(5)` **não muda** a variável `count`. Ele faz duas coisas:\n\n1. Guarda o `5` como próximo valor, do lado do React.\n2. **Agenda** uma nova renderização do componente.\n\nNa nova renderização, a função roda de novo e `useState` devolve `5`. A variável `count` da renderização anterior continua valendo o que valia. Ela é uma `const`.\n\n### A foto\n\nCada renderização é uma **foto** (*snapshot*): props, estado, variáveis locais e os handlers criados ali pertencem àquela foto. Um handler criado na renderização em que `count` era `0` vê `0` para sempre, mesmo que rode depois.\n\n```tsx\nfunction Contador() {\n  const [count, setCount] = useState(0);\n\n  function aoClicar() {\n    setCount(count + 1);\n    console.log(count); // ainda 0: é o valor desta foto\n  }\n\n  return <button onClick={aoClicar}>{count}</button>;\n}\n```\n\nO `console.log` imprime `0`, e não é defeito. O handler pertence à foto em que `count` vale `0`. O `1` só existe na próxima renderização, com um handler novo.\n\nO mesmo vale para código assíncrono. Se o handler agenda um `setTimeout` de 3 segundos que lê `count`, ele vai ler o valor **da foto em que foi criado**, mesmo que o usuário tenha clicado mais dez vezes nesse intervalo. Às vezes é exatamente o que você quer (a mensagem enviada é a que estava na tela no clique). Às vezes é a origem de um defeito, que você verá em react-11.\n\n### O modelo mental que funciona\n\nPense no React guardando um quadro de valores por componente. A cada renderização ele:\n\n1. Chama a sua função entregando os valores atuais do quadro.\n2. Recebe o JSX e os handlers, todos amarrados a esses valores.\n3. Espera. Quando alguém chama um `set`, atualiza o quadro e volta ao passo 1.\n\n### Regras que saem daí\n\n- **Estado é só para o que muda e afeta a tela.** Constante fica fora do componente. O que pode ser calculado de outro estado não é estado (react-07).\n- **Nunca atribua direto** (`count = 5` nem compila, por ser `const`; alterar um objeto de estado por dentro compila e não funciona, como você verá em react-04).\n- **Precisa do valor novo na linha seguinte?** Guarde numa variável local: `const proximo = count + 1; setCount(proximo); usa(proximo);`.\n- **`useState` só no nível de cima do componente**, nunca dentro de `if` ou laço (o motivo está em react-12).",
+      "naPratica": "O defeito \"cliquei e o log mostra o valor antigo\" é o mais comum de quem começa. Antes de procurar erro, lembre da foto: o handler vê o estado da renderização em que nasceu. Se você precisa do valor novo ali, calcule-o numa variável local.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `useState` de brinquedo: o estado mora fora da função e `setCount` só agenda. Repare que o **mesmo handler antigo** é chamado duas vezes. O que sai?",
+          "codigo": "let guardado = 0;                 // o quadro do React\nlet pendente: number | null = null;\nconst setCount = (v: number) => { pendente = v; };\n\nfunction Contador() {\n  const count = guardado;         // a foto desta renderização\n  console.log('render: count =', count);\n  return () => {\n    setCount(count + 1);\n    console.log('handler ainda vê', count);\n  };\n}\n\nfunction reactRenderiza() {\n  if (pendente !== null) { guardado = pendente; pendente = null; }\n  return Contador();\n}\n\nconst clicar = reactRenderiza();\nclicar();\nreactRenderiza();\nclicar();\nreactRenderiza();\n",
+          "saida": "render: count = 0\nhandler ainda vê 0\nrender: count = 1\nhandler ainda vê 0\nrender: count = 1\n",
+          "explicacao": "`setCount` não muda `count`: o handler imprime `0` logo depois de pedir `1`. A segunda renderização mostra `1`. O handler antigo, chamado de novo, continua na foto em que `count` é `0`: pede `0 + 1` outra vez, e a tela fica em `1`, não em `2`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O usuário clica em Enviar e, antes de o envio acontecer, troca o destinatário. Para quem vai a mensagem?",
+          "codigo": "let guardado = 'Ana';\n\nfunction Formulario() {\n  const para = guardado;          // foto\n  return {\n    enviar: () => setTimeout(() => console.log('enviado para', para), 30),\n  };\n}\n\nconst foto1 = Formulario();\nfoto1.enviar();\n\nguardado = 'Bia';                 // setPara('Bia') e nova renderização\nFormulario();\nconsole.log('a tela mostra', guardado);\n",
+          "saida": "a tela mostra Bia\nenviado para Ana\n",
+          "explicacao": "O handler `enviar` foi criado na foto em que `para` era `Ana`. O `setTimeout` roda depois, mas a função fechou sobre aquela constante. A tela já mostra `Bia`; o envio agendado continua indo para `Ana`, que era o que estava na tela no momento do clique."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Com uma declaração de `useState` equivalente à do React, o handler tenta mudar o estado por atribuição. Compila?",
+          "codigo": "declare function useState<T>(inicial: T): [T, (novo: T) => void];\n\nconst [count, setCount] = useState(0);\n\nfunction aoClicar() {\n  count = count + 1;\n  setCount(count);\n}\n",
+          "compila": false,
+          "erro": "TS2588",
+          "linha": 6,
+          "explicacao": "`count` é uma `const` desestruturada: não aceita atribuição. É a foto se manifestando no compilador. O valor desta renderização não muda; o que você faz é pedir o próximo com `setCount(count + 1)`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que `setCount(count + 1)` faz no momento em que é chamado?",
+          "opcoes": [
+            "Altera a variável `count` e atualiza o DOM na mesma hora",
+            "Altera a variável `count`; o DOM é atualizado no fim do handler",
+            "Guarda o próximo valor e agenda uma nova renderização; `count` desta renderização não muda",
+            "Interrompe o handler e reinicia a função do componente a partir do topo"
+          ],
+          "correta": 2,
+          "explicacao": "`set` é um pedido, não uma atribuição. O handler segue até o fim com a mesma foto. A opção 2 é o erro de quem vem do Forms, onde atribuir ao item muda o valor na linha seguinte."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `setX(novo)` faz?",
+          "verso": "Guarda o próximo valor e agenda uma nova renderização. Não altera a variável `x` da renderização atual."
+        },
+        {
+          "frente": "Por que `console.log(count)` logo depois de `setCount(count + 1)` mostra o valor antigo?",
+          "verso": "O handler pertence à foto da renderização em que foi criado. O valor novo só existe na próxima renderização."
+        },
+        {
+          "frente": "O que é a \"foto\" (snapshot) de uma renderização?",
+          "verso": "O conjunto de props, estado, variáveis e handlers daquela chamada da função. Tudo ali é fixo, inclusive para código assíncrono criado nela."
+        },
+        {
+          "frente": "Preciso do valor novo logo depois do `set`. Como faço?",
+          "verso": "Calcule numa variável local e use-a: `const proximo = count + 1; setCount(proximo); usa(proximo);`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — State as a Snapshot",
+          "url": "https://react.dev/learn/state-as-a-snapshot"
+        },
+        {
+          "titulo": "React — State: A Component's Memory",
+          "url": "https://react.dev/learn/state-a-components-memory"
+        }
+      ]
+    },
+    {
+      "id": "react-04",
+      "titulo": "Eventos e atualização de estado: forma funcional e lote",
+      "minutos": 10,
+      "ponte": "O handler de evento é a sua trigger: `onClick` faz o papel de `WHEN-BUTTON-PRESSED`, `onChange` o de uma trigger de item. O lote lembra o `COMMIT`: dentro do handler você faz várias alterações e a tela só enxerga o resultado no fim. Onde quebra: não existe `ROLLBACK`, e as alterações não são visíveis nem para o próprio handler antes do fim (a foto de react-03).",
+      "texto": "Um *event handler* (função que trata um evento) é uma função passada por prop a um elemento:\n\n```tsx\n<button onClick={aoSalvar}>Salvar</button>          // passa a função\n<button onClick={() => remover(id)}>Excluir</button> // função que chama outra\n<button onClick={aoSalvar()}>Errado</button>        // CHAMA na renderização\n```\n\nA terceira linha é o erro clássico: os parênteses executam a função enquanto a tela é montada, não no clique.\n\n### Lote (*batching*)\n\nO React espera o handler **terminar** antes de renderizar. Todos os `set` chamados no caminho entram numa fila e viram **uma** renderização. Desde o React 18 isso vale também para `set` chamado depois de `await`, em `setTimeout` ou em *promise*.\n\n```tsx\nfunction aoEnviar() {\n  setSalvando(true);\n  setErro(null);\n  setTentativas(tentativas + 1);\n} // uma renderização, com os três valores novos\n```\n\nPor isso a tela nunca aparece \"pela metade\", com um estado trocado e o outro não.\n\n### Três vezes `setCount(count + 1)`\n\n```tsx\nsetCount(count + 1);\nsetCount(count + 1);\nsetCount(count + 1);\n```\n\nSe `count` é `0`, isso é `setCount(1)` três vezes. A foto não muda dentro do handler (react-03). O resultado é `1`.\n\nA **forma funcional** resolve: em vez do valor, você passa uma função que recebe o valor **pendente** e devolve o próximo.\n\n```tsx\nsetCount((c) => c + 1);\nsetCount((c) => c + 1);\nsetCount((c) => c + 1); // 3\n```\n\nO React processa a fila em ordem: valor fixo **substitui**, função **calcula sobre o anterior**.\n\n**Critério:** use a forma funcional quando o próximo valor depende do anterior e o código pode rodar longe da foto atual: mais de um `set` no mesmo handler, depois de `await`, dentro de timer ou de efeito. Para `setNome(e.target.value)` não faz diferença.\n\n### Não mute objeto nem array de estado\n\nO React decide se o estado mudou comparando o valor antigo com o novo por `Object.is` (para objetos, compara a **referência**). Se você altera o array por dentro e passa o mesmo array, a comparação diz \"igual\" e nada acontece.\n\n```tsx\n// errado: mesma referência\ntarefas.push(nova);\nsetTarefas(tarefas);\n\n// certo: array novo\nsetTarefas([...tarefas, nova]);                               // incluir\nsetTarefas(tarefas.filter((t) => t.id !== id));               // remover\nsetTarefas(tarefas.map((t) => (t.id === id ? { ...t, feita: true } : t))); // alterar\n```\n\nO mesmo para objeto: `setForm({ ...form, nome: 'Ana' })`. Atenção ao aninhado: o *spread* copia só o primeiro nível. Para mexer em `form.endereco.cidade`, copie `form` **e** `endereco`.\n\nHá um segundo motivo além da comparação: a foto. Se você muta o objeto, a renderização anterior, que deveria estar congelada, passa a enxergar o valor alterado. Defeitos assim são difíceis de rastrear.\n\n### Custo e alternativa\n\nCopiar em vez de alterar parece desperdício. Para as listas de uma tela (dezenas ou centenas de itens) o custo é irrelevante. Quando o objeto é profundo e as cópias ficam ilegíveis, existem bibliotecas como o Immer, que deixam você escrever como mutação e geram a cópia. Antes de adotá-las, veja se o estado não está aninhado demais (react-07).",
+      "naPratica": "No Cockpit, marcar uma tarefa como feita é `map` devolvendo um objeto novo para aquela tarefa, nunca `tarefa.feita = true`. Tipar o estado como `readonly Tarefa[]` faz o compilador recusar o `push` antes de você rodar.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Fila de atualizações de brinquedo, igual à do React: valor substitui, função calcula sobre o pendente. Quanto vale o estado depois de cada handler?",
+          "codigo": "type Atualizacao = number | ((anterior: number) => number);\nlet guardado = 0;\nlet fila: Atualizacao[] = [];\nconst setCount = (a: Atualizacao) => { fila.push(a); };\n\nfunction fimDoHandler() {       // o React processa o lote\n  for (const a of fila) guardado = typeof a === 'function' ? a(guardado) : a;\n  fila = [];\n  console.log(guardado);\n}\n\nlet count = guardado;           // foto\nsetCount(count + 1); setCount(count + 1); setCount(count + 1);\nfimDoHandler();\n\ncount = guardado;               // nova foto\nsetCount((c) => c + 1); setCount((c) => c + 1); setCount((c) => c + 1);\nfimDoHandler();\n\ncount = guardado;\nsetCount(count + 5); setCount((c) => c + 1);\nfimDoHandler();\n",
+          "saida": "1\n4\n10\n",
+          "explicacao": "Primeiro handler: três vezes `setCount(1)`, resultado 1. Segundo: cada função recebe o valor pendente (1, 2, 3) e soma um, resultado 4. Terceiro: `4 + 5` substitui por 9 e a função soma um sobre o pendente, resultado 10."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O `set` compara o valor novo com o antigo por `Object.is` antes de renderizar. O que acontece com `push` no array de estado?",
+          "codigo": "let guardado = ['a', 'b'];\nlet renders = 0;\n\nfunction setItens(novo: string[]) {\n  if (Object.is(novo, guardado)) {\n    console.log('mesma referência: não renderiza');\n    return;\n  }\n  guardado = novo;\n  renders++;\n  console.log('renderizou com', guardado.join(','));\n}\n\nconst itens = guardado;\nitens.push('c');\nsetItens(itens);\nsetItens([...itens, 'd']);\nconsole.log('renders:', renders);\n",
+          "saida": "mesma referência: não renderiza\nrenderizou com a,b,c,d\nrenders: 1\n",
+          "explicacao": "`push` altera o array por dentro, mas a referência é a mesma: para o React nada mudou e a tela fica sem o `c`. Com um array novo a referência difere e a renderização acontece. O `c` aparece ali só porque já tinha sido enfiado no array antigo."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O estado foi tipado como somente leitura. O handler tenta incluir com `push`. Compila?",
+          "codigo": "type Tarefa = Readonly<{ id: number; titulo: string; feita: boolean }>;\n\ndeclare const tarefas: readonly Tarefa[];\ndeclare function setTarefas(novas: readonly Tarefa[]): void;\n\nfunction aoIncluir(titulo: string) {\n  const nova: Tarefa = { id: tarefas.length + 1, titulo, feita: false };\n  tarefas.push(nova);\n  setTarefas(tarefas);\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 8,
+          "explicacao": "`readonly Tarefa[]` não tem `push`. O compilador obriga o caminho certo: `setTarefas([...tarefas, nova])`. Tipar estado como `readonly` é uma forma barata de pegar mutação na compilação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um handler chama `setA(1)`, `setB(2)` e `setC(3)` em sequência. Quantas vezes o componente renderiza por causa desse clique?",
+          "opcoes": [
+            "Três: uma para cada `set`",
+            "Uma: o React junta os três no mesmo lote e renderiza quando o handler termina",
+            "Nenhuma, até que você chame uma função de confirmação",
+            "Depende: uma se forem estados do mesmo `useState`, três se forem de `useState` diferentes"
+          ],
+          "correta": 1,
+          "explicacao": "O lote junta todos os `set` do handler em uma renderização, não importa de quantos `useState` venham. Não existe confirmação manual. Em desenvolvimento, com StrictMode, você verá a função rodar em dobro, mas isso é outro mecanismo (react-06)."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Contador e lista sem mutação",
+          "minutos": 20,
+          "passos": [
+            "No rascunho `react-estudo`, crie um contador com um botão `+3` que chama `setCount(count + 1)` três vezes. Clique e observe.",
+            "Troque pela forma funcional e observe de novo.",
+            "Crie uma lista de tarefas em estado (`useState<readonly Tarefa[]>`), com um campo de texto e um botão Incluir.",
+            "Adicione em cada linha os botões Concluir (`map`) e Excluir (`filter`).",
+            "Tente usar `push` e leia o erro do compilador."
+          ],
+          "prontoQuando": "O botão `+3` soma 3, a lista inclui, conclui e exclui, e não há nenhum `push`, `splice` nem atribuição a propriedade de item no arquivo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`setCount(count + 1)` três vezes no mesmo handler, com `count` em 0. Resultado?",
+          "verso": "1. A foto não muda dentro do handler: são três `setCount(1)`. Com `setCount(c => c + 1)` três vezes, dá 3."
+        },
+        {
+          "frente": "Quando usar a forma funcional do `set`?",
+          "verso": "Quando o próximo valor depende do anterior e o código pode rodar longe da foto atual: vários `set` no handler, depois de `await`, em timer ou efeito."
+        },
+        {
+          "frente": "Por que `tarefas.push(x); setTarefas(tarefas)` não atualiza a tela?",
+          "verso": "O React compara por `Object.is`. A referência do array é a mesma, então ele entende que nada mudou. Passe um array novo: `[...tarefas, x]`."
+        },
+        {
+          "frente": "O que é o lote (batching)?",
+          "verso": "O React junta todos os `set` de um handler e renderiza uma vez, quando o handler termina. A tela nunca aparece pela metade."
+        },
+        {
+          "frente": "`onClick={salvar()}` ou `onClick={salvar}`?",
+          "verso": "`onClick={salvar}`. Com parênteses a função roda durante a renderização, não no clique."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Queueing a Series of State Updates",
+          "url": "https://react.dev/learn/queueing-a-series-of-state-updates"
+        },
+        {
+          "titulo": "React — Updating Arrays in State",
+          "url": "https://react.dev/learn/updating-arrays-in-state"
+        },
+        {
+          "titulo": "React — Responding to Events",
+          "url": "https://react.dev/learn/responding-to-events"
+        }
+      ]
+    },
+    {
+      "id": "react-05",
+      "titulo": "Listas e key",
+      "minutos": 9,
+      "ponte": "Um bloco multi-registro do Forms repete os mesmos itens para cada linha do cursor, e o Forms sabe qual registro é qual pelo `ROWID` ou pela chave primária. A `key` é a chave primária da linha **na tela**: é por ela que o React casa a linha de antes com a linha de agora. Onde quebra: se você não informa a chave, o React usa a **posição**, como se o banco identificasse registro pelo `ROWNUM`.",
+      "texto": "Em React não existe laço dentro do JSX. Uma lista é um array de elementos, quase sempre produzido com `map`:\n\n```tsx\n<ul>\n  {tarefas.map((t) => (\n    <li key={t.id}>{t.titulo}</li>\n  ))}\n</ul>\n```\n\nPara filtrar ou ordenar, transforme o array antes (`filter`, `toSorted`) e depois faça o `map`. É cálculo sobre o estado, feito na renderização.\n\n### Para que serve a `key`\n\nA cada renderização o React recebe uma lista nova de elementos e precisa compará-la com a anterior para decidir o que fazer no DOM: criar, remover, mover ou só atualizar. A `key` é o que diz **qual elemento de agora corresponde a qual de antes**.\n\nIsso importa porque cada componente da lista pode ter coisas **grudadas** nele: estado próprio (`useState`), o texto digitado num `input`, o foco, a posição de rolagem. Tudo isso fica associado à identidade do componente, e a identidade, dentro de uma lista, é a `key`.\n\n### Por que índice como `key` quebra\n\nSem `key`, o React avisa no console e usa o índice. Usar `key={i}` de propósito dá no mesmo.\n\nImagine três linhas, cada uma com um campo de observação digitado pelo usuário: Arroz, Feijão, Café. Você remove Feijão. Com `key` igual ao índice, o React vê: \"havia chaves 0, 1 e 2; agora há 0 e 1. A chave 2 sumiu.\" Ele mantém os componentes 0 e 1 **com o estado deles** e descarta o 2. O Café, que agora está na posição 1, herda a observação que era do Feijão.\n\nCom `key={item.id}`, o React vê que a chave do Feijão sumiu e remove exatamente aquele componente.\n\nO mesmo defeito aparece ao **reordenar** e ao **inserir no começo**. Índice só é aceitável quando as três condições valem juntas: a lista nunca muda de ordem, nunca tem item removido ou inserido no meio, e as linhas não têm estado nem campo.\n\n### Regras da `key`\n\n- **Estável:** a mesma para o mesmo dado entre renderizações. Use o id do banco. Nunca gere com `Math.random()` ou `crypto.randomUUID()` dentro da renderização: toda renderização criaria chaves novas, e o React destruiria e recriaria todas as linhas (perdendo foco e texto digitado).\n- **Única entre irmãos**, não no app inteiro.\n- Para item ainda não gravado (linha nova num formulário), gere um id **no momento da inclusão** e guarde-o junto com o item.\n- A `key` vai no elemento que o `map` devolve, não dentro do componente filho. Ela não chega como prop.\n\n### Truque de sênior: `key` para resetar\n\nA `key` também funciona fora de listas. Trocar a `key` de um componente diz ao React: \"este é **outro** componente\". Ele desmonta o antigo e monta um novo, com estado zerado.\n\n```tsx\n<FormularioContato key={contato.id} contato={contato} />\n```\n\nAo trocar de contato, o formulário inteiro renasce limpo, sem `useEffect` copiando props para o estado. É a forma recomendada de \"limpar a tela\" ao trocar de registro, o equivalente a um `CLEAR_BLOCK` declarado.",
+      "naPratica": "No Cockpit, toda lista vem da API com id: use-o. Em revisão de código, `key={index}` numa lista que permite excluir, reordenar ou editar em linha é pedido de alteração, não comentário de estilo.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Cada linha guarda uma observação digitada (estado local do componente da linha). O React associa esse estado à `key`. Remova o item do meio e veja com quem fica cada observação.",
+          "codigo": "const itens = [\n  { id: 10, nome: 'Arroz' },\n  { id: 20, nome: 'Feijao' },\n  { id: 30, nome: 'Cafe' },\n];\n// estado local de cada linha, guardado pelo React por key\nconst porIndice = new Map(itens.map((it, i) => [i, `obs do ${it.nome}`]));\nconst porId = new Map(itens.map((it) => [it.id, `obs do ${it.nome}`]));\n\nconst depois = itens.filter((it) => it.id !== 20);\n\nconsole.log('key = indice');\ndepois.forEach((it, i) => console.log(`${it.nome}: ${porIndice.get(i)}`));\nconsole.log('key = id');\ndepois.forEach((it) => console.log(`${it.nome}: ${porId.get(it.id)}`));\n",
+          "saida": "key = indice\nArroz: obs do Arroz\nCafe: obs do Feijao\nkey = id\nArroz: obs do Arroz\nCafe: obs do Cafe\n",
+          "explicacao": "Com índice, a posição 1 continua existindo e mantém o estado que tinha: o Café herda a observação do Feijão, e o React descarta o componente da posição 2. Com id, a chave 20 some e o estado certo vai embora com ela."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`key` para resetar: o React mantém a instância enquanto a `key` é a mesma e monta outra quando ela muda. O que acontece com o rascunho digitado?",
+          "codigo": "let atual: { key: string; rascunho: string } | null = null;\n\nfunction renderiza(key: string) {\n  if (atual === null || atual.key !== key) {\n    atual = { key, rascunho: '' };\n    console.log(`montou (${key})`);\n  } else {\n    console.log(`manteve (${key}) rascunho=\"${atual.rascunho}\"`);\n  }\n  return atual;\n}\n\nrenderiza('formulario').rascunho = 'Oi, Ana';\nrenderiza('formulario');   // trocou o contato, mas a key é fixa\nrenderiza('contato-2');    // key ligada ao contato\nrenderiza('contato-2');\n",
+          "saida": "montou (formulario)\nmanteve (formulario) rascunho=\"Oi, Ana\"\nmontou (contato-2)\nmanteve (contato-2) rascunho=\"\"\n",
+          "explicacao": "Com a `key` fixa, o componente é o mesmo e o rascunho escrito para a Ana continua lá ao trocar de contato. Com a `key` ligada ao id do contato, a troca desmonta o componente e monta outro com estado inicial."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega resolveu o aviso de `key` com `key={Math.random()}`. Qual o efeito?",
+          "opcoes": [
+            "Nenhum problema: as chaves ficam únicas, que é o que o React exige",
+            "A cada renderização todas as linhas são destruídas e recriadas, perdendo estado, foco e texto digitado",
+            "O React ignora chaves não numéricas e volta a usar o índice",
+            "Só há problema se dois números sorteados coincidirem"
+          ],
+          "correta": 1,
+          "explicacao": "A chave precisa ser única **e estável**. Chave nova a cada renderização significa que nenhuma linha de agora corresponde a uma de antes: o React desmonta tudo e monta de novo. O aviso some e o defeito fica pior que com índice."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em qual caso `key={index}` é aceitável?",
+          "opcoes": [
+            "Lista de tarefas que o usuário pode excluir",
+            "Tabela que o usuário pode ordenar por coluna",
+            "Linhas de itens de um pedido, cada uma com campos de edição",
+            "Lista fixa de 5 links de menu, sem estado, que nunca muda de ordem"
+          ],
+          "correta": 3,
+          "explicacao": "Índice só não causa defeito quando a lista é estática e as linhas não têm estado nem campo. Nos outros três casos, remover, ordenar ou editar faz o estado de uma linha ir parar em outra."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Ver o defeito do índice com os próprios olhos",
+          "minutos": 15,
+          "passos": [
+            "No rascunho `react-estudo`, renderize uma lista de 3 itens em estado, cada linha com um `<input />` não controlado (sem `value`) e um botão Excluir. Use `key={index}`.",
+            "Digite um texto diferente em cada campo e exclua a linha do meio. Observe em qual linha ficou cada texto.",
+            "Troque para `key={item.id}` e repita.",
+            "Acrescente um botão que inverte a ordem da lista e compare os dois casos."
+          ],
+          "prontoQuando": "Você reproduziu o texto \"andando\" para a linha errada com índice e viu o comportamento correto com id, tanto ao excluir quanto ao inverter."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Para que serve a `key`?",
+          "verso": "Diz ao React qual elemento desta renderização corresponde a qual da anterior. É a identidade do componente dentro da lista."
+        },
+        {
+          "frente": "Por que índice como `key` quebra ao remover um item do meio?",
+          "verso": "A posição continua existindo e mantém o estado que tinha. A linha seguinte herda estado, foco e texto digitado da linha removida."
+        },
+        {
+          "frente": "Duas exigências de uma boa `key`.",
+          "verso": "Estável (a mesma para o mesmo dado entre renderizações) e única entre irmãos. Na prática: o id do registro."
+        },
+        {
+          "frente": "Como zerar o estado de um formulário ao trocar o registro exibido?",
+          "verso": "Dê ao componente uma `key` ligada ao registro: `<Form key={registro.id} />`. Trocar a key desmonta e monta de novo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Rendering Lists",
+          "url": "https://react.dev/learn/rendering-lists"
+        },
+        {
+          "titulo": "React — Preserving and Resetting State",
+          "url": "https://react.dev/learn/preserving-and-resetting-state"
+        }
+      ]
+    },
+    {
+      "id": "react-06",
+      "titulo": "Quando o React renderiza de novo",
+      "minutos": 10,
+      "ponte": "No Forms você sabe exatamente quando cada trigger dispara, porque cada uma tem um evento com nome. Em React há um único \"evento\" interno, a renderização, e você precisa saber o que o provoca. A comparação útil é com o banco: **renderizar** é como o otimizador montar o resultado de uma consulta; **atualizar o DOM** é o que de fato chega ao cliente. Onde quebra: o React refaz o cálculo de toda a subárvore por padrão, mesmo sem nada ter mudado ali.",
+      "texto": "\"Renderizar\", em React, significa **chamar a função do componente** para obter o JSX. Não significa mexer na tela. O trabalho acontece em duas fases:\n\n1. ***Render*:** o React chama os componentes e monta a nova árvore de elementos (objetos em memória).\n2. ***Commit*:** ele compara a árvore nova com a anterior e aplica no DOM **só a diferença**.\n\nSe o JSX resultante é igual ao anterior, a fase de *commit* não faz nada. Renderizar costuma ser barato. Mexer no DOM é o caro, e o React já minimiza isso por você.\n\n### O que dispara uma renderização\n\nDepois da montagem inicial, um componente renderiza de novo em três situações:\n\n| Gatilho | Detalhe |\n|---|---|\n| **O estado dele mudou** | Um `set` foi chamado com valor diferente do atual (comparado por `Object.is`) |\n| **O pai renderizou** | Todos os filhos renderizam junto, **mesmo com props idênticas** |\n| **Um contexto que ele lê mudou** | Todo componente que consome aquele contexto renderiza (react-13) |\n\nO segundo item surpreende quem chega. \"As props mudaram\" **não** é o gatilho. O gatilho é o pai ter renderizado. As props novas chegam como consequência. Um `set` no topo da árvore renderiza a árvore inteira abaixo dele.\n\nIsso raramente é um problema: são chamadas de função em memória. Vira problema quando há muitos componentes ou um deles faz cálculo pesado ao renderizar. O remédio (`memo` e companhia) fica para react-16, e só depois de medir.\n\n### `Object.is`: a comparação que o React usa\n\nPara decidir se um estado mudou e se uma dependência de efeito mudou, o React usa `Object.is`. Para número, texto e booleano, compara o valor. Para objeto, array e função, compara a **referência**: dois objetos com o mesmo conteúdo, criados em momentos diferentes, são **diferentes**.\n\nGuarde isso: um objeto, array ou função criado dentro do componente é **novo a cada renderização**. Essa frase explica metade dos efeitos em laço (react-10) e das otimizações que não funcionam (react-16).\n\n### Renderização tem que ser pura\n\nComo o React pode chamar a sua função a qualquer momento e mais de uma vez, ela não pode ter efeito colateral: não altera variável de fora, não chama API, não grava em `localStorage`, não muta props. Só calcula JSX. Efeito colateral vai em handler de evento ou, em último caso, em efeito.\n\n### StrictMode renderiza duas vezes em desenvolvimento\n\nO projeto criado pelo Vite envolve o app em `<StrictMode>`. Em **desenvolvimento**, ele chama a função de cada componente **duas vezes** e monta, desmonta e monta de novo cada efeito. O objetivo é fazer componente impuro e efeito sem limpeza falharem na sua frente. Em produção isso não acontece.\n\nConsequência prática: `console.log` em dobro no componente não é defeito. Se o comportamento muda quando a função roda duas vezes (um contador externo que soma 2, um item inserido em dobro), o defeito é da sua função. Não desligue o StrictMode para \"resolver\".\n\n### Onde olhar\n\nA extensão React Developer Tools tem a opção de destacar na tela os componentes a cada renderização, e a aba Profiler diz **por que** cada um renderizou. É o seu `EXPLAIN PLAN`: antes de supor, olhe.",
+      "naPratica": "Quando alguém disser \"esse componente renderiza demais\", pergunte primeiro se isso causa lentidão medida. Depois identifique qual dos três gatilhos é o responsável. Sem essas duas respostas, qualquer otimização é chute.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Renderizar não é atualizar o DOM. O pai renderiza três vezes passando `total`. O `commit` de brinquedo compara a árvore nova com a anterior. O que sai?",
+          "codigo": "type Arvore = Record<string, string>;\n\nfunction Painel(total: number): Arvore {\n  return { titulo: 'Tarefas', linha: `Total: ${total}`, rodape: 'v1' };\n}\n\nfunction commit(antes: Arvore, depois: Arvore) {\n  const mudou = Object.keys(depois).filter((k) => antes[k] !== depois[k]);\n  console.log(mudou.length ? `  DOM: atualiza ${mudou.join(', ')}` : '  DOM: nada a fazer');\n}\n\nlet tela = Painel(0);\nfor (const total of [1, 1, 2]) {\n  console.log('render com', total);\n  const nova = Painel(total);\n  commit(tela, nova);\n  tela = nova;\n}\n",
+          "saida": "render com 1\n  DOM: atualiza linha\nrender com 1\n  DOM: nada a fazer\nrender com 2\n  DOM: atualiza linha\n",
+          "explicacao": "A função roda nas três vezes. Na segunda, o resultado é igual ao anterior e o DOM não é tocado. Mesmo quando há mudança, só o nó diferente é atualizado: título e rodapé ficam como estão."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`Object.is` é a comparação que o React usa para estado e dependências. Preveja as sete linhas.",
+          "codigo": "console.log(Object.is(3, 3));\nconsole.log(Object.is('aberta', 'aberta'));\nconsole.log(Object.is({ id: 1 }, { id: 1 }));\n\nconst filtro = { status: 'aberta' };\nconsole.log(Object.is(filtro, filtro));\n\nconsole.log(Object.is([], []));\nconsole.log(Object.is(() => 1, () => 1));\nconsole.log(Object.is(NaN, NaN));\n",
+          "saida": "true\ntrue\nfalse\ntrue\nfalse\nfalse\ntrue\n",
+          "explicacao": "Primitivos comparam por valor. Objeto, array e função comparam por referência: dois literais iguais são objetos diferentes. Só a mesma variável é igual a si mesma. `Object.is(NaN, NaN)` é `true`, diferente do `===`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um componente `Linha` recebe sempre as mesmas props. O pai dele chama um `set` e renderiza. O que acontece com `Linha`, sem nenhuma otimização?",
+          "opcoes": [
+            "Não renderiza, porque as props não mudaram",
+            "Renderiza, e o DOM da linha é recriado do zero",
+            "Renderiza (a função é chamada), mas o DOM não é tocado se o JSX resultante for igual",
+            "Renderiza só se alguma prop for objeto ou função"
+          ],
+          "correta": 2,
+          "explicacao": "O gatilho é o pai ter renderizado, não a mudança de props. A função de `Linha` roda, o React compara o resultado e não mexe no DOM. A primeira opção descreve o comportamento com `memo`, que é opcional (react-16)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em desenvolvimento, um `console.log` no corpo do componente aparece duas vezes a cada renderização. O que fazer?",
+          "opcoes": [
+            "Nada: é o StrictMode chamando a função em dobro para revelar componente impuro; em produção não ocorre",
+            "Remover o `<StrictMode>` do `main.tsx`, que está duplicando o trabalho",
+            "Envolver o componente em `memo` para impedir a segunda chamada",
+            "Mover o `console.log` para um `useEffect` com dependências vazias"
+          ],
+          "correta": 0,
+          "explicacao": "A chamada em dobro existe só em desenvolvimento e serve para expor impureza. Remover o StrictMode esconde o aviso, não o defeito. Se a segunda chamada muda o resultado, a função do componente tem efeito colateral e é ela que precisa de conserto."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Enxergar as renderizações",
+          "minutos": 15,
+          "passos": [
+            "No rascunho `react-estudo`, monte `App` com um contador em estado e dois filhos: `Mostrador` (recebe o contador) e `Rodape` (sem props). Ponha `console.log` com o nome no corpo de cada um.",
+            "Clique no botão e anote quais componentes aparecem no console e quantas vezes.",
+            "Instale a extensão React Developer Tools e ligue a opção de destacar atualizações quando os componentes renderizam.",
+            "Mova o estado do contador para dentro de `Mostrador` e repita a observação."
+          ],
+          "prontoQuando": "Você consegue explicar por que `Rodape` renderizava no primeiro desenho e parou no segundo, e por que cada log aparece em dobro."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os três gatilhos de uma nova renderização?",
+          "verso": "O estado do componente mudou; o pai renderizou; um contexto que ele lê mudou."
+        },
+        {
+          "frente": "Renderizar é o mesmo que atualizar o DOM?",
+          "verso": "Não. Renderizar é chamar a função e obter o JSX. No commit o React aplica no DOM só a diferença, que pode ser nenhuma."
+        },
+        {
+          "frente": "Por que o StrictMode chama os componentes duas vezes em desenvolvimento?",
+          "verso": "Para expor componente impuro e efeito sem limpeza. Função pura dá o mesmo resultado nas duas chamadas. Em produção não acontece."
+        },
+        {
+          "frente": "Como `Object.is` compara dois objetos com o mesmo conteúdo?",
+          "verso": "Por referência: são diferentes. Objeto, array e função criados no componente são novos a cada renderização."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Render and Commit",
+          "url": "https://react.dev/learn/render-and-commit"
+        },
+        {
+          "titulo": "React — StrictMode",
+          "url": "https://react.dev/reference/react/StrictMode"
+        },
+        {
+          "titulo": "React — Keeping Components Pure",
+          "url": "https://react.dev/learn/keeping-components-pure"
+        }
+      ]
+    },
+    {
+      "id": "react-07",
+      "titulo": "Onde pôr o estado: levantar, derivar, não duplicar",
+      "minutos": 10,
+      "ponte": "É normalização, aplicada à tela. Você não grava `VALOR_TOTAL` no pedido se ele é a soma dos itens: ou calcula na consulta, ou aceita o risco de ficar dessincronizado. No Forms, o campo calculado é preenchido no `POST-QUERY` ou por um item de fórmula. Em React, o que pode ser calculado do estado **é calculado na renderização** e não vira estado. Onde quebra: no banco, desnormalizar às vezes compensa pela leitura rápida. Na tela, o cálculo roda em memória e quase nunca justifica a cópia.",
+      "texto": "Três decisões definem se uma tela React vai ser simples ou um ninho de sincronizações: **o que é estado**, **onde ele mora** e **o que é só cálculo**.\n\n### Fonte única da verdade\n\nCada informação que muda deve ter **um dono**: um único componente que a guarda em estado. Todos os outros a recebem por prop. Quando a mesma informação existe em dois lugares, mais cedo ou mais tarde um caminho atualiza um e esquece o outro.\n\n### Derivar em vez de guardar\n\nAntes de criar um `useState`, pergunte: **dá para calcular isso do que eu já tenho?** Se dá, não é estado.\n\n```tsx\nfunction Pedido() {\n  const [itens, setItens] = useState<Item[]>([]);\n  const [busca, setBusca] = useState('');\n\n  // derivados: calculados a cada renderização\n  const total = itens.reduce((s, i) => s + i.preco * i.qtd, 0);\n  const visiveis = itens.filter((i) => i.nome.includes(busca));\n  const vazio = itens.length === 0;\n  // ...\n}\n```\n\n`total`, `visiveis` e `vazio` são variáveis comuns. Não precisam de `set`, não precisam de `useEffect` para \"manter atualizado\" e **não conseguem** ficar errados: são recalculados da fonte a cada renderização.\n\nO desenho errado, comum em quem vem do imperativo, é `const [total, setTotal] = useState(0)` e um `setTotal` em cada ponto que mexe nos itens. Funciona até alguém criar o quarto ponto e esquecer.\n\nSinais de estado redundante:\n\n- Dois estados que sempre mudam juntos (talvez sejam um objeto só).\n- Um estado que guarda o **objeto selecionado**, cópia de um item da lista. Guarde o **id** e derive o objeto: `const selecionada = tarefas.find((t) => t.id === idSelecionado)`. Assim, quando a lista é atualizada, a seleção nunca mostra dado velho.\n- Um booleano que é consequência de outro estado (`temErro` quando já existe `erro`).\n\nE o custo do cálculo? Somar ou filtrar algumas centenas de itens leva microssegundos. Só pense em guardar o resultado (`useMemo`, react-16) depois de **medir** lentidão.\n\n### Levantar o estado (*lifting state up*)\n\nQuando dois componentes irmãos precisam da mesma informação, ela sobe para o **ancestral comum mais próximo**. O pai guarda o estado, passa o valor para um filho e a função de alteração para o outro.\n\n```tsx\nfunction Pagina() {\n  const [busca, setBusca] = useState('');\n  return (\n    <>\n      <CampoBusca valor={busca} aoMudar={setBusca} />\n      <ListaTarefas busca={busca} />\n    </>\n  );\n}\n```\n\nA regra completa: o estado mora **o mais perto possível de quem usa, e não mais alto que isso**. Estado alto demais faz a árvore inteira renderizar a cada tecla e obriga a passar props por componentes que não as usam (react-13). Abertura de um menu, texto de um campo ainda não confirmado, aba ativa de um cartão: tudo isso fica local.\n\n### Não espelhe props em estado\n\n```tsx\nfunction Etiqueta({ cor }: { cor: string }) {\n  const [corAtual] = useState(cor); // lê a prop só na montagem\n  // ...\n}\n```\n\nO valor inicial do `useState` é usado **uma vez**. Se o pai mudar `cor`, `corAtual` fica com o valor antigo. A correção quase sempre é apagar o estado e usar a prop direto. Se o componente precisa mesmo de uma cópia editável (um formulário que parte dos dados de um registro), deixe isso explícito no nome (`valorInicial`) e use `key` para recomeçar ao trocar de registro (react-05).\n\n### E o dado que vem da API?\n\nLista de tarefas buscada no servidor **não é estado seu**: é uma cópia do que está no banco, com regras próprias de validade. No Cockpit ela fica no TanStack Query, não em `useState`. Essa separação entre estado de tela e estado de servidor é assunto da trilha Dados no front.",
+      "naPratica": "No Cockpit, o plano do dia mostra total de tarefas, concluídas e percentual. Só a lista é dado; os três números são contas feitas na renderização. Em revisão, `useState` acompanhado de `useEffect` que só chama o `set` dele é o sinal mais claro de estado que deveria ser derivado.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O total foi guardado como estado separado e cada operação precisa lembrar de atualizá-lo. Uma esqueceu. O que os dois totais mostram?",
+          "codigo": "type Item = { nome: string; preco: number };\n\nlet itens: Item[] = [{ nome: 'Caneta', preco: 5 }];\nlet totalGuardado = 5;                       // estado duplicado\n\nfunction incluir(i: Item) {\n  itens = [...itens, i];\n  totalGuardado += i.preco;\n}\nfunction remover(nome: string) {\n  itens = itens.filter((i) => i.nome !== nome); // esqueceu o total\n}\nconst totalDerivado = () => itens.reduce((s, i) => s + i.preco, 0);\n\nincluir({ nome: 'Caderno', preco: 20 });\nremover('Caneta');\nconsole.log('guardado:', totalGuardado);\nconsole.log('derivado:', totalDerivado());\n",
+          "saida": "guardado: 25\nderivado: 20\n",
+          "explicacao": "O total guardado depende de todo caminho lembrar dele: `remover` não lembrou e a tela mostraria 25 com um único item de 20. O derivado não tem como errar, porque é calculado da lista no momento do uso."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Prop espelhada em estado: `useState(prop)` lê o valor inicial só na montagem. O pai muda a prop de `Ana` para `Bia`. O que o componente mostra?",
+          "codigo": "function monta(propInicial: string) {\n  const estado = propInicial;      // useState(prop): só na montagem\n  return (prop: string) => `prop=${prop} estado=${estado}`;\n}\n\nconst render = monta('Ana');\nconsole.log(render('Ana'));\nconsole.log(render('Bia'));\n",
+          "saida": "prop=Ana estado=Ana\nprop=Bia estado=Ana\n",
+          "explicacao": "Nas renderizações seguintes o React ignora o argumento do `useState` e devolve o que está guardado. O estado ficou com `Ana` enquanto a prop já é `Bia`. A correção é usar a prop direto, ou dar uma `key` ao componente para ele remontar."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Estado levantado: o pai passa o valor e a função de alteração. Aqui ele passou a função de outro estado. Compila?",
+          "codigo": "type CampoBuscaProps = { valor: string; aoMudar: (novo: string) => void };\n\nfunction CampoBusca(props: CampoBuscaProps): string {\n  props.aoMudar(props.valor.trim());\n  return props.valor;\n}\n\nlet pagina = 1;\nconst setPagina = (n: number) => { pagina = n; };\n\nCampoBusca({ valor: 'relatorio', aoMudar: setPagina });\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 11,
+          "explicacao": "`aoMudar` promete entregar um `string`, e `setPagina` só aceita `number`. O tipo da prop é o contrato entre pai e filho: quando o estado sobe, é esse contrato que impede a ligação errada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela tem a lista de tarefas e um painel de detalhes da tarefa selecionada. O que guardar em estado para a seleção?",
+          "opcoes": [
+            "O objeto inteiro da tarefa selecionada, para não precisar procurar na lista",
+            "O id da tarefa selecionada; o objeto é derivado com `find` na renderização",
+            "O índice da tarefa na lista, que é mais rápido que procurar por id",
+            "Uma cópia da lista inteira com um campo `selecionada: true` em uma das tarefas"
+          ],
+          "correta": 1,
+          "explicacao": "Guardando o objeto, você cria uma segunda cópia do dado: quando a lista for atualizada, o painel mostra a versão velha. O índice quebra ao filtrar ou ordenar. Com o id, o objeto exibido vem sempre da lista atual."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Busca levantada e lista derivada",
+          "minutos": 20,
+          "passos": [
+            "No rascunho `react-estudo`, crie `Pagina` com uma lista fixa de 8 tarefas e os filhos `CampoBusca` e `ListaTarefas`.",
+            "Guarde o texto da busca em `Pagina` e passe `valor` e `aoMudar` para `CampoBusca`.",
+            "Em `Pagina`, calcule `visiveis` com `filter` e passe para `ListaTarefas`. Mostre também `visiveis.length` de `tarefas.length`.",
+            "Confira que não existe `useState` para a lista filtrada nem para a contagem, e que não há nenhum `useEffect`."
+          ],
+          "prontoQuando": "Digitar na busca filtra a lista e atualiza a contagem, com um único `useState` (o texto da busca) no arquivo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Que pergunta fazer antes de criar um `useState`?",
+          "verso": "Dá para calcular isso do estado e das props que já existem? Se dá, é variável derivada na renderização, não estado."
+        },
+        {
+          "frente": "Por que guardar o id da seleção e não o objeto selecionado?",
+          "verso": "O objeto seria uma segunda cópia do dado. Com o id, o objeto exibido é sempre o da lista atual e não fica velho."
+        },
+        {
+          "frente": "O que é levantar o estado?",
+          "verso": "Mover o estado para o ancestral comum mais próximo dos componentes que precisam dele. O pai passa o valor por prop e a função de alteração por outra."
+        },
+        {
+          "frente": "O que há de errado em `useState(props.cor)`?",
+          "verso": "O valor inicial é lido só na montagem. Se a prop mudar, o estado fica velho. Use a prop direto, ou `key` para remontar."
+        },
+        {
+          "frente": "Até onde levantar um estado?",
+          "verso": "Até o ancestral comum mais próximo de quem usa, e não mais alto. Estado alto demais renderiza árvore à toa e força passagem de props."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Choosing the State Structure",
+          "url": "https://react.dev/learn/choosing-the-state-structure"
+        },
+        {
+          "titulo": "React — Sharing State Between Components",
+          "url": "https://react.dev/learn/sharing-state-between-components"
+        }
+      ]
+    },
+    {
+      "id": "react-08",
+      "titulo": "useReducer e máquinas de estado",
+      "minutos": 10,
+      "ponte": "Pense na coluna `STATUS` de um pedido e na *package* que concentra as transições: `PR_ENVIAR`, `PR_APROVAR`, `PR_CANCELAR`, cada uma validando de onde se pode sair. Ninguém faz `UPDATE` direto no status. O *reducer* é essa package para o estado da tela: um único lugar por onde toda mudança passa. Onde quebra: a package altera a linha no lugar e pode consultar outras tabelas. O reducer não altera nada, não consulta nada e não tem `COMMIT`: recebe o estado e a ação, devolve um estado **novo**.",
+      "texto": "Com `useState`, a lógica de mudança fica nos handlers: cada um calcula o próximo valor e chama o `set`. Quando o estado tem várias partes que mudam juntas e muitas ações diferentes, essa lógica se espalha. O `useReducer` a concentra em uma função.\n\n### A forma\n\nUm ***reducer*** é uma função `(estado, ação) => novoEstado`. A **ação** é um objeto que descreve **o que aconteceu**, não como mudar: `{ tipo: 'enviado' }`, `{ tipo: 'item_removido', id: 7 }`.\n\n```tsx\ntype Estado = { status: 'rascunho' | 'enviado' | 'aprovado'; itens: Item[] };\ntype Acao =\n  | { tipo: 'item_incluido'; item: Item }\n  | { tipo: 'enviado' }\n  | { tipo: 'aprovado' };\n\nfunction reducer(estado: Estado, acao: Acao): Estado {\n  switch (acao.tipo) {\n    case 'item_incluido':\n      if (estado.status !== 'rascunho') return estado; // transição inválida\n      return { ...estado, itens: [...estado.itens, acao.item] };\n    case 'enviado':\n      return estado.status === 'rascunho' ? { ...estado, status: 'enviado' } : estado;\n    case 'aprovado':\n      return estado.status === 'enviado' ? { ...estado, status: 'aprovado' } : estado;\n  }\n}\n\nconst [estado, dispatch] = useReducer(reducer, { status: 'rascunho', itens: [] });\n// no handler:\ndispatch({ tipo: 'enviado' });\n```\n\n`dispatch` (despachar) é o `set` do reducer: entrega a ação ao React, que chama o reducer com o estado atual e agenda a renderização com o resultado. A foto de react-03 continua valendo: `estado` não muda dentro do handler.\n\n### O reducer tem que ser puro\n\nMesmas entradas, mesma saída, sem efeito colateral:\n\n- **Não muta** o estado recebido. Devolve objeto novo (ou o mesmo, se nada mudou).\n- **Não chama API, não lê relógio, não sorteia número.** Se a ação precisa de um id ou de uma data, quem despacha calcula e manda dentro da ação.\n- Em desenvolvimento, o StrictMode chama o reducer **duas vezes** para expor impureza: um reducer que faz `push` insere o item em dobro.\n\nA chamada à API fica no handler: ele faz o `await` e despacha `{ tipo: 'gravado', tarefa }` ou `{ tipo: 'falhou', erro }`.\n\n### O ganho real: máquina de estados\n\nUm reducer com um campo `status` e transições validadas é uma **máquina de estados**: um conjunto fechado de situações e as passagens permitidas entre elas. Isso elimina os **estados impossíveis** que surgem com vários booleanos soltos (`carregando` e `erro` verdadeiros ao mesmo tempo). Combinado com a união discriminada do TypeScript, o compilador confere que todo `case` foi tratado e que cada ação carrega os dados que precisa.\n\nOutro ganho: o reducer é uma função comum, sem React. Dá para **testar** com uma linha por cenário: estado de entrada, ação, estado esperado.\n\n### Quando usar e quando não\n\n| Situação | Escolha |\n|---|---|\n| Um valor simples, uma ou duas formas de mudar | `useState` |\n| Vários campos que mudam juntos, muitas ações, regras de transição | `useReducer` |\n| Formulário com validação | Biblioteca de formulário (react-14), não reducer feito à mão |\n| Dado que vem do servidor | TanStack Query, não reducer |\n\nO custo do reducer é cerimônia: tipo da ação, `switch`, `dispatch`. Em estado simples, isso é ruído. Um bom sinal para migrar: três ou mais handlers que copiam o mesmo objeto de estado com regras parecidas, ou um defeito causado por um handler que esqueceu de validar a situação atual.\n\nQuem conhece Redux reconhece o desenho: é o mesmo padrão, aqui restrito a um componente e sem biblioteca.",
+      "naPratica": "No Cockpit, a sessão de foco (parada, rodando, pausada, concluída) é uma máquina de estados: um reducer com as transições válidas e um teste por transição evitam o defeito de pausar o que já terminou.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um reducer puro de pedido roda quatro ações em sequência. A primeira é uma transição inválida. Qual é o estado final?",
+          "codigo": "type Estado = { status: 'rascunho' | 'enviado' | 'aprovado' | 'cancelado'; historico: string[] };\ntype Acao = { tipo: 'enviar' } | { tipo: 'aprovar' } | { tipo: 'cancelar'; motivo: string };\n\nfunction reducer(e: Estado, a: Acao): Estado {\n  const vai = (status: Estado['status'], nota: string): Estado =>\n    ({ status, historico: [...e.historico, nota] });\n  switch (a.tipo) {\n    case 'enviar': return e.status === 'rascunho' ? vai('enviado', 'enviado') : e;\n    case 'aprovar': return e.status === 'enviado' ? vai('aprovado', 'aprovado') : e;\n    case 'cancelar': return e.status === 'aprovado' ? e : vai('cancelado', `cancelado: ${a.motivo}`);\n  }\n}\n\nconst inicial: Estado = { status: 'rascunho', historico: [] };\nconst acoes: Acao[] = [\n  { tipo: 'aprovar' }, { tipo: 'enviar' }, { tipo: 'aprovar' }, { tipo: 'cancelar', motivo: 'duplicado' },\n];\nconst final = acoes.reduce(reducer, inicial);\nconsole.log(final.status);\nconsole.log(final.historico.join(' > '));\nconsole.log(reducer(final, { tipo: 'enviar' }) === final);\nconsole.log(inicial.historico.length);\n",
+          "saida": "aprovado\nenviado > aprovado\ntrue\n0\n",
+          "explicacao": "`aprovar` em rascunho é ignorado (devolve o mesmo estado). Depois o pedido é enviado e aprovado, e `cancelar` em aprovado é recusado. Transição inválida devolve a **mesma referência**, por isso o `true`: o React nem renderizaria. O estado inicial não foi alterado: histórico continua com 0 itens."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Em desenvolvimento, o StrictMode chama o reducer duas vezes com o mesmo estado e a mesma ação e usa o segundo resultado. Compare o reducer que muta com o puro.",
+          "codigo": "type Estado = { itens: string[] };\n\nconst impuro = (e: Estado, item: string): Estado => {\n  e.itens.push(item);\n  return e;\n};\nconst puro = (e: Estado, item: string): Estado => ({ itens: [...e.itens, item] });\n\nfunction strictMode(reducer: (e: Estado, i: string) => Estado, e: Estado, item: string) {\n  reducer(e, item);\n  return reducer(e, item);\n}\n\nconsole.log(strictMode(impuro, { itens: [] }, 'cafe').itens.join(','));\nconsole.log(strictMode(puro, { itens: [] }, 'cafe').itens.join(','));\n",
+          "saida": "cafe,cafe\ncafe\n",
+          "explicacao": "O impuro alterou o estado de entrada na primeira chamada; a segunda parte do estado já alterado e insere de novo. O puro não toca na entrada, então as duas chamadas dão o mesmo resultado. É exatamente o defeito que a chamada em dobro existe para revelar."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O `default` com `never` garante que toda ação foi tratada. Alguém acrescentou a ação `define` ao tipo e não mexeu no reducer. Compila?",
+          "codigo": "type Acao =\n  | { tipo: 'incrementa' }\n  | { tipo: 'zera' }\n  | { tipo: 'define'; valor: number };\n\nfunction reducer(estado: number, acao: Acao): number {\n  switch (acao.tipo) {\n    case 'incrementa':\n      return estado + 1;\n    case 'zera':\n      return 0;\n    default: {\n      const nunca: never = acao;\n      return nunca;\n    }\n  }\n}\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 13,
+          "explicacao": "No `default`, o que sobra de `acao` é `{ tipo: 'define'; valor: number }`, que não cabe em `never`. O erro aponta o reducer no momento em que a ação nova é criada. Sem essa linha, a ação seria aceita pelo `dispatch` e ignorada em silêncio."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Ao incluir um item, o reducer precisa de um id novo. Onde gerar esse id?",
+          "opcoes": [
+            "Dentro do reducer, com `crypto.randomUUID()`, no `case` de inclusão",
+            "No handler, antes do `dispatch`, mandando o id dentro da ação",
+            "Dentro do reducer, com um contador em variável global incrementado a cada chamada",
+            "Num `useEffect` que observa a lista e preenche os ids que faltam"
+          ],
+          "correta": 1,
+          "explicacao": "O reducer precisa ser puro: mesmas entradas, mesma saída. Sortear ou incrementar um contador dentro dele dá resultado diferente a cada chamada, e o StrictMode o chama duas vezes. O valor não determinístico é calculado por quem despacha e viaja na ação."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual é a assinatura de um reducer?",
+          "verso": "`(estado, ação) => novoEstado`. Função pura: não muta o estado, não chama API, não lê relógio nem sorteia."
+        },
+        {
+          "frente": "Por que o reducer não pode mutar o estado recebido?",
+          "verso": "O React compara por referência e pode chamá-lo duas vezes (StrictMode). Mutação faz a mudança passar despercebida ou ser aplicada em dobro."
+        },
+        {
+          "frente": "Quando trocar `useState` por `useReducer`?",
+          "verso": "Vários campos que mudam juntos, muitas ações e regras de transição. Para valor simples, `useState` é menos cerimônia."
+        },
+        {
+          "frente": "O que uma máquina de estados evita em relação a vários booleanos?",
+          "verso": "Estados impossíveis, como `carregando` e `erro` ao mesmo tempo. Um campo `status` com transições validadas só permite as combinações previstas."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Extracting State Logic into a Reducer",
+          "url": "https://react.dev/learn/extracting-state-logic-into-a-reducer"
+        },
+        {
+          "titulo": "React — useReducer",
+          "url": "https://react.dev/reference/react/useReducer"
+        }
+      ]
+    },
+    {
+      "id": "react-09",
+      "titulo": "useRef e o DOM",
+      "minutos": 8,
+      "ponte": "A *ref* é o que mais lembra o Forms dentro do React. Para guardar valor, parece uma variável de *package* da sessão: persiste entre chamadas e ninguém é avisado quando muda. Para acessar o DOM, é a porta para o comando direto, como `GO_ITEM` para pôr o foco num campo. Onde quebra: no Forms o comando direto é o caminho normal. Em React a ref é a **saída de emergência** para o que o estado não consegue descrever.",
+      "texto": "`useRef` devolve um objeto `{ current: valor }` que o React guarda entre as renderizações do componente. Duas diferenças em relação ao estado:\n\n| | Estado (`useState`) | Ref (`useRef`) |\n|---|---|---|\n| Mudar dispara renderização | Sim | **Não** |\n| Como muda | Pelo `set`, agendado | Atribuição direta: `ref.current = x`, na hora |\n| Valor dentro da renderização | Fixo (foto) | Mutável: lê sempre o valor do momento |\n\nA ref é uma gaveta que o React guarda para você e não olha.\n\n### Uso 1: valor que não aparece na tela\n\nO id de um `setInterval` para cancelar depois, o instante em que o cronômetro começou, um contador de quantas vezes algo aconteceu, um `AbortController`. São valores que precisam sobreviver entre renderizações, mas **não participam do JSX**.\n\n```tsx\nconst intervaloRef = useRef<number | null>(null);\n\nfunction iniciar() {\n  intervaloRef.current = window.setInterval(tique, 1000);\n}\nfunction parar() {\n  if (intervaloRef.current !== null) window.clearInterval(intervaloRef.current);\n}\n```\n\nO teste para escolher: **se o valor muda, a tela precisa mudar?** Se sim, é estado. Se não, é ref. Guardar em ref algo que a tela mostra produz o defeito \"mudei e a tela não atualizou\".\n\n### Uso 2: acessar um elemento do DOM\n\nPassando a ref no atributo `ref` de um elemento, o React põe o nó do DOM em `current` depois de montá-lo (e volta para `null` ao desmontar).\n\n```tsx\nfunction NovaTarefa() {\n  const campoRef = useRef<HTMLInputElement>(null);\n\n  function aoAbrir() {\n    campoRef.current?.focus();\n  }\n\n  return (\n    <>\n      <button onClick={aoAbrir}>Nova tarefa</button>\n      <input ref={campoRef} />\n    </>\n  );\n}\n```\n\nUsos legítimos: **foco**, seleção de texto, rolar até um elemento (`scrollIntoView`), medir tamanho e posição, tocar e pausar vídeo, entregar o nó a uma biblioteca que não é React (gráfico, mapa).\n\nUsos errados: mudar texto, classe, visibilidade ou `disabled` pela ref. Isso é trabalho do estado e do JSX. O que você alterar à mão, o React sobrescreve na próxima renderização ou, pior, deixa inconsistente.\n\n### Regras\n\n- **Não leia nem escreva `ref.current` durante a renderização.** A renderização deve ser pura (react-06), e a ref muda sem aviso. Use-a em handlers e em efeitos. A exceção aceita é inicializar uma vez (`if (ref.current === null) ref.current = criar()`).\n- **O nó só existe depois da montagem.** Na primeira renderização, `current` é `null`. Por isso o tipo é `HTMLInputElement | null` e o acesso usa `?.` ou um `if`.\n- **Ref para o componente de outro arquivo:** no React 19, `ref` chega como uma **prop comum** em componentes de função, e o componente repassa para o elemento que quiser. O `forwardRef`, necessário nas versões anteriores, continua existindo, mas não é mais preciso em código novo (react-17).\n\n### Critério de sênior\n\nRef em excesso é sintoma de pensamento imperativo: o desenvolvedor quer \"mandar\" no elemento. Em revisão, cada `useRef` para DOM merece a pergunta \"isso não se descreve com estado?\". Foco, rolagem e medida passam. \"Esconder a div\" não passa.",
+      "naPratica": "No Cockpit, ao abrir o diálogo de nova tarefa o foco precisa cair no campo de título: é o caso de ref (ou do atributo `autoFocus`). Quem digita muito, como usuário de Forms, sente falta disso na primeira tela que você entregar.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um estado e uma ref de brinquedo. Mudar a ref não avisa ninguém; o `set` com valor diferente renderiza. O que sai?",
+          "codigo": "let renders = 0;\nlet estado = 0;\nconst ref = { current: 0 };\n\nfunction render() {\n  renders++;\n  console.log(`render ${renders}: estado=${estado} ref=${ref.current}`);\n}\nfunction setEstado(v: number) {\n  if (Object.is(v, estado)) return;\n  estado = v;\n  render();\n}\n\nrender();\nref.current = 5;\nref.current++;\nconsole.log('mudei a ref duas vezes; renders =', renders);\nsetEstado(0);\nsetEstado(1);\n",
+          "saida": "render 1: estado=0 ref=0\nmudei a ref duas vezes; renders = 1\nrender 2: estado=1 ref=6\n",
+          "explicacao": "As duas alterações na ref não provocam renderização: a tela continuaria mostrando `ref=0`. `setEstado(0)` é ignorado por ser igual ao valor atual. Só `setEstado(1)` renderiza, e aí a tela \"descobre\" o 6. Se a tela depende do valor, ele é estado."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Ref para um campo, com uma declaração de `useRef` equivalente à do React. O código pede o foco direto. Compila?",
+          "codigo": "declare function useRef<T>(inicial: T): { current: T };\n\nconst campoRef = useRef<HTMLInputElement | null>(null);\n\nfunction aoAbrir() {\n  campoRef.current.focus();\n}\n",
+          "compila": false,
+          "erro": "TS18047",
+          "linha": 6,
+          "explicacao": "`current` pode ser `null`: o nó só existe depois que o React monta o elemento, e volta a `null` quando desmonta. O compilador exige o tratamento: `campoRef.current?.focus()`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes valores deve ficar em `useRef`, e não em `useState`?",
+          "opcoes": [
+            "O texto digitado num campo de busca que filtra a lista",
+            "O booleano que indica se o diálogo está aberto",
+            "O id devolvido pelo `setInterval`, usado só para cancelar o timer",
+            "O número de tarefas concluídas mostrado no cabeçalho"
+          ],
+          "correta": 2,
+          "explicacao": "O id do timer não aparece na tela: mudar esse valor não deve renderizar nada. Os outros três afetam o que é exibido, então são estado (ou, no caso da contagem, valor derivado)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega esconde um painel com `painelRef.current.style.display = 'none'` dentro de um handler. Qual é o problema?",
+          "opcoes": [
+            "Nenhum: é a forma mais rápida, porque não provoca renderização",
+            "A ref ainda é `null` dentro de handlers, então o código lança erro",
+            "O React proíbe alterar `style` por ref e lança exceção em desenvolvimento",
+            "A visibilidade passa a existir fora do estado: a tela deixa de ser função dele e a próxima renderização pode contradizer o que foi feito à mão"
+          ],
+          "correta": 3,
+          "explicacao": "O React não impede, e por isso é perigoso. A tela passa a ter uma informação (painel oculto) que nenhum estado descreve. Um `useState` booleano e renderização condicional resolvem. Ref para DOM é para foco, rolagem, medida e integração com biblioteca externa."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Foco e contador de renderizações",
+          "minutos": 15,
+          "passos": [
+            "No rascunho `react-estudo`, crie um botão Nova tarefa que mostra um campo de texto e põe o foco nele usando ref.",
+            "Observe: se você chamar `focus()` no mesmo handler que faz o campo aparecer, a ref ainda está `null`. Entenda por quê (o nó só existe depois da renderização).",
+            "Resolva com o atributo `autoFocus` no campo, ou mantendo o campo sempre montado.",
+            "Crie uma ref `rendersRef` e incremente-a num `useEffect` sem lista de dependências. Mostre o valor no console ao clicar num botão."
+          ],
+          "prontoQuando": "O foco cai no campo ao clicar em Nova tarefa, e você sabe explicar por que a ref estava `null` no primeiro handler."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a diferença central entre ref e estado?",
+          "verso": "Mudar a ref não dispara renderização e vale na hora (`ref.current = x`). Mudar o estado agenda renderização e só vale na próxima foto."
+        },
+        {
+          "frente": "Como decidir entre `useState` e `useRef` para um valor?",
+          "verso": "Se o valor muda, a tela precisa mudar? Sim: estado. Não (id de timer, instante de início): ref."
+        },
+        {
+          "frente": "Por que `ref.current` de um elemento pode ser `null`?",
+          "verso": "O nó do DOM só existe depois da montagem e deixa de existir ao desmontar. Na primeira renderização ainda não há nó."
+        },
+        {
+          "frente": "Usos legítimos de ref para o DOM.",
+          "verso": "Foco, seleção de texto, rolagem, medir tamanho e posição, mídia, entregar o nó a biblioteca externa. Nunca texto, classe ou visibilidade."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Referencing Values with Refs",
+          "url": "https://react.dev/learn/referencing-values-with-refs"
+        },
+        {
+          "titulo": "React — Manipulating the DOM with Refs",
+          "url": "https://react.dev/learn/manipulating-the-dom-with-refs"
+        }
+      ]
+    },
+    {
+      "id": "react-10",
+      "titulo": "useEffect: sincronizar, limpar — e quando NÃO usar",
+      "minutos": 12,
+      "ponte": "A tentação de quem vem do Forms é ler `useEffect` como trigger: \"`WHEN-VALIDATE-ITEM` do React\", \"`POST-CHANGE` deste estado\". Não é. O par mais próximo é `PRE-FORM` com `POST-FORM`: ao abrir a tela você se liga a algo externo, ao fechar você se desliga. O efeito é isso: **ligar e desligar** uma conexão com o mundo fora do React. Onde quebra: o efeito não roda uma vez só. Ele liga e desliga de novo a cada mudança das dependências.",
+      "texto": "O React cuida da tela. Tudo o que está **fora** dele é sistema externo: um timer, uma conexão WebSocket, um ouvinte de evento do `window`, o título da aba, uma biblioteca de gráfico. O ***effect*** (efeito) existe para manter um sistema externo **sincronizado** com o estado do componente.\n\n```tsx\nuseEffect(() => {\n  const conexao = abrirConexao(salaId);   // sincroniza\n  conexao.conectar();\n  return () => conexao.desconectar();     // limpa\n}, [salaId]);                             // dependências\n```\n\nTrês partes:\n\n- **A função do efeito** roda **depois** que a tela foi atualizada.\n- **A limpeza** (a função devolvida) desfaz o que o efeito fez. Roda antes da próxima execução do efeito e quando o componente sai da tela.\n- **As dependências** dizem quando sincronizar de novo. O React compara cada uma com a da renderização anterior por `Object.is` (react-06). Mudou alguma: limpa e roda outra vez.\n\n| Dependências | Quando roda |\n|---|---|\n| `[a, b]` | Na montagem e quando `a` ou `b` mudarem |\n| `[]` | Só na montagem (e a limpeza na desmontagem) |\n| omitidas | Depois de **toda** renderização (quase sempre é engano) |\n\nA lista não é uma escolha sua. Toda prop, estado ou valor calculado no componente que o efeito **lê** tem que estar nela. A regra de lint `react-hooks/exhaustive-deps` confere isso. Se a lista correta faz o efeito rodar demais, o que se conserta é o código do efeito, não a lista (react-11).\n\n### As duas armadilhas\n\n**Dependência que é objeto novo a cada renderização.** `useEffect(..., [{ status }])` ou uma função declarada no componente: a referência muda sempre, o efeito roda sempre. Se o efeito ainda chama um `set`, você tem um laço infinito: efeito, `set`, renderização, objeto novo, efeito.\n\n**Esquecer a limpeza.** Sem ela, cada troca de `salaId` deixa uma conexão antiga aberta. O StrictMode monta, desmonta e monta de novo em desenvolvimento justamente para isso aparecer: efeito correto fica igual depois de ligar, desligar e ligar.\n\n### Quando NÃO usar\n\nA maior parte dos `useEffect` escritos por iniciantes não deveria existir. Antes de escrever um, confira esta lista:\n\n| Você quer | Em vez de efeito |\n|---|---|\n| Calcular um valor a partir de props ou estado | Variável na renderização (react-07) |\n| Reagir a uma ação do usuário (gravar, navegar, avisar) | Fazer no **handler** do evento. Você sabe exatamente o que aconteceu |\n| Zerar o estado quando uma prop muda | `key` no componente (react-05) |\n| Avisar o pai de que um estado mudou | Chamar a função do pai no mesmo handler que mudou o estado |\n| Buscar dados da API | TanStack Query. Ele trata cache, cancelamento, corrida entre respostas e repetição |\n\nO padrão a evitar é a **cadeia de efeitos**: efeito que observa um estado para alterar outro, que dispara outro efeito. Cada elo custa uma renderização extra e esconde o fluxo. É a versão React das triggers em cascata que você já teve de depurar.\n\nSobre buscar dados: dá para fazer com `useEffect` e `fetch`, e por anos foi o comum. O código correto precisa tratar a resposta que chega fora de ordem, o componente que saiu da tela, o estado de carregando e de erro, e ainda não tem cache. Num app com TanStack Query, `useEffect` com `fetch` é pedido de alteração em revisão.\n\n### O teste final\n\nPergunte: **\"este código precisa rodar porque o componente está na tela, ou porque o usuário fez alguma coisa?\"** Porque está na tela: efeito. Porque o usuário fez: handler.",
+      "naPratica": "No Cockpit, efeitos legítimos são poucos: atualizar `document.title` com o tempo de foco, ouvir um atalho de teclado no `window`, ligar um timer. Busca de tarefas, gravação e totais do dia não passam por `useEffect`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O React compara cada dependência com a da renderização anterior por `Object.is`. Em três renderizações seguidas, quantas vezes o efeito roda em cada caso?",
+          "codigo": "function execucoes(criaDeps: () => unknown[]): number {\n  let anteriores: unknown[] | null = null;\n  let n = 0;\n  for (let render = 1; render <= 3; render++) {\n    const deps = criaDeps();\n    const ant = anteriores;\n    const mudou = ant === null || deps.some((d, i) => !Object.is(d, ant[i]));\n    if (mudou) n++;\n    anteriores = deps;\n  }\n  return n;\n}\n\nconst filtroEstavel = { status: 'aberta' };\n\nconsole.log(execucoes(() => ['aberta', 10]));\nconsole.log(execucoes(() => [{ status: 'aberta' }]));\nconsole.log(execucoes(() => []));\nconsole.log(execucoes(() => [filtroEstavel]));\n",
+          "saida": "1\n3\n1\n1\n",
+          "explicacao": "Primitivos iguais: roda só na montagem. Objeto literal dentro do componente: é um objeto novo a cada renderização, então roda nas três. Lista vazia: só na montagem. O mesmo objeto, criado fora, mantém a referência e roda uma vez. Se o efeito do segundo caso chamasse um `set`, seria um laço."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Efeito com limpeza e dependência `sala`. A sala passa por `geral`, `geral`, `dev` e depois o componente sai da tela. Em que ordem as mensagens aparecem?",
+          "codigo": "function efeito(sala: string) {\n  console.log('conecta em', sala);\n  return () => console.log('desconecta de', sala);\n}\n\nlet limpeza: (() => void) | null = null;\nlet salaAnterior: string | null = null;\n\nfunction aposRenderizar(sala: string) {\n  if (Object.is(sala, salaAnterior)) return console.log('(dependência igual: não roda)');\n  limpeza?.();\n  limpeza = efeito(sala);\n  salaAnterior = sala;\n}\n\naposRenderizar('geral');\naposRenderizar('geral');\naposRenderizar('dev');\nlimpeza?.();   // desmontagem\n",
+          "saida": "conecta em geral\n(dependência igual: não roda)\ndesconecta de geral\nconecta em dev\ndesconecta de dev\n",
+          "explicacao": "Com a dependência igual, nada acontece. Quando muda, a limpeza **da execução anterior** roda primeiro (com a `sala` que ela capturou, `geral`) e só depois o efeito novo. Na desmontagem roda a última limpeza. Nunca há duas conexões abertas."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes é um uso correto de `useEffect`?",
+          "opcoes": [
+            "Recalcular `total` com `setTotal` sempre que `itens` mudar",
+            "Chamar a API de gravação quando o estado `enviado` passar a `true`",
+            "Registrar um ouvinte de `keydown` no `window` e removê-lo na limpeza",
+            "Copiar a prop `usuario` para um estado local quando ela mudar"
+          ],
+          "correta": 2,
+          "explicacao": "O ouvinte no `window` é um sistema externo que precisa ser ligado e desligado. Os outros três têm alternativa melhor: valor derivado na renderização, gravação direto no handler do envio, e usar a prop (ou `key` para recomeçar)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O lint reclama que falta `filtro` na lista de dependências. Incluir `filtro` faz o efeito rodar a cada renderização. O que fazer?",
+          "opcoes": [
+            "Desligar a regra naquela linha com um comentário, já que você sabe o que está fazendo",
+            "Deixar a lista vazia para o efeito rodar só na montagem",
+            "Trocar o `useEffect` por `useLayoutEffect`, que não compara dependências",
+            "Entender por que `filtro` muda sempre (objeto criado na renderização) e depender dos valores primitivos, ou tirar a criação de dentro do componente"
+          ],
+          "correta": 3,
+          "explicacao": "A lista de dependências descreve o que o efeito lê; mentir nela faz o efeito trabalhar com valor velho. Se a dependência muda a cada renderização, o problema é ela ser um objeto novo: dependa de `filtro.status`, ou crie o objeto dentro do efeito ou fora do componente."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, você pediu para eu tirar o `useEffect` que buscava as tarefas e o outro que calculava o total. Mas funcionava. Por que não pode?\"",
+          "pontos": [
+            "Definiu para que serve o efeito: sincronizar com sistema externo",
+            "Total é valor derivado: calcula na renderização, sem estado e sem efeito",
+            "Busca com efeito funciona, mas falta cache, cancelamento, tratamento de corrida e de erro",
+            "O projeto já tem TanStack Query para isso",
+            "Custo dos efeitos em cadeia: renderização extra e fluxo difícil de seguir",
+            "Deu o teste: roda porque está na tela ou porque o usuário fez algo?"
+          ],
+          "modelo": "Funcionar, funciona. O ponto é o que fica faltando e o que sobra. O efeito existe para ligar o componente a algo externo: timer, ouvinte, conexão. O total não é nada disso, é uma conta sobre a lista. Como estado com efeito, ele renderiza duas vezes e pode ficar errado se alguém mexer na lista por outro caminho. Como variável na renderização, não tem como errar. A busca é diferente: é sistema externo, mas o efeito com `fetch` não trata resposta fora de ordem, não cancela, não tem cache nem repetição. O TanStack Query, que já está no projeto, faz tudo isso. O teste que eu uso: o código roda porque o componente está na tela ou porque o usuário fez algo?"
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Para que serve `useEffect`?",
+          "verso": "Para sincronizar o componente com um sistema externo ao React (timer, ouvinte, conexão, título da aba) e desfazer isso na limpeza."
+        },
+        {
+          "frente": "Quando a limpeza do efeito roda?",
+          "verso": "Antes de cada nova execução do efeito (com os valores da execução anterior) e quando o componente sai da tela."
+        },
+        {
+          "frente": "Por que um objeto literal na lista de dependências faz o efeito rodar sempre?",
+          "verso": "A comparação é por `Object.is`: objeto criado na renderização tem referência nova a cada vez, então nunca é igual ao anterior."
+        },
+        {
+          "frente": "Cite três casos em que NÃO se usa efeito.",
+          "verso": "Valor derivado (calcule na renderização); reação a ação do usuário (faça no handler); busca de dados quando há TanStack Query."
+        },
+        {
+          "frente": "Qual pergunta separa efeito de handler?",
+          "verso": "O código roda porque o componente está na tela (efeito) ou porque o usuário fez alguma coisa (handler)?"
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Synchronizing with Effects",
+          "url": "https://react.dev/learn/synchronizing-with-effects"
+        },
+        {
+          "titulo": "React — You Might Not Need an Effect",
+          "url": "https://react.dev/learn/you-might-not-need-an-effect"
+        }
+      ]
+    },
+    {
+      "id": "react-11",
+      "titulo": "Stale closure e timers",
+      "minutos": 10,
+      "ponte": "No Forms, uma trigger `WHEN-TIMER-EXPIRED` lê `:BLOCO.ITEM` e pega o valor **atual** do item: só existe um. Em React, o callback do timer é uma função criada dentro de uma renderização, e ela carrega a foto daquela renderização. É como abrir um cursor e continuar lendo dele minutos depois: os dados são os do momento da abertura. Onde quebra: o cursor você sabe que abriu. A *closure* se forma sem você pedir.",
+      "texto": "***Closure*** é a função que lembra as variáveis do lugar onde foi criada (você viu na trilha de JavaScript). Em React, toda função declarada no componente fecha sobre a **foto** daquela renderização (react-03). ***Stale closure*** (closure velha) é quando uma função de uma renderização antiga continua sendo chamada e trabalha com valores que já não são os atuais.\n\nO lugar clássico é o timer.\n\n```tsx\nfunction Cronometro() {\n  const [segundos, setSegundos] = useState(0);\n\n  useEffect(() => {\n    const id = setInterval(() => {\n      setSegundos(segundos + 1); // segundos é sempre 0 aqui\n    }, 1000);\n    return () => clearInterval(id);\n  }, []); // o lint avisa: falta `segundos`\n\n  return <p>{segundos}s</p>;\n}\n```\n\nO efeito roda só na montagem, por causa do `[]`. O callback do intervalo foi criado naquela renderização, em que `segundos` valia `0`. A cada segundo ele executa `setSegundos(0 + 1)`. A tela vai a `1` e para.\n\n### Três saídas, em ordem de preferência\n\n**1. Forma funcional do `set`.** O callback deixa de ler o estado: pede ao React o valor pendente.\n\n```tsx\nsetSegundos((s) => s + 1);\n```\n\nSem leitura de `segundos`, o efeito não depende dele, e o `[]` passa a ser verdadeiro. Resolve a maioria dos casos de timer e é a correção certa quando o problema é \"o próximo valor depende do anterior\".\n\n**2. Dependências corretas.** Pôr `segundos` na lista. O efeito limpa e recria o intervalo a cada mudança, e o callback é sempre o da renderização atual. Fica correto, mas recriar o timer a cada tique desloca a contagem. Serve bem quando a dependência muda pouco (um `intervaloMs` configurável, por exemplo).\n\n**3. Ler o valor mais recente sem depender dele.** Às vezes o callback precisa **ler** um valor atual para algo que não é calcular o próximo estado: ao disparar o alarme, usar o volume escolhido agora. Você não quer reiniciar o timer quando o volume muda. Há duas formas:\n\n- Uma **ref** que guarda o valor mais recente, atualizada num efeito a cada renderização. O callback lê `volumeRef.current` na hora de usar.\n- `useEffectEvent`, disponível nas versões recentes do React 19 (confira a referência na documentação da sua versão). Ele cria uma função que sempre enxerga as props e o estado mais recentes e que **não entra** na lista de dependências. Só pode ser chamada de dentro de efeitos.\n\n### O que nunca fazer\n\nCalar o lint. `// eslint-disable-next-line react-hooks/exhaustive-deps` com lista vazia é a assinatura de uma closure velha esperando para aparecer. Se a lista correta incomoda, o efeito está lendo algo que não devia ler dali, e uma das três saídas acima resolve.\n\n### Onde mais aparece\n\n- Ouvinte registrado uma vez (`window.addEventListener` em efeito com `[]`) que lê estado.\n- Callback entregue a uma biblioteca externa na montagem.\n- Função guardada com `useCallback` ou valor com `useMemo` e dependências incompletas (react-16).\n- Handler assíncrono: depois do `await`, as variáveis ainda são as da foto do clique. Em geral é o desejado, mas não use essas variáveis para calcular o próximo estado. Use a forma funcional.\n\n### Diagnóstico rápido\n\nSintoma: \"o valor na tela está certo, mas a função usa um valor antigo\". Pergunte: **em qual renderização essa função foi criada?** Se a resposta é \"na primeira\", você achou.\n\nUm detalhe sobre timers em si: `setInterval` não garante precisão, e o navegador reduz a frequência em aba em segundo plano. Para cronômetro, guarde o instante de início (em ref ou estado) e calcule o tempo decorrido a cada tique, em vez de somar 1.",
+      "naPratica": "O timer de foco do Cockpit é o caso de livro: guarde o instante de início, calcule o decorrido a cada tique e, se precisar somar, use a forma funcional. Assim o relógio não congela em 1 nem atrasa com a aba em segundo plano.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Simulação do cronômetro: o efeito com `[]` cria o callback só na primeira renderização. Três tiques em cada versão. O que o estado mostra depois de cada tique?",
+          "codigo": "function simula(formaFuncional: boolean): string {\n  let guardado = 0;\n  const setCount = (a: number | ((c: number) => number)) => {\n    guardado = typeof a === 'function' ? a(guardado) : a;\n  };\n  let tique = () => {};\n\n  function render(montagem: boolean) {\n    const count = guardado;                 // foto desta renderização\n    if (montagem) {                          // efeito com []: só na montagem\n      tique = formaFuncional ? () => setCount((c) => c + 1) : () => setCount(count + 1);\n    }\n  }\n\n  render(true);\n  const vistos: number[] = [];\n  for (let i = 0; i < 3; i++) { tique(); render(false); vistos.push(guardado); }\n  return vistos.join(',');\n}\n\nconsole.log('count + 1   :', simula(false));\nconsole.log('c => c + 1  :', simula(true));\n",
+          "saida": "count + 1   : 1,1,1\nc => c + 1  : 1,2,3\n",
+          "explicacao": "Na primeira versão o callback fechou sobre `count = 0` e nunca foi recriado: todo tique pede `0 + 1`. Na segunda, o callback não lê a foto; recebe do React o valor pendente e soma sobre ele."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um callback registrado na montagem lê o texto de duas formas: pela variável da foto e por uma ref atualizada após cada renderização. O usuário digita mais. O que cada leitura mostra?",
+          "codigo": "let guardado = 'a';\nconst ultimoRef = { current: guardado };\nlet aoDisparar = () => {};\n\nfunction render(montagem: boolean) {\n  const texto = guardado;                    // foto\n  ultimoRef.current = texto;                 // efeito que roda a cada renderização\n  if (montagem) {\n    aoDisparar = () => console.log(`foto: ${texto} | ref: ${ultimoRef.current}`);\n  }\n}\n\nrender(true);\naoDisparar();\nguardado = 'abc';\nrender(false);\naoDisparar();\n",
+          "saida": "foto: a | ref: a\nfoto: a | ref: abc\n",
+          "explicacao": "A variável `texto` do callback é a da renderização em que ele nasceu e fica em `a`. A ref é um objeto único, compartilhado por todas as renderizações: o callback lê `current` na hora do disparo e pega `abc`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um `setInterval` criado em efeito com `[]` chama `setSegundos(segundos + 1)` e a tela para em 1. Qual é a correção mais simples e correta?",
+          "opcoes": [
+            "Trocar para `setSegundos((s) => s + 1)`",
+            "Diminuir o intervalo para compensar",
+            "Guardar `segundos` numa variável fora do componente",
+            "Adicionar o comentário que desliga o lint de dependências"
+          ],
+          "correta": 0,
+          "explicacao": "A forma funcional tira a leitura do estado de dentro do callback, e o efeito deixa de depender de `segundos`. Variável fora do componente é compartilhada por todas as instâncias e não renderiza. Desligar o lint é o que mantém o defeito escondido."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O alarme de um timer deve tocar com o volume que estiver selecionado **no momento do disparo**, sem reiniciar o timer quando o usuário mexe no volume. Qual desenho atende?",
+          "opcoes": [
+            "Colocar `volume` na lista de dependências do efeito do timer",
+            "Ler `volume` direto no callback e deixar a lista de dependências vazia",
+            "Ler o volume por uma ref atualizada a cada renderização (ou por `useEffectEvent`), mantendo o timer fora dessa dependência",
+            "Usar a forma funcional `setVolume((v) => v)` dentro do callback para obter o valor atual"
+          ],
+          "correta": 2,
+          "explicacao": "A dependência reiniciaria o timer a cada ajuste de volume. A lista vazia com leitura direta é a closure velha. A ref (ou `useEffectEvent`) lê o valor atual sem tornar o efeito dependente dele. Usar um `set` só para ler é gambiarra que ainda agenda trabalho."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Reproduzir e consertar o cronômetro congelado",
+          "minutos": 20,
+          "passos": [
+            "No rascunho `react-estudo`, escreva o `Cronometro` da lição com `setSegundos(segundos + 1)` e `[]`. Rode e veja parar em 1. Leia o aviso do lint, se estiver configurado.",
+            "Corrija com a forma funcional e confirme que conta.",
+            "Faça uma segunda versão que guarda `inicio` (com `Date.now()` no clique em Iniciar) e calcula o decorrido a cada tique.",
+            "Deixe a aba em segundo plano por um minuto e compare as duas versões com o relógio do sistema."
+          ],
+          "prontoQuando": "Você viu o cronômetro congelar em 1, corrigiu, e a versão baseada no instante de início bate com o relógio depois de um minuto em segundo plano."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é stale closure em React?",
+          "verso": "Uma função criada numa renderização antiga que continua sendo chamada e usa props e estado daquela foto, já desatualizados."
+        },
+        {
+          "frente": "Por que `setInterval(() => setN(n + 1))` em efeito com `[]` para em 1?",
+          "verso": "O callback nasceu na montagem, com `n = 0`, e nunca é recriado. Todo tique executa `setN(0 + 1)`."
+        },
+        {
+          "frente": "Três saídas para a closure velha, em ordem.",
+          "verso": "Forma funcional do `set`; dependências corretas (recria o efeito); ler o valor mais recente por ref ou `useEffectEvent`."
+        },
+        {
+          "frente": "Que pergunta diagnostica uma closure velha?",
+          "verso": "Em qual renderização esta função foi criada? Se foi na primeira e ela lê estado, o valor está velho."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Removing Effect Dependencies",
+          "url": "https://react.dev/learn/removing-effect-dependencies"
+        },
+        {
+          "titulo": "React — Separating Events from Effects",
+          "url": "https://react.dev/learn/separating-events-from-effects"
+        }
+      ]
+    },
+    {
+      "id": "react-12",
+      "titulo": "Hooks próprios",
+      "minutos": 9,
+      "ponte": "É a sua biblioteca `.pll`: quando a mesma lógica aparece em três telas, você a extrai para uma *program unit* compartilhada. O *hook* próprio faz isso com lógica que usa estado e efeito. Onde quebra: uma variável de package numa `.pll` anexada é uma só para a sessão. O hook compartilha a **lógica**, nunca o **estado**: cada componente que o chama ganha o seu.",
+      "texto": "***Hook*** é toda função do React cujo nome começa com `use`: `useState`, `useEffect`, `useRef`. Um **hook próprio** (*custom hook*) é uma função sua, com nome `useAlgo`, que chama outros hooks por dentro. Serve para dar nome e endereço a uma lógica com estado que se repete.\n\n```tsx\nfunction useAlternador(inicial = false) {\n  const [ligado, setLigado] = useState(inicial);\n  const alternar = () => setLigado((v) => !v);\n  return [ligado, alternar] as const;\n}\n\nfunction Menu() {\n  const [aberto, alternarMenu] = useAlternador();\n  return <button onClick={alternarMenu}>{aberto ? 'Fechar' : 'Abrir'}</button>;\n}\n```\n\nNão há mágica: chamar `useAlternador()` equivale a colar o corpo dele dentro do componente. Por isso **cada chamada tem o seu estado**. Dois componentes usando `useAlternador` têm dois booleanos independentes. Para compartilhar o estado, levante-o (react-07) ou use contexto (react-13).\n\n### As regras dos hooks\n\nDuas regras, conferidas pelo lint (`react-hooks/rules-of-hooks`):\n\n1. **Só no nível de cima.** Nunca dentro de `if`, laço, função aninhada ou depois de um `return` antecipado.\n2. **Só em componentes ou em outros hooks.** Nunca em função comum, handler ou classe.\n\nA primeira parece arbitrária até você ver o mecanismo. O React não sabe o **nome** das suas variáveis de estado. Ele guarda os estados de cada componente numa **lista**, e a cada renderização entrega os valores **pela ordem das chamadas**: o primeiro `useState` recebe a posição 0, o segundo a posição 1. Se uma chamada some numa renderização por causa de um `if`, todas as seguintes pegam a gaveta errada.\n\nA exceção é `use`, do React 19, que pode ser chamado dentro de condição (react-17).\n\n### Como desenhar um bom hook\n\n- **Nome pelo que entrega, não pelo ciclo de vida.** `useStatusConexao`, `useAtalhoTeclado`, `useContagemRegressiva`. Desconfie de `useMontagem` ou `useAtualizaQuando`: são cascas de `useEffect` que escondem as dependências do lint.\n- **Devolva o mínimo.** Tupla `[valor, acao] as const` quando são dois itens com papel óbvio; objeto com nomes quando são mais.\n- **Esconda o efeito.** O melhor uso de hook próprio é embrulhar um `useEffect` de sincronização (ouvinte, timer, armazenamento local). O componente fica declarativo e o efeito, testado em um lugar só.\n- **Parâmetros são reativos.** O que o componente passa ao hook muda a cada renderização, e os efeitos lá dentro devem tratar esses valores como dependências.\n\n### Quando NÃO extrair\n\n- **Não usa nenhum hook por dentro?** Então é função comum. Não ponha `use` no nome: o prefixo avisa ao leitor e ao lint que as regras dos hooks se aplicam.\n- **Só um componente usa e a lógica é curta?** Deixe onde está. Extrair cedo cria uma camada para atravessar a cada leitura.\n- **A intenção é compartilhar estado entre telas?** Hook não faz isso.\n\nExtraia quando houver repetição real (duas ou três ocorrências), ou quando o componente ficou difícil de ler porque mistura três lógicas com estado. Outro ganho: muitos hooks que você escreveria já existem. O TanStack Query é, para quem usa, uma coleção de hooks (`useQuery`, `useMutation`). Aprender a ler um hook de biblioteca é o mesmo que ler os seus.",
+      "naPratica": "No Cockpit, cada chamada à API vira um hook fino sobre o TanStack Query (`useTarefas`, `useConcluirTarefa`), e o componente não sabe de URL nem de chave de cache. É o mesmo papel de uma package de acesso a dados: a tela chama pelo nome.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `useState` de brinquedo que guarda os estados numa lista e os entrega pela ordem das chamadas, como o React. O componente chama um hook dentro de `if`. O que sai nas duas renderizações?",
+          "codigo": "const gavetas: unknown[] = [];\nlet cursor = 0;\n\nfunction useState<T>(inicial: T): T {\n  if (gavetas.length <= cursor) gavetas.push(inicial);\n  return gavetas[cursor++] as T;\n}\n\nfunction Perfil(mostraApelido: boolean): string {\n  cursor = 0;                       // início de uma renderização\n  const nome = useState('Ana');\n  let apelido: unknown = '-';\n  if (mostraApelido) apelido = useState('Aninha');   // hook dentro de if\n  const idade = useState(30);\n  return `nome=${nome} apelido=${apelido} idade=${idade}`;\n}\n\nconsole.log(Perfil(true));\nconsole.log(Perfil(false));\n",
+          "saida": "nome=Ana apelido=Aninha idade=30\nnome=Ana apelido=- idade=Aninha\n",
+          "explicacao": "Na primeira renderização as gavetas ficam `Ana`, `Aninha`, `30`. Na segunda, o `if` pula uma chamada e `idade` passa a ser a **segunda** chamada: recebe a gaveta 1, que é `Aninha`. O React identifica estado pela ordem, não pelo nome. Daí a regra de nunca chamar hook dentro de condição."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Dois componentes usam o mesmo hook. Um deles alterna. O estado é compartilhado?",
+          "codigo": "function useAlternadorSimulado() {\n  let ligado = false;               // o estado desta chamada\n  return {\n    ler: () => ligado,\n    alternar: () => { ligado = !ligado; },\n  };\n}\n\nconst menu = useAlternadorSimulado();\nconst dialogo = useAlternadorSimulado();\n\nmenu.alternar();\nconsole.log('menu:', menu.ler());\nconsole.log('dialogo:', dialogo.ler());\n",
+          "saida": "menu: true\ndialogo: false\n",
+          "explicacao": "Cada chamada cria o seu próprio estado. O hook reaproveita a lógica (como alternar), não o valor. Para os dois enxergarem o mesmo booleano, o estado precisa morar em um ancestral comum ou num contexto."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O hook devolve um array com o valor e a função, sem `as const`. O componente desestrutura e chama a função. Compila?",
+          "codigo": "function useAlternador(inicial: boolean) {\n  let ligado = inicial;\n  const alternar = () => { ligado = !ligado; };\n  return [ligado, alternar];\n}\n\nconst [aberto, alternarMenu] = useAlternador(false);\nalternarMenu();\n",
+          "compila": false,
+          "erro": "TS2349",
+          "linha": 8,
+          "explicacao": "Sem `as const`, o TypeScript infere `(boolean | (() => void))[]`: um array em que qualquer posição pode ser booleano ou função. `alternarMenu` pode ser um booleano, logo não é chamável. Com `return [ligado, alternar] as const` o retorno vira tupla e cada posição tem o seu tipo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma função `formataPrazo(data)` só monta um texto e não chama nenhum hook. Um colega a batizou de `usePrazoFormatado`. O que dizer na revisão?",
+          "opcoes": [
+            "Está certo: tudo o que é chamado dentro de componente deve começar com `use`",
+            "Renomear para `formataPrazo`: o prefixo `use` é reservado ao que chama hooks e sujeita a função às regras dos hooks sem necessidade",
+            "Está certo, desde que a função seja envolvida em `useCallback`",
+            "Renomear só se a função for usada fora de componentes"
+          ],
+          "correta": 1,
+          "explicacao": "O prefixo `use` é um contrato: diz ao leitor e ao lint que a função usa hooks e só pode ser chamada no nível de cima de um componente. Uma função pura com esse nome não pode ser chamada num `if` ou num `map` sem o lint reclamar, e engana quem lê."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Extrair um hook de verdade",
+          "minutos": 25,
+          "passos": [
+            "No rascunho `react-estudo`, pegue o cronômetro de react-11 e extraia a lógica para `useCronometro()`, devolvendo `{ segundos, rodando, iniciar, pausar, zerar }`.",
+            "Use o hook em dois componentes na mesma página e confirme que cada um tem a sua contagem.",
+            "Escreva `useTituloDaAba(texto: string)`, que mantém `document.title` igual ao texto e restaura o título anterior na limpeza.",
+            "Use `useTituloDaAba` com o tempo do primeiro cronômetro."
+          ],
+          "prontoQuando": "Os dois cronômetros contam de forma independente, o componente não tem nenhum `useEffect` próprio e o título da aba acompanha o primeiro."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é um hook próprio?",
+          "verso": "Uma função `useAlgo` que chama outros hooks por dentro. Extrai lógica com estado para reuso; equivale a colar o corpo no componente."
+        },
+        {
+          "frente": "Dois componentes chamam o mesmo hook próprio. Compartilham estado?",
+          "verso": "Não. Cada chamada tem o seu estado. Hook compartilha lógica; para compartilhar valor, levante o estado ou use contexto."
+        },
+        {
+          "frente": "Por que hook não pode ficar dentro de `if` ou laço?",
+          "verso": "O React guarda os estados numa lista e os entrega pela ordem das chamadas. Se uma chamada some, as seguintes recebem a gaveta errada."
+        },
+        {
+          "frente": "Quando NÃO pôr o prefixo `use` numa função?",
+          "verso": "Quando ela não chama nenhum hook. É função comum, e o prefixo a sujeitaria às regras dos hooks sem motivo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Reusing Logic with Custom Hooks",
+          "url": "https://react.dev/learn/reusing-logic-with-custom-hooks"
+        },
+        {
+          "titulo": "React — Rules of Hooks",
+          "url": "https://react.dev/reference/rules/rules-of-hooks"
+        }
+      ]
+    },
+    {
+      "id": "react-13",
+      "titulo": "Context e composição (children, slots)",
+      "minutos": 11,
+      "ponte": "O *Context* é a `:GLOBAL` do React: um valor que qualquer componente lá embaixo lê sem que alguém o passe de mão em mão. E você conhece o preço da `:GLOBAL`: ninguém sabe quem leu, quem gravou, nem de onde veio o valor errado. Onde a analogia quebra, a favor do React: o contexto vale só para uma **subárvore**, o consumidor não grava nele por atribuição, e quando o valor muda todo mundo que lê renderiza de novo. Esse último ponto é também o custo.",
+      "texto": "***Prop drilling*** (perfurar com props) é passar uma prop por vários níveis de componentes que não a usam, só para ela chegar a um neto. `Pagina` recebe `usuario`, repassa a `Cabecalho`, que repassa a `Menu`, que repassa a `Avatar`. Dois níveis são normais e até saudáveis: o fluxo fica explícito. Cinco níveis viram ruído, e cada mudança de assinatura mexe em cinco arquivos.\n\nHá dois remédios. O mais conhecido é o contexto. O que você deve tentar **primeiro** é a composição.\n\n### Composição: passe o componente pronto\n\nO intermediário só repassa a prop porque é **ele** quem cria o neto. Se quem tem o dado cria o neto e o entrega pronto, o intermediário não precisa saber de nada.\n\n```tsx\n// antes: Cabecalho recebe usuario só para repassar\n<Cabecalho usuario={usuario} />\n\n// depois: quem tem o dado monta o Avatar e o entrega\n<Cabecalho direita={<Avatar usuario={usuario} />}>\n  <Titulo>Plano do dia</Titulo>\n</Cabecalho>\n```\n\n`children` é o encaixe padrão. Props que recebem JSX (`direita`, `rodape`, `acoes`) são encaixes com nome, chamados de ***slots***. `Cabecalho` vira uma moldura: decide **onde** as peças ficam, não **quais** são. Boa parte das bibliotecas de componentes (inclusive o shadcn usado no Cockpit) é desenhada assim.\n\n### Context: para o que é realmente global\n\nQuando o dado é lido em **muitos lugares, em profundidades diferentes**, a composição não alcança. Aí entra o contexto, em três passos:\n\n```tsx\n// 1. criar\nconst UsuarioContext = createContext<Usuario | null>(null);\n\n// 2. prover, em volta da subárvore\n<UsuarioContext value={usuario}>\n  <App />\n</UsuarioContext>\n\n// 3. ler, em qualquer profundidade\nfunction useUsuario() {\n  const usuario = useContext(UsuarioContext);\n  if (usuario === null) throw new Error('useUsuario fora do provedor');\n  return usuario;\n}\n```\n\nNo React 19 o próprio objeto de contexto é o provedor (`<UsuarioContext value=...>`). A forma `<UsuarioContext.Provider>` é a das versões anteriores e segue funcionando. O hook próprio que lança erro quando falta o provedor é padrão: troca um `null` misterioso lá na frente por uma mensagem clara.\n\nBons candidatos: usuário autenticado, tema, idioma, permissões. Mudam pouco e são lidos em toda parte.\n\n### O custo de renderização\n\nQuando o `value` muda (comparado por `Object.is`), **todo** componente que lê aquele contexto renderiza de novo, esteja onde estiver, e o `memo` não impede. Duas consequências:\n\n- **Objeto literal no `value` é armadilha.** `value={{ usuario, tema }}` cria um objeto novo a cada renderização do provedor. Todos os consumidores renderizam mesmo sem nada ter mudado. Estabilize o objeto (`useMemo`, ou o React Compiler, react-16) ou guarde-o em estado.\n- **Contexto não tem seleção.** Quem lê só `tema` renderiza quando `usuario` muda, se os dois estão no mesmo objeto. Separe por frequência de mudança: um contexto para o que quase nunca muda, outro para o que muda.\n\nPor isso contexto **não é gerenciador de estado**. Para estado de tela compartilhado que muda com frequência, existem bibliotecas com seleção por fatia (como o Zustand). Para dado do servidor, o TanStack Query. Esses critérios estão na trilha Dados no front.\n\n### A escada de decisão\n\n1. O estado pode ficar local? Deixe.\n2. Dois ou três níveis de prop? Passe a prop. Explícito é bom.\n3. Intermediário só repassando? Composição com `children` ou slot.\n4. Lido em muitos pontos e muda pouco? Context.\n5. Lido em muitos pontos e muda muito? Biblioteca de estado.\n\nA cada degrau você ganha conveniência e perde rastreabilidade. É o mesmo trato da `:GLOBAL`: cômoda para escrever, cara para depurar.",
+      "naPratica": "No Cockpit, o usuário logado e o tema são contexto. A lista de tarefas não é: vem do TanStack Query, que já funciona como armazenamento compartilhado. Em revisão, um contexto novo pede a pergunta: quantos componentes leem isso, e com que frequência muda?",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O provedor compara o `value` novo com o anterior por `Object.is`. O pai renderiza duas vezes com objeto literal e duas com objeto estável. Quantas vezes os consumidores renderizam?",
+          "codigo": "const consumidores = ['Cabecalho', 'Avatar', 'Rodape'];\nlet anterior: unknown = undefined;\n\nfunction Provedor(value: unknown) {\n  if (Object.is(value, anterior)) {\n    console.log('value igual: nenhum consumidor renderiza');\n    return;\n  }\n  anterior = value;\n  console.log(`value mudou: ${consumidores.length} consumidores renderizam`);\n}\n\nconst usuario = { nome: 'Ana' };\nProvedor({ usuario, tema: 'claro' });\nProvedor({ usuario, tema: 'claro' });     // pai renderizou: literal novo\n\nconst estavel = { usuario, tema: 'claro' };  // useMemo ou estado\nProvedor(estavel);\nProvedor(estavel);\n",
+          "saida": "value mudou: 3 consumidores renderizam\nvalue mudou: 3 consumidores renderizam\nvalue mudou: 3 consumidores renderizam\nvalue igual: nenhum consumidor renderiza\n",
+          "explicacao": "O segundo literal tem o mesmo conteúdo, mas é outro objeto: para o React o contexto mudou e os três consumidores renderizam. Com a mesma referência (quarta chamada), ninguém renderiza por causa do contexto. A terceira linha é a troca do literal pelo objeto estável, que é mesmo um objeto diferente."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Contexto criado com `null` como padrão (não há usuário antes do provedor). O hook promete devolver `Usuario`. Compila?",
+          "codigo": "declare function createContext<T>(padrao: T): { valor: T };\ndeclare function useContext<T>(contexto: { valor: T }): T;\n\ntype Usuario = { nome: string };\nconst UsuarioContext = createContext<Usuario | null>(null);\n\nfunction useUsuario(): Usuario {\n  const usuario = useContext(UsuarioContext);\n  return usuario;\n}\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 9,
+          "explicacao": "O contexto pode entregar `null` (componente fora do provedor), e o retorno promete `Usuario`. A correção padrão é o hook checar e lançar erro: `if (usuario === null) throw new Error('fora do provedor')`. Depois do `throw`, o TypeScript estreita o tipo para `Usuario`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`Pagina` tem o `usuario` e precisa que ele chegue ao `Avatar`, que fica dentro de `Cabecalho`. `Cabecalho` não usa o usuário para nada. Qual é a primeira solução a tentar?",
+          "opcoes": [
+            "Criar um `UsuarioContext` e ler com `useContext` no `Avatar`",
+            "Guardar o usuário numa variável de módulo exportada e importá-la no `Avatar`",
+            "`Pagina` monta `<Avatar usuario={usuario} />` e o entrega a `Cabecalho` por `children` ou por um slot",
+            "Passar o usuário por `localStorage`, que qualquer componente consegue ler"
+          ],
+          "correta": 2,
+          "explicacao": "Com composição, `Cabecalho` deixa de conhecer o usuário sem que nada vire global. Contexto resolve, mas é a ferramenta para dado lido em muitos lugares. Variável de módulo e `localStorage` não avisam o React quando mudam: a tela não acompanha."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, estou cansado de passar prop por três componentes. Vamos criar um contexto global com todo o estado do app e acabar com isso?\"",
+          "pontos": [
+            "Reconheceu o incômodo e separou os casos: nem todo repasse de prop é problema",
+            "Propôs composição (children, slots) antes de contexto",
+            "Explicou o custo: todo consumidor renderiza quando o value muda, sem seleção por fatia",
+            "Disse o que cabe em contexto: usuário, tema, permissões (muda pouco, lido em muitos lugares)",
+            "Apontou que dado de servidor já está no TanStack Query",
+            "Citou a perda de rastreabilidade de um global"
+          ],
+          "modelo": "O incômodo é real, mas um contexto com tudo troca um problema por dois. Primeiro, desempenho: quando qualquer pedaço do valor muda, todo componente que lê o contexto renderiza, mesmo que só use outro pedaço. Segundo, rastreio: vira uma global, e ninguém mais sabe de onde vem o dado. Eu separaria os casos. Onde o componente do meio só repassa, a gente resolve com composição: quem tem o dado monta o filho e entrega por `children`. Usuário, tema e permissões podem ir para contexto, porque mudam pouco e todo mundo lê. E a maior parte do que você está repassando é dado da API, que já está no TanStack Query: o componente lá embaixo pode chamar o hook direto."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Trocar perfuração por composição e por contexto",
+          "minutos": 25,
+          "passos": [
+            "No rascunho `react-estudo`, monte `Pagina` > `Cabecalho` > `Menu` > `Avatar`, passando `usuario` por prop em todos os níveis.",
+            "Refatore com composição: `Cabecalho` recebe um slot `direita` e `Pagina` entrega `<Avatar usuario={usuario} />` pronto. Remova `usuario` das props de `Cabecalho` e `Menu`.",
+            "Crie `TemaContext` com `'claro' | 'escuro'`, um hook `useTema()` que lança erro fora do provedor e um botão que alterna o tema.",
+            "Ponha `console.log` em três consumidores do tema e em um componente que não o lê. Alterne o tema e veja quem renderiza."
+          ],
+          "prontoQuando": "`Cabecalho` e `Menu` não têm mais a prop `usuario`, o tema alterna, e você consegue dizer por que cada componente apareceu ou não no console."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que tentar antes de criar um contexto para evitar prop drilling?",
+          "verso": "Composição: quem tem o dado monta o componente filho e o entrega por `children` ou por um slot. O intermediário deixa de repassar a prop."
+        },
+        {
+          "frente": "Por que `value={{ usuario, tema }}` num provedor é armadilha?",
+          "verso": "O literal cria um objeto novo a cada renderização. Pelo `Object.is` o contexto mudou, e todos os consumidores renderizam."
+        },
+        {
+          "frente": "Que tipo de dado é bom candidato a Context?",
+          "verso": "O que é lido em muitos lugares e muda pouco: usuário autenticado, tema, idioma, permissões."
+        },
+        {
+          "frente": "Por que Context não é gerenciador de estado?",
+          "verso": "Não tem seleção por fatia: quando o valor muda, todo consumidor renderiza, e `memo` não impede. Para estado que muda muito, use biblioteca de estado."
+        },
+        {
+          "frente": "O que é um slot em React?",
+          "verso": "Uma prop que recebe JSX (`direita={<Avatar />}`). O componente decide onde a peça fica, não qual é. `children` é o slot padrão."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Passing Data Deeply with Context",
+          "url": "https://react.dev/learn/passing-data-deeply-with-context"
+        },
+        {
+          "titulo": "React — createContext",
+          "url": "https://react.dev/reference/react/createContext"
+        }
+      ]
+    },
+    {
+      "id": "react-14",
+      "titulo": "Formulários: campo controlado, React Hook Form e Zod",
+      "minutos": 12,
+      "ponte": "No Forms o formulário vem pronto: o item guarda o valor, o `WHEN-VALIDATE-ITEM` valida ao sair do campo, o bloco multi-registro repete as linhas, e o `COMMIT` grava o que mudou. Em React nada disso vem de fábrica. Você monta com peças: uma biblioteca que guarda valores e erros (o papel do bloco), um *schema* que valida (o papel das triggers de validação) e um *field array* para as linhas repetidas. Onde quebra: validação na tela é só conforto do usuário. A API valida tudo de novo, porque qualquer um pode chamá-la sem passar pela sua tela.",
+      "texto": "### Controlado × não controlado\n\nUm campo é **controlado** quando o valor dele vem do estado do React:\n\n```tsx\nconst [nome, setNome] = useState('');\n<input value={nome} onChange={(e) => setNome(e.target.value)} />\n```\n\nO estado é a fonte da verdade. Cada tecla dispara `onChange`, o `set` e uma renderização. Você pode transformar ou recusar o que foi digitado (máscara, maiúsculas, só dígitos) e qualquer parte da tela reage ao valor na hora.\n\nUm campo é **não controlado** quando o próprio DOM guarda o valor e você o lê quando precisa (no envio, por `FormData` ou por ref). Menos código e nenhuma renderização por tecla, mas a tela não reage enquanto o usuário digita.\n\nO erro clássico: passar `value` sem `onChange`. O campo fica travado, porque a cada renderização o React repõe o valor do estado.\n\n### Por que usar uma biblioteca\n\nCom dois campos, `useState` resolve. Um formulário real tem dez campos, cada um com valor, erro, \"já foi tocado\", além de \"enviando\", \"foi alterado\" e validação cruzada. Feito à mão, isso vira dezenas de estados e um componente que renderiza inteiro a cada tecla.\n\nO **React Hook Form** (RHF) guarda o estado do formulário fora do React, usa campos não controlados por padrão e só renderiza o que precisa. A forma básica:\n\n```tsx\nconst schema = z.object({\n  titulo: z.string().min(3, 'Mínimo de 3 letras'),\n  prioridade: z.enum(['baixa', 'media', 'alta']),\n});\ntype DadosTarefa = z.infer<typeof schema>;\n\nfunction FormTarefa({ aoGravar }: { aoGravar: (d: DadosTarefa) => Promise<void> }) {\n  const { register, handleSubmit, formState: { errors, isSubmitting } } =\n    useForm<DadosTarefa>({\n      resolver: zodResolver(schema),\n      defaultValues: { titulo: '', prioridade: 'media' },\n    });\n\n  return (\n    <form onSubmit={handleSubmit(aoGravar)}>\n      <input {...register('titulo')} />\n      {errors.titulo && <p role=\"alert\">{errors.titulo.message}</p>}\n      <button disabled={isSubmitting}>Gravar</button>\n    </form>\n  );\n}\n```\n\n- `register('titulo')` **registra** o campo: devolve `name`, `ref`, `onChange` e `onBlur` para espalhar no `input`.\n- `handleSubmit(fn)` valida tudo e só chama `fn` com os dados **válidos e tipados**.\n- `formState.errors` tem o erro **por campo**, para mostrar ao lado dele.\n\nAs duas bibliotecas não estão instaladas no Cockpit ainda. Confira os nomes exatos e o pacote do `zodResolver` na documentação da versão que você instalar.\n\n### Zod como fonte da verdade do schema\n\nO ***schema*** do Zod descreve o formato e as regras **uma vez**. Dele saem o tipo TypeScript (`z.infer`) e a validação em tempo de execução. Você não escreve a interface de um lado e as regras de outro, que é como as duas se desencontram. Num monorepo como o Cockpit, o mesmo schema pode ser compartilhado entre `apps/web` e `apps/api`, e a regra de tamanho mínimo passa a existir em um arquivo só.\n\nRegra cruzada entre campos (data final depois da inicial) fica no schema com `refine`, não espalhada em handlers.\n\n### `useFieldArray`: o bloco multi-registro\n\nPara linhas repetidas (itens de um pedido, subtarefas), o RHF tem `useFieldArray`, que devolve `fields` e as operações `append`, `remove`, `move`. Cada elemento de `fields` traz um `id` gerado pela biblioteca: **use-o como `key`**, nunca o índice (react-05).\n\n```tsx\nconst { fields, append, remove } = useFieldArray({ control, name: 'itens' });\n\n{fields.map((campo, i) => (\n  <div key={campo.id}>\n    <input {...register(`itens.${i}.descricao`)} />\n    <button type=\"button\" onClick={() => remove(i)}>Remover</button>\n  </div>\n))}\n```\n\n### Critério de sênior\n\n- Formulário de um ou dois campos (busca, comentário): `useState` ou campo não controlado. Biblioteca é peso.\n- Formulário de cadastro, com validação e envio: RHF mais Zod.\n- **Quando validar** é decisão de usabilidade: validar a cada tecla irrita, só no envio demora a avisar. O comum é validar ao sair do campo e revalidar ao digitar depois do primeiro erro. Confira as opções de modo na documentação.\n- Erro que só o servidor conhece (título duplicado) volta da API e é posto no campo com a função de definir erro da biblioteca.\n- Quem vem do Forms nota a falta do teclado: `Enter` enviando, `Tab` na ordem certa, foco no primeiro campo com erro. Use `<form>` e `<button type=\"submit\">` de verdade e boa parte vem de graça.",
+      "naPratica": "No Cockpit, o formulário de tarefa usa um schema Zod que também valida o corpo da requisição na API. Uma regra, um arquivo. Na migração de uma tela Forms, cada `WHEN-VALIDATE-ITEM` vira uma linha do schema ou uma regra do service, e esse inventário é o primeiro entregável.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Campo controlado: o que aparece no campo é o estado, e o `onChange` decide o que entra. Este aceita só dígitos, no máximo 5. A lista é o que o navegador propõe a cada tecla. O que fica no estado?",
+          "codigo": "let estado = '';\n\nfunction aoMudar(valorProposto: string) {\n  estado = valorProposto.replace(/\\D/g, '').slice(0, 5);   // setCep(...)\n}\n\nfor (const proposto of ['1', '1a', '12', '12-', '123', '123456']) {\n  aoMudar(proposto);\n  console.log(`${proposto} -> ${estado}`);\n}\n",
+          "saida": "1 -> 1\n1a -> 1\n12 -> 12\n12- -> 12\n123 -> 123\n123456 -> 12345\n",
+          "explicacao": "O navegador propõe o valor com a tecla nova; o handler filtra e grava o estado; o React repõe no campo o que está no estado. A letra e o hífen nunca aparecem, e o sexto dígito é cortado. Num campo não controlado, esse filtro por tecla não existiria."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um schema de brinquedo: uma regra por campo, que devolve `true` ou a mensagem. O validador devolve os erros por campo, como `formState.errors`. O que sai?",
+          "codigo": "type Regra = (valor: string) => true | string;\n\nconst schema: Record<string, Regra> = {\n  titulo: (v) => v.trim().length >= 3 || 'mínimo de 3 letras',\n  email: (v) => /^\\S+@\\S+\\.\\S+$/.test(v) || 'e-mail inválido',\n};\n\nfunction valida(dados: Record<string, string>) {\n  const erros: Record<string, string> = {};\n  for (const [campo, regra] of Object.entries(schema)) {\n    const r = regra(dados[campo] ?? '');\n    if (r !== true) erros[campo] = r;\n  }\n  return erros;\n}\n\nconsole.log(JSON.stringify(valida({ titulo: 'Ir', email: 'ana@exemplo' })));\nconsole.log(JSON.stringify(valida({ titulo: 'Ligar', email: 'ana@exemplo.com' })));\nconsole.log(JSON.stringify(valida({ email: 'ana@exemplo.com' })));\n",
+          "saida": "{\"titulo\":\"mínimo de 3 letras\",\"email\":\"e-mail inválido\"}\n{}\n{\"titulo\":\"mínimo de 3 letras\"}\n",
+          "explicacao": "As regras ficam em um objeto só, e o resultado é um mapa de campo para mensagem: é isso que permite mostrar cada erro ao lado do seu campo. Campo ausente é tratado como vazio e também falha. O Zod faz o mesmo papel, com tipos inferidos e muito mais regras prontas."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O tipo dos dados é derivado de um único objeto (como `z.infer` faz com o schema), não escrito à parte. O envio abaixo compila?",
+          "codigo": "const valoresPadrao = { titulo: '', prioridade: 1, itens: [{ descricao: '' }] };\ntype DadosForm = typeof valoresPadrao;\n\nfunction aoEnviar(dados: DadosForm): string {\n  return dados.titulo;\n}\n\naoEnviar({ titulo: 'Comprar filtro', prioridade: 'alta', itens: [] });\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 8,
+          "explicacao": "`prioridade` foi inferida como `number` a partir do objeto de origem, e a chamada manda um texto. Como o tipo é derivado, mudar a origem muda o tipo em todos os usos e o compilador aponta cada lugar. Com interface escrita à mão em paralelo, as duas definições se desencontram em silêncio."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Numa lista de itens feita com `useFieldArray`, qual deve ser a `key` de cada linha?",
+          "opcoes": [
+            "O índice do `map`, já que os nomes dos campos usam o índice",
+            "O `id` que a biblioteca gera em cada elemento de `fields`",
+            "O valor digitado na descrição do item",
+            "`Math.random()`, para garantir unicidade em linhas ainda não gravadas"
+          ],
+          "correta": 1,
+          "explicacao": "O `id` de `fields` é estável e único por linha, mesmo para linha nova sem id de banco. O nome do campo usa o índice (`itens.2.descricao`), mas a `key` com índice faria os valores trocarem de linha ao remover (react-05). O valor digitado muda a cada tecla e pode repetir."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O formulário valida tudo com Zod no navegador. A API precisa validar de novo?",
+          "opcoes": [
+            "Não: se o front já validou, repetir é desperdício de processamento",
+            "Só os campos obrigatórios; formato e tamanho o front já garantiu",
+            "Sim: a API pode ser chamada sem passar pela tela; a validação no front é conforto do usuário, a do servidor é a regra",
+            "Só se a API for pública; em app interno autenticado o front é confiável"
+          ],
+          "correta": 2,
+          "explicacao": "O navegador é território do usuário: dá para alterar o JavaScript ou chamar a API direto. Vale em app interno também. Compartilhar o mesmo schema entre front e API evita escrever a regra duas vezes, mas as duas execuções são necessárias."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Formulário de tarefa com RHF, Zod e subtarefas",
+          "minutos": 30,
+          "passos": [
+            "No rascunho `react-estudo`, instale React Hook Form, Zod e o pacote de resolvers, seguindo a página Get Started de cada um.",
+            "Escreva o schema: `titulo` (mínimo 3), `prioridade` (três valores) e `subtarefas` (lista de objetos com `descricao` obrigatória).",
+            "Monte o formulário com `register`, mensagem de erro ao lado de cada campo e botão desabilitado durante o envio.",
+            "Use `useFieldArray` para incluir e remover subtarefas, com `key={campo.id}`.",
+            "No envio, mostre os dados com `console.log` e confira que o tipo do parâmetro veio do schema."
+          ],
+          "prontoQuando": "Enviar vazio mostra os erros ao lado dos campos, remover a subtarefa do meio não embaralha os textos, e o envio válido imprime o objeto tipado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Diferença entre campo controlado e não controlado.",
+          "verso": "Controlado: o valor vem do estado do React (`value` + `onChange`), renderiza a cada tecla. Não controlado: o DOM guarda o valor e você lê quando precisa."
+        },
+        {
+          "frente": "Por que usar o schema do Zod como fonte da verdade?",
+          "verso": "Dele saem o tipo TypeScript (`z.infer`) e a validação em execução. Uma definição só, que pode ser compartilhada entre front e API."
+        },
+        {
+          "frente": "O que `register('titulo')` faz no React Hook Form?",
+          "verso": "Registra o campo no formulário e devolve as props (`name`, `ref`, `onChange`, `onBlur`) para espalhar no `input`."
+        },
+        {
+          "frente": "Qual `key` usar nas linhas de um `useFieldArray`?",
+          "verso": "O `id` gerado pela biblioteca em cada elemento de `fields`. Nunca o índice."
+        },
+        {
+          "frente": "Por que a API valida de novo o que o formulário já validou?",
+          "verso": "A API pode ser chamada sem a tela. Validação no front é usabilidade; a do servidor é a que protege o dado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React Hook Form — Get Started",
+          "url": "https://react-hook-form.com/get-started"
+        },
+        {
+          "titulo": "Zod — documentação",
+          "url": "https://zod.dev"
+        },
+        {
+          "titulo": "React — <input>",
+          "url": "https://react.dev/reference/react-dom/components/input"
+        }
+      ]
+    },
+    {
+      "id": "react-15",
+      "titulo": "Suspense, lazy e error boundary",
+      "minutos": 10,
+      "ponte": "Três coisas que o Forms faz por você. Ele só carrega o `.fmx` de uma tela quando alguém dá `CALL_FORM`: isso é o `lazy`. Enquanto carrega, mostra o cursor de ocupado: isso é o `Suspense`. E quando algo estoura, a trigger `ON-ERROR` ou um `EXCEPTION WHEN OTHERS` decide o que o usuário vê: isso é o *error boundary*. Onde quebra: o error boundary só pega erro de **renderização**. Erro dentro de handler de evento não passa por ele, ao contrário do `ON-ERROR`, que vê tudo.",
+      "texto": "### `lazy`: dividir o código\n\nPor padrão, o Vite junta o app inteiro em poucos arquivos JavaScript. Quem abre a tela de login baixa também o código da tela de relatórios. `lazy` com `import()` dinâmico separa um componente em um arquivo próprio (*chunk*), baixado só quando ele for renderizado pela primeira vez.\n\n```tsx\nimport { lazy, Suspense } from 'react';\n\nconst Relatorios = lazy(() => import('./paginas/Relatorios'));\n\n<Suspense fallback={<p>Carregando...</p>}>\n  <Relatorios />\n</Suspense>\n```\n\nO módulo importado precisa ter o componente como `export default`. Declare o `lazy` **fora** de qualquer componente: dentro, ele seria recriado a cada renderização.\n\nO corte natural é por **rota**. Dividir componente por componente gera dezenas de requisições pequenas e uma tela que aparece aos pedaços.\n\n### `Suspense`: o que mostrar enquanto não está pronto\n\n`<Suspense>` é um limite: se qualquer componente abaixo dele ainda não pode renderizar (está **suspenso**), o React mostra o `fallback` no lugar de toda a subárvore daquele limite. Quando o que faltava chega, ele tenta de novo.\n\nUm componente suspende por dois motivos principais: o código dele ainda está sendo baixado (`lazy`), ou os dados que ele lê ainda não chegaram, quando a biblioteca de dados é integrada ao Suspense (o TanStack Query tem um modo assim, e o React 19 tem o `use`, react-17).\n\n**Onde posicionar** é decisão de desenho:\n\n- Um `Suspense` no topo do app: a tela inteira vira um \"Carregando\". Simples e ruim.\n- Um em volta do **conteúdo da rota**, dentro do layout: menu e cabeçalho continuam na tela, só o miolo espera. É o padrão sensato.\n- Um por região independente (um gráfico lento, um painel lateral): cada parte aparece quando fica pronta. Use com moderação, porque muitos limites fazem a tela piscar em etapas.\n\n### Error boundary: quando a renderização falha\n\nSe um componente lança erro ao renderizar e nada o captura, o React **desmonta a árvore inteira**: tela em branco. O ***error boundary*** (limite de erro) é um componente que captura o erro de renderização dos filhos e mostra uma interface alternativa.\n\nAinda hoje ele precisa ser um **componente de classe**, com `static getDerivedStateFromError` (para trocar a tela) e `componentDidCatch` (para registrar). Na prática, quase todo projeto usa o pacote `react-error-boundary`, que entrega isso pronto como componente com prop de fallback e função de tentar de novo.\n\nO que ele **não** captura:\n\n- Erro em **handler de evento** (`onClick`): trate com `try/catch` no handler.\n- Erro em código assíncrono solto (`setTimeout`, promise sem ligação com a renderização).\n- Erro no próprio boundary.\n\nOnde posicionar segue a mesma lógica do Suspense, com uma camada a mais:\n\n1. **Um no topo**, como última rede: \"Algo deu errado, recarregue\". Sem ele, o usuário vê branco.\n2. **Um por rota**: o erro de uma página não derruba o menu.\n3. **Um em volta de componente arriscado** (gráfico com dado externo, conteúdo de terceiros).\n\n### Juntando os três\n\n```tsx\n<ErrorBoundary fallback={<ErroDaPagina />}>\n  <Suspense fallback={<Esqueleto />}>\n    <Relatorios />\n  </Suspense>\n</ErrorBoundary>\n```\n\nO boundary por fora pega também a **falha de download do chunk**. Esse caso é real: depois de um deploy, os arquivos antigos somem do servidor, e quem estava com a aba aberta recebe erro ao navegar para uma rota lazy. O tratamento é oferecer \"Recarregar a página\".\n\n### Critério de sênior\n\n- `lazy` tem custo: uma espera no primeiro acesso a cada rota. Em app interno em rede boa, dividir demais piora a sensação de uso. Meça o tamanho do pacote antes (o build do Vite mostra) e divida o que pesa: telas raras, editor, gráficos.\n- Erro capturado precisa ser **registrado**. O `createRoot` do React 19 aceita opções para receber erros capturados e não capturados (confira os nomes na referência). Boundary que só mostra mensagem esconde defeito.\n- Fallback de carregamento que imita o formato do conteúdo (esqueleto) incomoda menos que um texto ou um indicador girando.",
+      "naPratica": "No Cockpit, as rotas pouco usadas (relatórios, configurações) são candidatas a `lazy`, com um `Suspense` e um error boundary em volta do miolo da rota e outro boundary no topo. Tela em branco em produção é sempre a falta desse boundary.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mecanismo do Suspense em miniatura: o componente que não está pronto **lança uma promise**; o limite captura, devolve o fallback e tenta de novo quando ela resolve. O que sai?",
+          "codigo": "let modulo: string | null = null;\nconst baixando = new Promise<void>((ok) =>\n  setTimeout(() => { modulo = '<Relatorios />'; ok(); }, 30),\n);\n\nfunction Preguicoso(): string {\n  if (modulo === null) throw baixando;     // suspende\n  return modulo;\n}\n\nfunction Suspense(filho: () => string, fallback: string): string {\n  try {\n    return filho();\n  } catch (e) {\n    if (!(e instanceof Promise)) throw e;  // erro de verdade: sobe\n    e.then(() => console.log('tentativa 2:', Suspense(filho, fallback)));\n    return fallback;\n  }\n}\n\nconsole.log('tentativa 1:', Suspense(Preguicoso, 'Carregando...'));\n",
+          "saida": "tentativa 1: Carregando...\ntentativa 2: <Relatorios />\n",
+          "explicacao": "Na primeira tentativa o módulo não chegou: o componente lança a promise, o limite a captura e mostra o fallback. Quando a promise resolve, o limite renderiza de novo e agora o componente devolve o conteúdo. É um modelo do mecanismo; no React você não lança promise à mão, quem faz isso é o `lazy` ou a biblioteca de dados."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Error boundary em miniatura: o limite mais próximo acima do componente que falhou assume. Compare a tela com e sem um limite em volta do gráfico.",
+          "codigo": "function Limite(nome: string, filho: () => string): string {\n  try {\n    return filho();\n  } catch {\n    return `[${nome}: algo deu errado]`;\n  }\n}\n\nconst Lista = () => 'lista de tarefas';\nconst Grafico = (): string => { throw new Error('dado inválido'); };\n\nconsole.log(Limite('app', () => `${Lista()} + ${Limite('grafico', Grafico)}`));\nconsole.log(Limite('app', () => `${Lista()} + ${Grafico()}`));\n",
+          "saida": "lista de tarefas + [grafico: algo deu errado]\n[app: algo deu errado]\n",
+          "explicacao": "Com o limite em volta do gráfico, só ele é trocado pelo aviso e a lista continua. Sem ele, o erro sobe até o limite do app, que substitui **tudo**, inclusive a lista que estava boa. A posição do limite define quanto da tela se perde."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um `onClick` chama `await api.excluir(id)` e a API devolve erro 500. Há um error boundary em volta da página. O que acontece?",
+          "opcoes": [
+            "O boundary captura e mostra o fallback da página",
+            "Nada é capturado pelo boundary: erro em handler de evento precisa de tratamento no próprio handler (ou na biblioteca de dados)",
+            "O React desmonta a árvore inteira e a tela fica em branco",
+            "O boundary captura, mas só em produção"
+          ],
+          "correta": 1,
+          "explicacao": "Error boundary captura erro lançado **durante a renderização** dos filhos. Um handler roda fora da renderização: o erro vira uma promise rejeitada no console e a tela fica como estava. Trate com `try/catch` e um estado de erro, ou com o `onError` da mutação no TanStack Query."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Onde pôr o `<Suspense>` das rotas carregadas com `lazy` para a melhor experiência?",
+          "opcoes": [
+            "Em volta de cada componente pequeno, para tudo carregar em paralelo",
+            "Não é necessário: o `lazy` mostra um indicador de carregamento sozinho",
+            "No topo do app, em volta de tudo, para ter um único indicador",
+            "Dentro do layout, em volta do conteúdo da rota, mantendo menu e cabeçalho visíveis"
+          ],
+          "correta": 3,
+          "explicacao": "O fallback substitui toda a subárvore do limite. No topo, o menu some a cada navegação. Em volta do miolo, só o conteúdo espera. Sem nenhum `Suspense` acima, um componente `lazy` suspenso não tem onde mostrar o fallback, o que é um erro."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Rota lazy e tela de erro",
+          "minutos": 25,
+          "passos": [
+            "No rascunho `react-estudo`, crie `Relatorios.tsx` com `export default` e carregue-o com `lazy` atrás de um botão que alterna a exibição, dentro de um `Suspense` com fallback.",
+            "Abra a aba Network do navegador, limite a velocidade para 3G e clique: veja o fallback e o arquivo extra sendo baixado.",
+            "Instale `react-error-boundary` e envolva `Relatorios` num boundary com fallback e botão de tentar de novo.",
+            "Faça `Relatorios` lançar erro na renderização quando uma prop for `true` e veja o fallback. Depois lance o erro dentro de um `onClick` e veja que o boundary não reage."
+          ],
+          "prontoQuando": "Você viu o chunk separado na aba Network, o fallback de erro para falha de renderização, e confirmou que o erro em handler não chega ao boundary."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `lazy(() => import('./Tela'))` faz?",
+          "verso": "Separa o componente em um arquivo próprio, baixado só na primeira renderização. Exige `export default` e um `Suspense` acima."
+        },
+        {
+          "frente": "O que acontece quando um componente abaixo de um `Suspense` não está pronto?",
+          "verso": "O React mostra o `fallback` no lugar de toda a subárvore daquele limite e tenta de novo quando o que faltava chega."
+        },
+        {
+          "frente": "Por que o error boundary não captura erro de `onClick`?",
+          "verso": "Ele só captura erro lançado durante a renderização dos filhos. Handler roda fora dela: trate com `try/catch` ou na biblioteca de dados."
+        },
+        {
+          "frente": "Onde posicionar error boundaries?",
+          "verso": "Um no topo (última rede, evita tela em branco), um por rota, e um em volta de componente arriscado."
+        },
+        {
+          "frente": "Que falha de `lazy` aparece depois de um deploy?",
+          "verso": "O chunk antigo some do servidor e a aba aberta falha ao baixar a rota. O boundary por fora do Suspense captura e oferece recarregar."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Suspense",
+          "url": "https://react.dev/reference/react/Suspense"
+        },
+        {
+          "titulo": "React — lazy",
+          "url": "https://react.dev/reference/react/lazy"
+        },
+        {
+          "titulo": "React — Component (error boundary)",
+          "url": "https://react.dev/reference/react/Component"
+        }
+      ]
+    },
+    {
+      "id": "react-16",
+      "titulo": "Performance: medir, memo e o React Compiler",
+      "minutos": 12,
+      "ponte": "Você nunca cria um índice porque \"a consulta parece lenta\". Olha o plano de execução, acha o *full scan*, e só então decide. Índice a mais custa em toda gravação. Em React é igual: o Profiler é o seu `EXPLAIN PLAN`, e `memo`, `useMemo` e `useCallback` são os índices, com custo de manutenção. Onde quebra: no banco o otimizador escolhe o plano sozinho. No React, até pouco tempo, a memoização era toda manual. O React Compiler passa a fazer esse papel de otimizador.",
+      "texto": "### Primeiro, medir\n\nA maior parte das telas não precisa de otimização nenhuma. Renderizar é chamar funções em memória, e o React já toca o DOM só na diferença (react-06). Otimizar sem medir deixa o código mais difícil de ler e, com frequência, mais lento.\n\nO instrumento é a aba **Profiler** da extensão React Developer Tools. Você grava uma interação e ela mostra, por *commit*, quais componentes renderizaram, quanto tempo cada um levou e **por que** renderizou (prop mudou, estado mudou, pai renderizou). Dois cuidados:\n\n- Meça com **build de produção** quando o número importa. O modo de desenvolvimento é bem mais lento e o StrictMode dobra as renderizações.\n- Meça a **interação que incomoda** (digitar no filtro, abrir o diálogo), não \"a página\".\n\n### Segundo, consertar a estrutura\n\nAntes de memoizar, veja se o problema é de desenho. Costuma ser:\n\n- **Estado alto demais.** O texto de um campo guardado no topo renderiza a página inteira a cada tecla. Desça o estado para perto de quem usa (react-07).\n- **Composição.** Um componente que recebe `children` já prontos não os renderiza de novo quando só o estado dele muda (react-13).\n- **Efeito em cadeia** ou estado derivado guardado: renderizações em dobro (react-10).\n- **`key` instável**: a lista inteira remontando (react-05).\n\n### Terceiro, memoizar com alvo\n\n| Ferramenta | O que faz |\n|---|---|\n| `memo(Componente)` | Pula a renderização se **todas as props** forem iguais às anteriores (`Object.is`, uma a uma) |\n| `useMemo(() => calculo, [deps])` | Guarda o **resultado** de um cálculo entre renderizações, enquanto as dependências não mudam |\n| `useCallback(fn, [deps])` | Guarda a **função** (a mesma referência) enquanto as dependências não mudam |\n\nAs três trabalham juntas, e é aí que mora a armadilha: `memo` compara por referência. Se o pai passa `aoConcluir={() => ...}` ou `filtro={{ status }}`, a prop é nova a cada renderização e o `memo` **nunca** pula. Para funcionar, as props de objeto e função precisam ser estabilizadas com `useCallback` e `useMemo`. Uma prop instável esquecida e o trabalho todo é inútil, sem nenhum aviso.\n\nO custo: comparações a cada renderização, memória para guardar o valor anterior, listas de dependências para manter (dependência errada é closure velha, react-11) e código mais difícil de ler. Vale quando o Profiler mostra um componente **caro** renderizando **muitas vezes** com **as mesmas props**. Linha de uma tabela grande, gráfico, editor.\n\n`useMemo` não é para toda conta. Filtrar 200 itens custa menos que a contabilidade do `useMemo`. Use para cálculo realmente pesado ou para manter estável uma referência que é prop de componente memoizado ou dependência de efeito.\n\n### O que o React Compiler automatiza\n\nO **React Compiler** é uma ferramenta de build, mantida pelo time do React, que analisa seus componentes e hooks e insere a memoização automaticamente, com granularidade mais fina que a manual. Com ele ligado, a maior parte dos `memo`, `useMemo` e `useCallback` escritos à mão deixa de ser necessária.\n\nDuas condições:\n\n- O código precisa seguir as **regras do React**: componente puro, sem mutar props e estado, hooks no nível de cima. É mais um motivo para as lições anteriores insistirem nisso. O que o compilador não consegue provar seguro, ele pula.\n- Ele é configurado no build. A forma de ligar no Vite, o estado da ferramenta e as regras de lint que a acompanham mudam com as versões: **confira a documentação atual** antes de adotar.\n\nO que o compilador **não** resolve: lista com 10 mil linhas no DOM, estado mal posicionado, requisições em cascata, pacote JavaScript enorme.\n\n### Virtualização de lista\n\nQuando o problema é quantidade de nós no DOM, memoizar não ajuda. A solução é **virtualização** (*windowing*): renderizar só as linhas visíveis na janela de rolagem, mais uma folga, e simular a altura total. De 10 mil linhas, existem 20 no DOM. O TanStack Virtual faz isso. Antes de adotar, pergunte se o usuário precisa mesmo de 10 mil linhas na tela: paginação ou filtro no servidor costuma ser a resposta melhor, e você já sabe disso pelo banco.\n\n### Ordem de ataque\n\nMedir, corrigir estrutura, reduzir trabalho (paginar, virtualizar), e só então memoizar o que o Profiler apontou.",
+      "naPratica": "No Cockpit, a lista de tarefas do dia tem dezenas de itens: não precisa de `memo` nem de virtualização. Se um dia o filtro travar ao digitar, o primeiro passo é gravar a interação no Profiler. Em revisão, `useMemo` e `useCallback` sem medição que os justifique são pedido de explicação.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `memo` de brinquedo: compara as props novas com as anteriores, uma a uma, por `Object.is`, e pula se forem iguais. O pai renderiza 3 vezes em cada cenário. Quantas vezes a linha renderiza?",
+          "codigo": "type Props = Record<string, unknown>;\nconst igualRaso = (a: Props, b: Props) =>\n  Object.keys(a).length === Object.keys(b).length &&\n  Object.keys(a).every((k) => Object.is(a[k], b[k]));\n\nfunction conta(criaProps: () => Props): number {\n  let anteriores: Props | null = null;\n  let renders = 0;\n  for (let i = 0; i < 3; i++) {             // pai renderiza 3 vezes\n    const props = criaProps();\n    if (anteriores !== null && igualRaso(anteriores, props)) continue; // memo pula\n    anteriores = props;\n    renders++;\n  }\n  return renders;\n}\n\nconst aoConcluirEstavel = () => {};          // como useCallback\nconsole.log('função nova a cada render:', conta(() => ({ titulo: 'Tarefa', aoConcluir: () => {} })));\nconsole.log('função estável:', conta(() => ({ titulo: 'Tarefa', aoConcluir: aoConcluirEstavel })));\nconsole.log('só primitivos:', conta(() => ({ titulo: 'Tarefa', feita: false })));\n",
+          "saida": "função nova a cada render: 3\nfunção estável: 1\nsó primitivos: 1\n",
+          "explicacao": "Com a função criada a cada renderização do pai, a prop `aoConcluir` nunca é igual à anterior e o `memo` não pula nenhuma vez: custo de comparar, benefício zero. Com a mesma referência, ou só com primitivos, a linha renderiza uma vez."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A conta da virtualização: dadas a altura da linha, a altura da janela e a posição da rolagem, quais linhas existem no DOM (com folga de 2 para cada lado)?",
+          "codigo": "function janela(total: number, alturaLinha: number, alturaJanela: number, rolagem: number, folga = 2) {\n  const primeira = Math.max(0, Math.floor(rolagem / alturaLinha) - folga);\n  const ultima = Math.min(total - 1, Math.ceil((rolagem + alturaJanela) / alturaLinha) + folga);\n  return `linhas ${primeira} a ${ultima}: ${ultima - primeira + 1} de ${total} no DOM`;\n}\n\nconsole.log(janela(10000, 40, 600, 0));\nconsole.log(janela(10000, 40, 600, 20000));\nconsole.log(janela(12, 40, 600, 0));\n",
+          "saida": "linhas 0 a 17: 18 de 10000 no DOM\nlinhas 498 a 517: 20 de 10000 no DOM\nlinhas 0 a 11: 12 de 12 no DOM\n",
+          "explicacao": "Em 600 px cabem 15 linhas de 40 px; com a folga, ficam 18 ou 20 no DOM, não importa se a lista tem 10 mil. Na terceira linha a lista cabe inteira na janela: virtualizar ali é complexidade sem ganho."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Digitar no campo de filtro está lento. Qual é o primeiro passo?",
+          "opcoes": [
+            "Envolver todos os componentes da página em `memo`",
+            "Gravar a interação no Profiler e ver quais componentes renderizam, por quê e quanto custam",
+            "Envolver o cálculo do filtro em `useMemo`",
+            "Trocar `useState` por `useRef` no campo para evitar renderizações"
+          ],
+          "correta": 1,
+          "explicacao": "Sem medir você não sabe se o custo está no cálculo, em um componente caro, na quantidade de nós ou em estado alto demais. Cada causa tem remédio diferente. `memo` em tudo acrescenta custo e, com props instáveis, não pula nada. Ref no campo faria a lista parar de filtrar."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a tela de listagem está pesada. Vou pôr `useMemo` e `useCallback` em tudo para garantir, pode ser?\"",
+          "pontos": [
+            "Pediu a medição primeiro: Profiler, build de produção, interação específica",
+            "Explicou que memoização tem custo e não funciona com prop instável",
+            "Listou causas estruturais mais prováveis: estado alto, lista grande no DOM, efeito em cadeia",
+            "Citou virtualização ou paginação se o problema for quantidade de linhas",
+            "Mencionou o React Compiler como caminho para memoização automática, com a ressalva de conferir a documentação",
+            "Ofereceu olhar junto a gravação"
+          ],
+          "modelo": "Antes de pôr, vamos medir. Grava no Profiler a ação que está pesada, de preferência em build de produção, e a gente vê quem renderiza, por quê e quanto custa. Memoizar tudo tem dois problemas: custa comparação e leitura em todo componente, e basta uma prop de função ou objeto criada na renderização para o `memo` não pular nada. Na minha experiência a causa costuma ser estrutural: estado do filtro lá no topo renderizando a página a cada tecla, ou linhas demais no DOM. Para o primeiro, descer o estado. Para o segundo, paginar ou virtualizar. Se sobrar um componente caro com as mesmas props, aí sim `memo` nele. E vale avaliar o React Compiler, que faz essa memoização no build."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Medir antes e depois",
+          "minutos": 30,
+          "passos": [
+            "No rascunho `react-estudo`, renderize 2000 linhas e, no mesmo componente, um campo de texto controlado que não tem relação com a lista. Faça cada linha gastar um pouco de tempo (um laço curto).",
+            "Grave no Profiler a digitação no campo. Anote o tempo do commit e por que as linhas renderizaram.",
+            "Primeira correção: mova o campo e o estado dele para um componente próprio. Grave de novo.",
+            "Desfaça e tente a segunda: `memo` na linha, passando um handler criado na renderização. Grave. Depois estabilize o handler com `useCallback` e grave outra vez.",
+            "Anote os quatro tempos num arquivo `estudo/perf.md`."
+          ],
+          "prontoQuando": "O arquivo tem os quatro tempos medidos e uma frase sua dizendo qual correção você escolheria e por quê."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a ordem de ataque a um problema de desempenho em React?",
+          "verso": "Medir no Profiler; corrigir a estrutura (estado, composição, key); reduzir trabalho (paginar, virtualizar); memoizar o que a medição apontou."
+        },
+        {
+          "frente": "Por que `memo` não adianta quando o pai passa `onClick={() => ...}`?",
+          "verso": "`memo` compara props por `Object.is`. A função é nova a cada renderização do pai, então nunca é igual e o componente nunca é pulado."
+        },
+        {
+          "frente": "Diferença entre `useMemo` e `useCallback`.",
+          "verso": "`useMemo` guarda o resultado de um cálculo; `useCallback` guarda a própria função. Ambos enquanto as dependências não mudam."
+        },
+        {
+          "frente": "O que o React Compiler faz, e do que depende?",
+          "verso": "Insere memoização automaticamente no build. Depende de o código seguir as regras do React (pureza, sem mutação). Não resolve DOM gigante nem estado mal posicionado."
+        },
+        {
+          "frente": "Quando usar virtualização de lista?",
+          "verso": "Quando o custo é a quantidade de nós no DOM (milhares de linhas). Só as visíveis são renderizadas. Antes, veja se paginação ou filtro resolve."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — memo",
+          "url": "https://react.dev/reference/react/memo"
+        },
+        {
+          "titulo": "React — React Compiler",
+          "url": "https://react.dev/learn/react-compiler"
+        },
+        {
+          "titulo": "TanStack Virtual",
+          "url": "https://tanstack.com/virtual/latest"
+        }
+      ]
+    },
+    {
+      "id": "react-17",
+      "titulo": "React 19: Actions, use, useOptimistic e ref como prop",
+      "minutos": 12,
+      "ponte": "Pense numa versão nova do Forms que trouxesse de fábrica o que todo mundo fazia à mão: o cursor de ocupado durante o `COMMIT`, a mensagem de erro padronizada, o botão desabilitado enquanto grava. O React 19 fez isso com o envio de formulários e operações assíncronas, e chamou de *Actions*. Onde quebra: no Forms, recurso novo substitui o antigo. Aqui, vários recursos do React 19 se **sobrepõem** a bibliotecas que o projeto já usa, e a decisão de sênior é não ter dois mecanismos para o mesmo problema.",
+      "texto": "O React 19 mexeu em duas frentes: tirou cerimônia antiga e trouxe um modelo para operações assíncronas. Vale conhecer tudo e adotar com critério.\n\n### Simplificações: adote sem pensar muito\n\n- **`ref` como prop.** Componente de função recebe `ref` nas props, como qualquer outra, e repassa ao elemento. O `forwardRef` deixa de ser necessário em código novo.\n- **Contexto como provedor.** `<TemaContext value={tema}>` no lugar de `<TemaContext.Provider value={tema}>`.\n- **Limpeza em ref de função.** Uma ref *callback* pode devolver uma função de limpeza, como um efeito.\n- **Metadados no componente.** `<title>` e `<meta>` renderizados em qualquer componente são levados ao `<head>`.\n\n### Actions\n\n***Action*** é o nome dado a uma função assíncrona executada dentro de uma **transição**. O React acompanha a operação: expõe o estado de pendente, mantém a tela responsiva e encaminha erro ao error boundary. A porta de entrada mais visível é o formulário: a prop `action` de `<form>` aceita uma **função**, que recebe o `FormData`.\n\n```tsx\nfunction NovaTarefa() {\n  const [estado, enviar, pendente] = useActionState(\n    async (anterior: { erro: string | null }, dados: FormData) => {\n      const titulo = String(dados.get('titulo') ?? '');\n      if (titulo.trim() === '') return { erro: 'Informe o título' };\n      await api.criarTarefa(titulo);\n      return { erro: null };\n    },\n    { erro: null },\n  );\n\n  return (\n    <form action={enviar}>\n      <input name=\"titulo\" />\n      {estado.erro && <p role=\"alert\">{estado.erro}</p>}\n      <button disabled={pendente}>Gravar</button>\n    </form>\n  );\n}\n```\n\n- **`useActionState(fn, inicial)`** devolve `[estado, acao, pendente]`. A função recebe o estado anterior e o que foi enviado, e devolve o novo estado. É um reducer assíncrono (react-08).\n- **`useFormStatus()`**, de `react-dom`, lido num componente **filho** do `<form>`, informa se aquele formulário está pendente. Serve para um botão de envio genérico, sem prop.\n- Formulário não controlado enviado por `action` é **limpo** pelo React quando a Action termina com sucesso.\n\n### `useOptimistic`\n\nMostra o resultado esperado **antes** de o servidor responder. `useOptimistic(valorReal, reducer)` devolve `[valorOtimista, adicionar]`. Durante a Action, a tela usa o valor otimista. Quando ela termina, o React volta a mostrar o valor real, que a essa altura já deve ter sido atualizado. Se a Action falha, o otimista some sozinho.\n\n### `use`\n\n`use(recurso)` lê um valor durante a renderização. O recurso pode ser:\n\n- um **contexto**: equivale ao `useContext`, com a diferença de poder ser chamado dentro de `if` e de laço;\n- uma ***promise***: o componente **suspende** até ela resolver (o `Suspense` acima mostra o fallback) e o erro vai ao error boundary.\n\nA armadilha: a promise precisa ser **a mesma** entre renderizações. `use(fetch(...))` direto no componente cria uma promise nova a cada renderização e nunca termina. Ela tem que vir de fora: de um cache, de um framework, de uma prop.\n\n### E num app com TanStack Query?\n\n| Necessidade | No Cockpit |\n|---|---|\n| Buscar dado da API | `useQuery` (ou o modo com Suspense). O Query **é** o cache que o `use` exige, com invalidação e repetição |\n| Gravar, com pendente e erro | `useMutation`. Já entrega `isPending`, `onError` e a invalidação das consultas |\n| Atualização otimista | O mecanismo da própria mutação. `useOptimistic` faz sentido quando a gravação é uma Action |\n| Formulário com validação por campo | React Hook Form com Zod (react-14) |\n| Formulário simples, sem biblioteca | `useActionState` é uma boa escolha |\n| `ref` como prop, contexto como provedor, `use(Contexto)` | Adote direto |\n\nAs Actions de formulário brilham em frameworks com funções de servidor (react-18), onde a função da `action` roda no backend e o formulário funciona até antes de o JavaScript carregar. Numa SPA com API separada, elas concorrem com o que o Query e o RHF já fazem bem.\n\n### Critério de sênior\n\n- **Um mecanismo por problema.** Metade das gravações com `useMutation` e metade com Action dá dois jeitos de tratar pendente, erro e cache, e uma equipe que não sabe qual usar.\n- **Recurso novo não é dívida.** Não usar `useActionState` num projeto com Query não deixa o código atrasado.\n- **Leia a nota de versão, não o tutorial.** As versões seguintes do 19 acrescentaram outras APIs (por exemplo `useEffectEvent`, citado em react-11, e `<Activity>`). Confira assinatura e estabilidade na referência antes de adotar.",
+      "naPratica": "No Cockpit (React 19.3 com TanStack Query), o que entra sem discussão é `ref` como prop e contexto como provedor. Busca e gravação continuam no Query. Se um formulário pequeno pedir Action, registre a decisão para a equipe não ficar com dois padrões sem saber por quê.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mecanismo da atualização otimista: enquanto a gravação está pendente a tela mostra o valor otimista; ao terminar, volta a mostrar o valor real. Uma gravação dá certo e a outra falha. O que a tela mostra em cada momento?",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\n\nlet servidor = ['Comprar filtro'];\nlet otimista: string[] | null = null;\nconst tela = () => (otimista ?? servidor).join(', ');\n\nasync function adicionar(titulo: string, falha: boolean) {\n  otimista = [...servidor, `${titulo} (enviando)`];\n  console.log('no clique:', tela());\n  await espera(20);\n  if (!falha) servidor = [...servidor, titulo];\n  otimista = null;                            // a Action terminou\n  console.log(falha ? 'falhou:' : 'gravou:', tela());\n}\n\nawait adicionar('Ligar para Ana', false);\nawait adicionar('Pagar boleto', true);\n",
+          "saida": "no clique: Comprar filtro, Ligar para Ana (enviando)\ngravou: Comprar filtro, Ligar para Ana\nno clique: Comprar filtro, Ligar para Ana, Pagar boleto (enviando)\nfalhou: Comprar filtro, Ligar para Ana\n",
+          "explicacao": "O item aparece na hora do clique, antes da resposta. Quando a operação termina, o valor otimista é descartado e a tela volta a refletir o dado real: com sucesso, ele já inclui o item; com falha, o item some sem código de reversão. É isso que o `useOptimistic` gerencia por você."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mecanismo do `useActionState`: a ação recebe o estado anterior e o que foi enviado, e devolve o novo estado; enquanto roda, `pendente` é `true`. Dois envios: um vazio e um válido.",
+          "codigo": "type Estado = { erro: string | null; gravadas: number };\n\nasync function acao(anterior: Estado, titulo: string): Promise<Estado> {\n  if (titulo.trim() === '') return { ...anterior, erro: 'Informe o título' };\n  return { erro: null, gravadas: anterior.gravadas + 1 };\n}\n\nlet estado: Estado = { erro: null, gravadas: 0 };\nlet pendente = false;\n\nasync function enviar(titulo: string) {\n  pendente = true;\n  console.log('pendente:', pendente);\n  estado = await acao(estado, titulo);\n  pendente = false;\n  console.log(JSON.stringify(estado), 'pendente:', pendente);\n}\n\nawait enviar('   ');\nawait enviar('Revisar PR');\n",
+          "saida": "pendente: true\n{\"erro\":\"Informe o título\",\"gravadas\":0} pendente: false\npendente: true\n{\"erro\":null,\"gravadas\":1} pendente: false\n",
+          "explicacao": "A ação é um reducer assíncrono: `(estadoAnterior, enviado) => novoEstado`. O envio vazio devolve o estado com erro e mantém a contagem. O válido limpa o erro e soma um. O `pendente` cobre o intervalo da execução, que é o que desabilita o botão."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Uma declaração simplificada do `useActionState`. A ação foi escrita para receber `FormData` (o que um `<form action>` entrega). Alguém a chama com um texto. Compila?",
+          "codigo": "declare function useActionState<S, P>(\n  acao: (anterior: S, enviado: P) => S | Promise<S>,\n  inicial: S,\n): [estado: S, despachar: (enviado: P) => void, pendente: boolean];\n\ntype Estado = { erro: string | null };\n\nasync function gravar(anterior: Estado, dados: FormData): Promise<Estado> {\n  const titulo = dados.get('titulo');\n  if (typeof titulo !== 'string' || titulo.trim() === '') return { ...anterior, erro: 'Informe o título' };\n  return { erro: null };\n}\n\nconst [estado, enviar, pendente] = useActionState(gravar, { erro: null });\nenviar('Revisar PR');\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 15,
+          "explicacao": "O tipo do que se envia é inferido do segundo parâmetro da ação: `FormData`. A função devolvida só aceita esse tipo, e um texto é recusado. Repare na ordem dos parâmetros da ação: primeiro o estado anterior, depois o que foi enviado. Trocar essa ordem é o erro mais comum ao começar."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um componente cliente faz `const tarefas = use(fetch('/api/tarefas').then((r) => r.json()))`. O que acontece?",
+          "opcoes": [
+            "Funciona: `use` espera a promise e devolve o resultado",
+            "Cada renderização cria uma promise nova; o componente suspende de novo a cada tentativa e nunca conclui",
+            "Erro de compilação: `use` só aceita contexto",
+            "Funciona, mas só se o componente estiver dentro de um `<form>`"
+          ],
+          "correta": 1,
+          "explicacao": "`use` precisa receber a **mesma** promise entre renderizações. Criada dentro do componente, ela é nova a cada tentativa, e o React não reconhece que já esperou. A promise tem que vir de um cache ou de fora. Num app com TanStack Query, esse cache é o próprio Query."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vi que o React 19 tem `use`, Actions e `useOptimistic`. Dá para tirar o TanStack Query do projeto e ficar só com o React?\"",
+          "pontos": [
+            "Separou o que o React 19 entrega (primitivas) do que o Query entrega (cache de servidor)",
+            "Listou o que faltaria: cache, invalidação, deduplicação, repetição, revalidação",
+            "Explicou a exigência de promise estável do `use`",
+            "Disse onde as Actions fazem mais sentido: frameworks com funções de servidor, formulário simples",
+            "Deu o critério: um mecanismo por problema",
+            "Indicou o que adotar já: ref como prop, contexto como provedor"
+          ],
+          "modelo": "Dá para tirar, mas a gente teria que reescrever o que ele faz. O React 19 trouxe primitivas: `use` suspende numa promise, Action acompanha uma operação assíncrona, `useOptimistic` mostra o valor antes da resposta. Nenhuma delas é cache. O `use` exige uma promise estável vinda de algum lugar, e esse lugar, hoje, é o Query: ele guarda, invalida depois de uma gravação, evita requisição duplicada, repete em falha. As Actions de formulário rendem mais em framework com função de servidor. Na nossa SPA com API separada, mutação do Query e React Hook Form já cobrem. Eu adotaria agora o que é só simplificação, `ref` como prop e contexto como provedor, e manteria um mecanismo só para dado de servidor."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `useActionState(fn, inicial)` devolve, e qual a assinatura de `fn`?",
+          "verso": "`[estado, acao, pendente]`. `fn(estadoAnterior, enviado)` devolve o novo estado (pode ser async). É um reducer assíncrono."
+        },
+        {
+          "frente": "Por que `use(fetch(...))` direto num componente cliente não funciona?",
+          "verso": "`use` precisa da mesma promise entre renderizações. Criada no componente, ela é nova a cada tentativa. Tem que vir de um cache ou de fora."
+        },
+        {
+          "frente": "O que `useOptimistic` faz quando a Action termina?",
+          "verso": "Descarta o valor otimista e volta a mostrar o valor real. Com sucesso o real já inclui a mudança; com falha, a mudança some sozinha."
+        },
+        {
+          "frente": "O que mudou com `ref` no React 19?",
+          "verso": "`ref` chega como prop comum em componente de função. `forwardRef` não é mais necessário em código novo."
+        },
+        {
+          "frente": "Por que não misturar `useMutation` e Actions para gravar num mesmo app?",
+          "verso": "São dois mecanismos para o mesmo problema: dois jeitos de tratar pendente, erro e cache. Escolha um por tipo de problema e registre."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — React 19 (blog)",
+          "url": "https://react.dev/blog/2024/12/05/react-19"
+        },
+        {
+          "titulo": "React — useActionState",
+          "url": "https://react.dev/reference/react/useActionState"
+        },
+        {
+          "titulo": "React — use",
+          "url": "https://react.dev/reference/react/use"
+        }
+      ]
+    },
+    {
+      "id": "react-18",
+      "titulo": "Next.js e Server Components: o que são e quando fazem sentido",
+      "minutos": 12,
+      "ponte": "Você já viveu essa discussão no banco: a regra fica na tela ou na *package*? O que roda no servidor, perto do dado, é mais rápido e mais seguro; o que roda no cliente responde na hora ao usuário. Os *Server Components* trazem essa divisão para dentro do React: parte dos componentes roda só no servidor, parte no navegador. Onde quebra: no seu mundo, servidor e cliente são tecnologias diferentes com uma fronteira óbvia. Aqui os dois lados são arquivos `.tsx` parecidos, e a fronteira é uma linha no topo do arquivo, fácil de errar.",
+      "texto": "### Três formas de entregar React\n\n**SPA** (*single-page application*), o que o Vite gera: o servidor entrega um HTML quase vazio e um pacote JavaScript. O navegador roda tudo, monta a tela e busca dados numa API separada. É o modelo do Cockpit: `apps/web` são arquivos estáticos e `apps/api` é o NestJS.\n\n**SSR** (*server-side rendering*): a cada requisição, um servidor Node executa os componentes e devolve o **HTML pronto**. O usuário vê conteúdo antes de o JavaScript carregar. Depois o navegador baixa o JavaScript e faz a ***hydration*** (hidratação): roda os mesmos componentes de novo para ligar eventos e estado ao HTML que já está lá.\n\n***Server Components*** (RSC): componentes que rodam **só no servidor** e nunca são enviados ao navegador. Podem ser `async`, ler o banco ou o sistema de arquivos direto, e o código deles (e das bibliotecas que usam) não entra no pacote. Em troca, **não têm** estado, efeito nem handler de evento. Para interatividade, você marca um arquivo com a diretiva `'use client'`: dali para baixo são componentes cliente, os que você estudou até aqui. As props que cruzam do servidor para o cliente precisam ser **serializáveis**. Uma função comum não cruza, exceto as funções de servidor (marcadas com `'use server'`), que o cliente chama como se fossem locais e que viram uma requisição.\n\nRSC não é uma biblioteca que se instala: depende de integração com o empacotador e o servidor. Na prática, você usa por um **framework**.\n\n### O que é o Next.js\n\nO **Next.js** é um framework full-stack sobre o React: roteamento por pastas, SSR, Server Components, funções de servidor, camadas de cache, otimização de imagem e o build. A documentação do React recomenda um framework para apps novos e também documenta o caminho de montar o seu com Vite. Os detalhes de configuração, cache e convenções do Next mudam bastante entre versões: **confira a documentação atual** antes de afirmar como algo funciona.\n\n### Quando faz sentido\n\n| Cenário | Por quê |\n|---|---|\n| Site público com conteúdo (loja, blog, portal, página de produto) | Buscadores e pré-visualizações de link precisam do HTML pronto; o primeiro carregamento rápido em celular vale dinheiro |\n| Muito conteúdo, pouca interação | Server Components tiram JavaScript do navegador |\n| Equipe pequena, sem backend separado | Tela, dados e funções de servidor num projeto só |\n| Primeiro carregamento é métrica de negócio | SSR e *streaming* (envio do HTML em partes) atacam exatamente isso |\n\n### Quando é custo sem ganho\n\nUm **app interno autenticado**, como o Cockpit ou um sistema de gestão que substitui telas Forms:\n\n- Está atrás de login: buscador não entra. O argumento de SEO não existe.\n- O usuário abre de manhã e fica o dia todo. O que pesa é a resposta a cada clique, que a SPA já resolve, não o primeiro carregamento.\n- **Já existe uma API** (NestJS) com as regras, a autenticação e os testes. Com Next, ou você duplica o acesso a dados em dois lugares, ou o Next vira um intermediário que só repassa.\n- A SPA é um punhado de arquivos estáticos. O Next é **mais um servidor Node** para publicar, monitorar e escalar, com semântica própria de cache.\n- O modelo mental dobra: todo componente passa a ter a pergunta \"isso roda onde?\". Erros de fronteira e de hidratação são uma classe nova de defeito.\n- Acoplamento: seu código passa a depender das convenções de um framework que muda rápido.\n\n### Critério de sênior\n\nA pergunta nunca é \"qual é o mais moderno\". É \"**que problema eu tenho?**\":\n\n1. Preciso que buscadores leiam o conteúdo? Framework com SSR.\n2. O primeiro carregamento é crítico e o público está em rede ruim? Framework com SSR.\n3. É app atrás de login, com API própria? SPA com Vite. Menos peças, mesma experiência.\n4. Quem vai operar o servidor de front, e quem na equipe domina o modelo servidor e cliente?\n\nE a decisão não é para sempre nem para tudo: uma empresa pode ter o site público em Next e os sistemas internos em SPA. O que não é aceitável é escolher sem conseguir dizer qual problema a escolha resolve.",
+      "naPratica": "O Cockpit é SPA com Vite e API NestJS por decisão: app pessoal atrás de login, com backend próprio. Numa modernização de telas Forms, sistema interno autenticado, a mesma análise costuma dar o mesmo resultado. Tenha o raciocínio pronto, porque a pergunta \"por que não Next?\" vai aparecer.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "SSR e hidratação em miniatura. O servidor roda o componente e manda só o HTML. O navegador roda o **mesmo** componente de novo para ligar o handler. O que sai?",
+          "codigo": "type Botao = { rotulo: string; aoClicar: () => void };\n\nfunction Curtidas(total: number): Botao {\n  return { rotulo: `Curtidas: ${total}`, aoClicar: () => console.log('clicou') };\n}\n\n// servidor: executa e serializa em HTML\nconst html = `<button>${Curtidas(3).rotulo}</button>`;\nconsole.log(html);\nconsole.log('handler viajou no HTML?', html.includes('clicou'));\n\n// navegador: hidratação\nconst hidratado = Curtidas(3);\nconsole.log('depois de hidratar:', typeof hidratado.aoClicar);\nhidratado.aoClicar();\n",
+          "saida": "<button>Curtidas: 3</button>\nhandler viajou no HTML? false\ndepois de hidratar: function\nclicou\n",
+          "explicacao": "O HTML chega pronto e visível, mas é só texto: o handler não está nele. Até a hidratação, o botão aparece e não responde. Hidratar é rodar o componente outra vez no navegador e prender os handlers ao HTML existente. Por isso o SSR não reduz o JavaScript enviado; quem reduz são os Server Components."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Props que cruzam do servidor para o navegador viajam serializadas. Aqui a serialização é o JSON, para simplificar. O que chega do outro lado?",
+          "codigo": "const props = {\n  titulo: 'Tarefas',\n  total: 3,\n  aoConcluir: (id: number) => console.log('concluir', id),\n};\n\nconst noFio = JSON.stringify(props);\nconsole.log(noFio);\n\nconst recebido = JSON.parse(noFio);\nconsole.log(typeof recebido.titulo, typeof recebido.aoConcluir);\n",
+          "saida": "{\"titulo\":\"Tarefas\",\"total\":3}\nstring undefined\n",
+          "explicacao": "Texto e número atravessam; a função some. O formato real dos Server Components aceita mais tipos que o JSON (confira a lista na documentação), mas a regra é a mesma: um handler comum não cruza a fronteira. Ou o componente que precisa dele é cliente, ou a função é uma função de servidor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que um Server Component **não** pode fazer?",
+          "opcoes": [
+            "Ser uma função `async` e esperar uma consulta ao banco",
+            "Renderizar um componente cliente como filho",
+            "Usar `useState` e `onClick`",
+            "Importar uma biblioteca pesada sem aumentar o pacote do navegador"
+          ],
+          "correta": 2,
+          "explicacao": "Ele roda só no servidor e não existe no navegador: não tem estado, efeito nem evento. Para interatividade, a parte interativa vai para um arquivo com `'use client'`. As outras três opções são justamente as vantagens dele."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Sistema interno de gestão, atrás de login, com API NestJS já existente. Qual argumento a favor do Next.js **não** se sustenta nesse cenário?",
+          "opcoes": [
+            "\"Melhora o SEO\": buscadores não entram em página autenticada",
+            "\"Tem roteamento por pastas pronto\": é verdade em qualquer cenário",
+            "\"Permite reduzir JavaScript com Server Components\": é verdade, embora o ganho seja pequeno em telas interativas",
+            "\"Tem ecossistema e documentação fortes\": é verdade em qualquer cenário"
+          ],
+          "correta": 0,
+          "explicacao": "SEO é o motivo mais citado e simplesmente não se aplica atrás de login. Os outros argumentos são verdadeiros, mas precisam pesar contra o custo: mais um servidor para operar, acesso a dados em dois lugares e um modelo mental maior."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, todo mundo está usando Next.js. Por que a gente vai fazer a frente nova do sistema interno com Vite? Não vamos ficar para trás?\"",
+          "pontos": [
+            "Trocou \"mais moderno\" por \"que problema temos\"",
+            "Explicou o que o Next entrega: SSR, Server Components, HTML pronto para buscador e primeiro carregamento",
+            "Mostrou que esses ganhos não se aplicam a app interno autenticado",
+            "Listou os custos: servidor Node a mais, API duplicada ou intermediário, modelo servidor e cliente, acoplamento",
+            "Disse em que cenário escolheria Next",
+            "Deixou a decisão reversível e registrada"
+          ],
+          "modelo": "Ficar para trás seria escolher sem saber por quê. O Next resolve muito bem dois problemas: buscador precisando ler o conteúdo e primeiro carregamento rápido para público externo. O nosso sistema fica atrás de login, o usuário abre de manhã e trabalha o dia todo nele, e a regra já está na API em NestJS. Com Next, eu ganho um servidor Node a mais para publicar e monitorar, uma segunda camada falando com os dados e uma pergunta nova em cada componente: isso roda onde? Com Vite, a frente são arquivos estáticos e a experiência para esse usuário é a mesma. Se amanhã surgir um portal público, eu escolho Next para ele sem pensar duas vezes. Vou registrar isso num ADR."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "ADR: por que o Cockpit é SPA",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/adr-spa-ou-framework.md` com as seções Contexto, Decisão, Alternativas e Consequências.",
+            "Em Contexto, descreva quem usa o app, se há conteúdo público e o que já existe de backend.",
+            "Em Alternativas, escreva em duas linhas o que o Next.js traria e o que custaria neste caso.",
+            "Em Consequências, liste o que você abre mão ao ficar com SPA e em que situação reabriria a decisão.",
+            "Leia em voz alta em menos de dois minutos."
+          ],
+          "prontoQuando": "O arquivo cabe em uma página, tem as quatro seções e termina com a condição objetiva que faria você mudar de decisão."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Diferença entre SSR e Server Components.",
+          "verso": "SSR gera o HTML no servidor e depois hidrata: o JavaScript do componente vai ao navegador. Server Component roda só no servidor e o código dele nunca é enviado."
+        },
+        {
+          "frente": "O que é hidratação (hydration)?",
+          "verso": "Rodar os componentes de novo no navegador para ligar eventos e estado ao HTML que veio pronto do servidor."
+        },
+        {
+          "frente": "Por que Next.js costuma ser custo sem ganho num app interno autenticado com API própria?",
+          "verso": "Não há SEO nem primeiro carregamento crítico. Sobra o custo: servidor Node a mais, dados em dois lugares, modelo servidor e cliente, acoplamento."
+        },
+        {
+          "frente": "Em que cenários um framework com SSR se paga?",
+          "verso": "Site público com conteúdo, necessidade de buscador, primeiro carregamento como métrica de negócio, equipe sem backend separado."
+        },
+        {
+          "frente": "O que um Server Component não pode ter?",
+          "verso": "Estado, efeito e handler de evento. Para isso, a parte interativa vai para um arquivo marcado com `'use client'`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — Server Components",
+          "url": "https://react.dev/reference/rsc/server-components"
+        },
+        {
+          "titulo": "Next.js — documentação",
+          "url": "https://nextjs.org/docs"
+        },
+        {
+          "titulo": "React — Creating a React App",
+          "url": "https://react.dev/learn/creating-a-react-app"
+        }
+      ]
+    }
+  ]
+}

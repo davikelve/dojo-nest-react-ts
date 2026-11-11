@@ -1,0 +1,858 @@
+{
+  "licoes": [
+    {
+      "id": "test-01",
+      "titulo": "Para que serve teste: pirâmide × troféu",
+      "minutos": 10,
+      "ponte": "No seu mundo, testar é abrir a tela, clicar e rodar um script de conferência no banco. Esse teste prova que funcionou **hoje, na sua mão**. O teste automatizado é o mesmo roteiro escrito como código, que roda sozinho a cada mudança. Onde a analogia quebra: ele não substitui a homologação com o usuário. Ele garante que o que já estava certo continua certo.",
+      "texto": "Um teste automatizado é um programa que chama o seu código com uma entrada conhecida e confere o resultado. Ele fica no repositório, ao lado do código, e roda no CI (integração contínua: o servidor que executa as checagens a cada PR). Se alguém quebrar uma regra, o PR fica vermelho antes do merge.\n\n### O que um teste compra\n\nO ganho principal não é achar defeito no dia em que você escreve. É **mudar sem medo** depois. Sem teste, toda refatoração exige reabrir as telas e repetir os cliques, então ninguém refatora e o código apodrece. Com teste, você muda a implementação, roda a suíte em segundos e sabe se o comportamento se manteve. O teste também documenta: o nome dele diz o que o sistema promete.\n\n### Os três níveis\n\n| Nível | O que exercita | Velocidade | O que prova |\n|---|---|---|---|\n| **Unitário** | uma função ou classe, sem rede nem banco | milissegundos | a regra decide certo |\n| **Integração** | várias peças juntas, com banco ou HTTP de verdade | dezenas de ms a segundos | as peças se encaixam |\n| **e2e** (*end to end*, ponta a ponta) | o sistema inteiro, pelo navegador ou pela API | segundos | o caminho do usuário funciona |\n\n### Pirâmide × troféu\n\nA **pirâmide de testes** diz: muitos unitários na base, menos de integração, poucos e2e no topo. O motivo é custo: quanto mais alto, mais lento, mais frágil e mais difícil de achar a causa quando falha.\n\nO **troféu de testes** responde que, em aplicação web comum, a maior parte dos defeitos está no encaixe (a rota, a validação, a query, o componente falando com a API). Por isso ele engorda a faixa de **integração** e põe a análise estática (TypeScript e lint) como base gratuita.\n\nOs dois concordam no essencial: poucos e2e de navegador, e teste no nível mais baixo que consiga provar o que importa. A escolha prática depende de onde mora a lógica. Regra de cálculo densa pede unitário. CRUD que só passa dado da rota para o banco pede integração, porque um unitário ali só testaria *mocks* (dublês, assunto de test-03).\n\n### O que não vale testar\n\n- O framework e a biblioteca: que o Prisma grava, que o React renderiza.\n- Getter, setter e código sem decisão.\n- O que o compilador já garante (um campo obrigatório no tipo).\n- Detalhe de implementação que muda a cada refatoração.\n\nA pergunta que decide: **se este código quebrar, quem percebe e quanto custa?** Regra de negócio, dinheiro, permissão e data sempre valem. Tela de protótipo que vai ser jogada fora na semana que vem, não.",
+      "naPratica": "No Cockpit, a API já tem dois comandos separados: `npm test` roda os `*.spec.ts` (unitários) e `npm run test:e2e` roda os `*.e2e-spec.ts`. A regra do plano do dia nasce com unitário; cada rota nasce com um e2e de API.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A regra é: a tarefa cabe no dia se o total usado for **até** a capacidade, inclusive. Três casos são conferidos. Qual linha cada um imprime?",
+          "codigo": "import assert from 'node:assert/strict';\n\nfunction cabeNoDia(usados: number, capacidade: number): boolean {\n  return usados < capacidade;\n}\n\nconst casos = [\n  [100, 480, true],\n  [500, 480, false],\n  [480, 480, true],\n] as const;\n\nfor (const [usados, capacidade, esperado] of casos) {\n  try {\n    assert.equal(cabeNoDia(usados, capacidade), esperado);\n    console.log('ok', usados);\n  } catch {\n    console.log('FALHOU', usados);\n  }\n}\n",
+          "saida": "ok 100\nok 500\nFALHOU 480\n",
+          "explicacao": "O código usa `<` onde a regra pede `<=`. Os casos do meio do intervalo passam com qualquer um dos dois operadores. Só o caso da **fronteira** (480 de 480) reprova. Clicando na tela, quase ninguém digita o valor exato do limite; o teste digita sempre."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um módulo é um CRUD simples: o controller recebe o DTO, o service repassa para o Prisma, sem regra no meio. Onde o teste rende mais?",
+          "opcoes": [
+            "Unitário do service com o Prisma mockado, para ficar rápido",
+            "Integração pela rota, com banco de teste de verdade",
+            "e2e de navegador para cada campo do formulário",
+            "Nenhum: CRUD não precisa de teste"
+          ],
+          "correta": 1,
+          "explicacao": "Sem regra no service, o unitário com mock só confere que o mock foi chamado. O risco real está no encaixe: rota, validação do DTO, query, constraint. Isso só aparece com a rota e o banco de verdade. O e2e de navegador para cada campo é caro demais para o que prova."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual é o principal retorno de uma suíte de testes ao longo de um ano de projeto?",
+          "opcoes": [
+            "Provar ao cliente que o sistema não tem defeito",
+            "Dispensar a homologação com o usuário",
+            "Permitir mudar e refatorar o código sabendo em segundos se algo quebrou",
+            "Aumentar o percentual de cobertura exigido pelo CI"
+          ],
+          "correta": 2,
+          "explicacao": "Teste não prova ausência de defeito e não substitui a validação do usuário. O que ele compra é segurança para mudar. Cobertura é um efeito colateral, não o objetivo (você vê isso em test-09)."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vale a pena escrever teste para essa tela de relatório? Ela só lista o que a API devolve.\"",
+          "pontos": [
+            "Perguntou o que quebra e quanto custa se quebrar",
+            "Separou a regra (filtro, total, permissão) da exibição",
+            "Indicou o nível: integração na rota, não e2e de navegador para tudo",
+            "Disse o que NÃO vai testar e por quê",
+            "Não respondeu com percentual de cobertura"
+          ],
+          "modelo": "Depende do que tem ali dentro. Se a tela só mostra a lista, eu não testaria a tela: o risco é baixo e qualquer erro aparece no primeiro uso. Agora, a rota que monta o relatório tem filtro por período, total e regra de quem pode ver. Isso eu testo, com um teste de integração na API e banco de teste, porque erro de total ou de permissão ninguém percebe olhando. Então a proposta é: dois ou três testes na rota cobrindo filtro, total e acesso negado, e nenhum teste de navegador para essa tela por enquanto. Se ela virar caminho crítico, a gente revê."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que um teste automatizado compra, antes de qualquer outra coisa?",
+          "verso": "Mudar sem medo: refatorar e saber em segundos se o comportamento se manteve."
+        },
+        {
+          "frente": "Pirâmide × troféu: qual a diferença de ênfase?",
+          "verso": "Pirâmide: base larga de unitários. Troféu: faixa larga de integração, com tipos e lint como base. Os dois pedem poucos e2e de navegador."
+        },
+        {
+          "frente": "Por que um unitário de CRUD com o banco mockado prova pouco?",
+          "verso": "Não há regra para conferir. O teste só verifica que o mock foi chamado. O risco está no encaixe com o banco, que o mock esconde."
+        },
+        {
+          "frente": "Cite 3 coisas que não vale testar.",
+          "verso": "O framework ou a biblioteca, código sem decisão (getter, repasse) e o que o compilador já garante."
+        },
+        {
+          "frente": "Qual pergunta decide se um código merece teste?",
+          "verso": "Se quebrar, quem percebe e quanto custa? Regra, dinheiro, permissão e data sempre valem."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — The Practical Test Pyramid",
+          "url": "https://martinfowler.com/articles/practical-test-pyramid.html"
+        },
+        {
+          "titulo": "Martin Fowler — Test Pyramid",
+          "url": "https://martinfowler.com/bliki/TestPyramid.html"
+        },
+        {
+          "titulo": "Vitest — Guia",
+          "url": "https://vitest.dev/guide/"
+        }
+      ]
+    },
+    {
+      "id": "test-02",
+      "titulo": "Teste unitário com Vitest: preparar, agir, conferir",
+      "minutos": 10,
+      "ponte": "Você já escreveu bloco anônimo que monta os dados, chama a procedure e compara o resultado com um `IF ... RAISE_APPLICATION_ERROR`. Um teste unitário tem as mesmas três partes. Onde a analogia quebra: ele não depende do dado que está no banco hoje. A entrada fica escrita no próprio teste, e por isso ele dá o mesmo resultado em qualquer máquina.",
+      "texto": "O Vitest é o executor de testes do projeto. Ele acha os arquivos `*.spec.ts`, roda cada um e mostra o que passou e o que falhou. Três funções resolvem quase tudo:\n\n- `describe('nome', () => { ... })` agrupa testes do mesmo assunto.\n- `it('frase', () => { ... })` é um teste. `test` é sinônimo.\n- `expect(valor)` abre uma conferência: `.toBe(x)`, `.toEqual(obj)`, `.toThrow()`.\n\nNo Cockpit, o `vitest.config.ts` tem `globals: true`, então essas funções existem sem `import`. Em projeto sem essa opção, você importa de `'vitest'`.\n\n### As três partes\n\nO padrão se chama **AAA**: *arrange, act, assert* (preparar, agir, conferir).\n\n```ts\nimport { capacidadeDoDia } from './capacidade.js';\n\ndescribe('capacidadeDoDia', () => {\n  it('desconta as reuniões da jornada', () => {\n    // preparar\n    const jornada = 480;\n    const reunioes = 90;\n    // agir\n    const livre = capacidadeDoDia(jornada, reunioes);\n    // conferir\n    expect(livre).toBe(390);\n  });\n});\n```\n\nUm teste bom tem **um agir**. Se você precisa de dois, são dois testes.\n\n### O nome é uma frase\n\nQuando o teste falha no CI, o que aparece primeiro é o nome. `it('teste 2')` obriga a abrir o arquivo. `it('recusa tarefa com duração negativa')` já diz qual promessa foi quebrada. Escreva o nome como a regra, no presente, na língua do negócio.\n\n### Um motivo para falhar\n\nCada teste deve reprovar por **uma** causa. Um teste que confere dez coisas reprova na primeira e esconde as outras nove. Vários `expect` são aceitáveis quando descrevem o mesmo fato (o objeto devolvido tem estes campos). Fatos diferentes pedem testes diferentes.\n\n### `toBe` × `toEqual`\n\n`toBe` compara como `Object.is`, quase igual ao `===`: para objeto e array, compara a **referência**. `toEqual` compara o **conteúdo**, campo a campo. Comparar dois objetos com `toBe` reprova mesmo com conteúdo idêntico. É o erro número um de quem começa.\n\n### A armadilha: a conferência fraca\n\n`expect(resultado).toBeTruthy()` e `expect(lista.length).toBeGreaterThan(0)` passam com quase qualquer coisa. O teste fica verde com o código errado. Confira o **valor exato** que a regra manda. Se você não sabe qual é o valor esperado, ainda não entendeu a regra, e isso é melhor descobrir antes de escrever o código.\n\n### Quando não usar unitário\n\nUnitário rende em função com decisão: cálculo, validação, transformação. Em código que só repassa chamada, ele vira cópia da implementação. Ali o nível certo é integração (test-05).",
+      "naPratica": "No Cockpit, a regra do plano do dia (quanto cabe, o que estoura) fica em funções puras num arquivo próprio, com o `*.spec.ts` ao lado. `npm run test:watch` deixa o Vitest rodando e reexecuta a cada vez que você salva.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Este mini executor imita o `it`. `assert.equal` se comporta como `toBe` e `assert.deepEqual` como `toEqual`. O que sai em cada linha?",
+          "codigo": "import assert from 'node:assert/strict';\n\nfunction it(nome: string, fn: () => void) {\n  try {\n    fn();\n    console.log('PASSOU', nome);\n  } catch {\n    console.log('FALHOU', nome);\n  }\n}\n\nconst somaMinutos = (ts: { minutos: number }[]) => ts.reduce((t, x) => t + x.minutos, 0);\nconst nova = (titulo: string) => ({ titulo, feita: false });\n\nit('soma os minutos', () => assert.equal(somaMinutos([{ minutos: 30 }, { minutos: 45 }]), 75));\nit('lista vazia soma zero', () => assert.equal(somaMinutos([]), 0));\nit('nova tarefa (referencia)', () => assert.equal(nova('Ler'), { titulo: 'Ler', feita: false }));\nit('nova tarefa (conteudo)', () => assert.deepEqual(nova('Ler'), { titulo: 'Ler', feita: false }));\n",
+          "saida": "PASSOU soma os minutos\nPASSOU lista vazia soma zero\nFALHOU nova tarefa (referencia)\nPASSOU nova tarefa (conteudo)\n",
+          "explicacao": "Número se compara por valor, então os dois primeiros passam. No terceiro, os dois objetos têm o mesmo conteúdo mas são objetos diferentes na memória: a comparação por referência reprova. É o que acontece com `toBe` em objeto. O quarto compara campo a campo, como `toEqual`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`totalDoPlano` deveria somar os minutos das tarefas. Dois testes conferem o mesmo resultado de jeitos diferentes. O que cada um imprime?",
+          "codigo": "import assert from 'node:assert/strict';\n\ntype Tarefa = { titulo: string; minutos: number };\n\nfunction totalDoPlano(tarefas: Tarefa[]): number {\n  return tarefas.length * 30;\n}\n\nconst plano: Tarefa[] = [\n  { titulo: 'Revisar PR', minutos: 20 },\n  { titulo: 'Estudar', minutos: 80 },\n];\n\nfunction it(nome: string, fn: () => void) {\n  try { fn(); console.log('PASSOU', nome); } catch { console.log('FALHOU', nome); }\n}\n\nit('devolve um total', () => assert.ok(totalDoPlano(plano) > 0));\nit('soma 20 + 80 = 100', () => assert.equal(totalDoPlano(plano), 100));\n",
+          "saida": "PASSOU devolve um total\nFALHOU soma 20 + 80 = 100\n",
+          "explicacao": "A função está errada: ignora os minutos e devolve 60. O primeiro teste só confere que veio um número positivo, então passa com o código errado. O segundo confere o valor exato e reprova. Conferência fraca é pior que nenhum teste, porque dá confiança falsa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes nomes de teste ajuda mais quando ele aparece vermelho no CI?",
+          "opcoes": [
+            "`it('capacidadeDoDia')`",
+            "`it('deve funcionar corretamente')`",
+            "`it('devolve zero quando as reuniões passam da jornada')`",
+            "`it('teste do bug da sprint 14')`"
+          ],
+          "correta": 2,
+          "explicacao": "O nome bom diz a regra e o cenário. Quem lê o log sabe qual promessa foi quebrada sem abrir o arquivo. O nome da função sozinho não diz qual comportamento falhou, e \"funcionar corretamente\" não diz nada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um teste cria uma tarefa, confere o título, conclui a tarefa, confere o status, exclui e confere que sumiu. Qual o problema?",
+          "opcoes": [
+            "Nenhum: quanto mais conferências por teste, melhor",
+            "Ele tem três ações e três motivos para falhar; a primeira falha esconde as outras",
+            "Ele deveria usar `toEqual` em vez de `toBe`",
+            "Testes não podem ter mais de um `expect`"
+          ],
+          "correta": 1,
+          "explicacao": "São três comportamentos num teste só. Se a criação falha, você não sabe se concluir e excluir funcionam. Três testes com um agir cada dão três respostas. Vários `expect` não são proibidos, desde que descrevam o mesmo fato."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Seu primeiro spec no Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Em `apps/api/src`, crie `estudo/capacidade.ts` exportando `capacidadeDoDia(jornadaMin: number, reunioesMin: number): number`, que devolve a jornada menos as reuniões.",
+            "Crie `estudo/capacidade.spec.ts` com um `describe` e dois `it` no formato preparar, agir, conferir. Lembre do `.js` no import relativo.",
+            "Rode `npm test` dentro de `apps/api` e veja os dois verdes.",
+            "Troque o `-` por `+` na função, rode de novo e leia a mensagem de falha inteira. Desfaça a troca."
+          ],
+          "prontoQuando": "O Vitest mostra 2 testes passando, e você viu pelo menos uma vez a saída vermelha com valor esperado e valor recebido."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que significa AAA num teste?",
+          "verso": "*Arrange, act, assert*: preparar a entrada, agir (uma chamada) e conferir o resultado."
+        },
+        {
+          "frente": "`toBe` × `toEqual`",
+          "verso": "`toBe` compara como `===` (referência, para objeto). `toEqual` compara o conteúdo campo a campo."
+        },
+        {
+          "frente": "Por que `expect(x).toBeTruthy()` é uma conferência fraca?",
+          "verso": "Passa com quase qualquer valor. O teste fica verde com o código errado. Confira o valor exato da regra."
+        },
+        {
+          "frente": "Como deve ser o nome de um teste?",
+          "verso": "Uma frase com a regra e o cenário: \"recusa tarefa com duração negativa\". É o que aparece no CI quando falha."
+        },
+        {
+          "frente": "Por que um teste deve ter um só motivo para falhar?",
+          "verso": "A primeira conferência que falha interrompe o teste e esconde as demais. Um comportamento por teste dá um diagnóstico por teste."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Vitest — Guia",
+          "url": "https://vitest.dev/guide/"
+        },
+        {
+          "titulo": "Vitest — API",
+          "url": "https://vitest.dev/api/"
+        },
+        {
+          "titulo": "Martin Fowler — Given When Then",
+          "url": "https://martinfowler.com/bliki/GivenWhenThen.html"
+        }
+      ]
+    },
+    {
+      "id": "test-03",
+      "titulo": "Dublês: mock, stub e spy — com critério",
+      "minutos": 11,
+      "ponte": "Para testar uma procedure que chama um web service ou envia e-mail, você já trocou a chamada por uma versão de mentira em desenvolvimento, ou apontou para uma tabela de apoio. Dublê é isso, feito por teste e sem tocar no ambiente. Onde a analogia quebra: aqui a troca é tão barata que a tentação é trocar tudo, e aí o teste para de testar o seu código.",
+      "texto": "*Test double* (dublê de teste) é qualquer objeto que entra no lugar de uma dependência real durante o teste. No dia a dia todo mundo diz \"mock\" para tudo, mas os nomes separam intenções diferentes:\n\n| Dublê | O que faz | Você confere |\n|---|---|---|\n| **Stub** | devolve respostas prontas | o resultado do seu código |\n| **Spy** | registra como foi chamado | quantas vezes e com quais argumentos |\n| **Mock** | já nasce com a expectativa de chamada e reprova se ela não ocorrer | a interação |\n| **Fake** | implementação de verdade, simplificada (repositório em memória, relógio fixo) | o resultado do seu código |\n\nNo Vitest, `vi.fn()` cria uma função que serve de stub e de spy ao mesmo tempo, e `vi.spyOn(objeto, 'metodo')` observa um método que já existe:\n\n```ts\nconst enviar = vi.fn().mockResolvedValue(undefined);\nconst servico = new LembreteService({ enviar });\n\nawait servico.avisarAtrasadas([atrasada, emDia]);\n\nexpect(enviar).toHaveBeenCalledTimes(1);\nexpect(enviar).toHaveBeenCalledWith(atrasada.dono, 'Tarefa atrasada: Revisar PR');\n```\n\n### O critério: dublê só na fronteira\n\nTroque o que **sai do processo** ou que você **não controla**: rede (e-mail, API de terceiro), relógio, aleatoriedade, sistema de arquivos e, no teste unitário, o banco. O que é código seu, puro e rápido, roda de verdade.\n\nA injeção de dependência do Nest facilita: a classe recebe a dependência pelo construtor, e o teste passa um dublê no lugar. Sem framework de mock, só um objeto que cabe no tipo.\n\n### O custo de mockar demais\n\nUm teste cheio de mocks descreve **como** o código faz, não **o que** ele entrega. Os sintomas:\n\n- Você refatora sem mudar o comportamento e dez testes quebram.\n- O teste repete a implementação linha a linha: \"chamou A, depois B com tal argumento\".\n- O dublê devolve o que você imaginou que a dependência devolve. Se a dependência real se comporta de outro jeito, o teste continua verde e a produção quebra.\n\nO caso extremo é o teste que substitui a própria regra por um stub e depois confere o valor do stub. Ele passa sempre e não prova nada.\n\n### Como decidir\n\n1. **Confira estado antes de interação.** Prefira \"o resultado é X\" a \"o método foi chamado\". Conferir chamada é legítimo quando a chamada **é** o efeito (enviou o e-mail, publicou o evento).\n2. **Prefira fake a mock** para dependência com estado. Um repositório em memória de quinze linhas deixa o teste legível e sobrevive a refatoração.\n3. **Para o banco, pense duas vezes.** Mockar o Prisma num service de CRUD testa o mock. O teste de integração com banco real (test-05) prova mais.\n4. **Limpe entre testes.** Dublê que carrega chamadas de um teste para o outro gera falha fantasma. O Vitest tem `vi.restoreAllMocks()` e as opções `clearMocks` e `restoreMocks` na configuração.",
+      "naPratica": "No Cockpit, relógio e envio de notificação entram por injeção e são trocados nos testes. O Prisma só é trocado em unitário de regra; rota é testada com banco de verdade. Se um teste seu tem mais linhas de mock que de conferência, desconfie do nível escolhido.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`criaSpy` é um `vi.fn()` feito à mão: devolve uma resposta fixa e anota cada chamada. O que as duas últimas linhas imprimem?",
+          "codigo": "function criaSpy<R>(retorno: R) {\n  const chamadas: unknown[][] = [];\n  const fn = (...args: unknown[]): R => {\n    chamadas.push(args);\n    return retorno;\n  };\n  return Object.assign(fn, { chamadas });\n}\n\ntype Tarefa = { titulo: string; atrasada: boolean };\n\nfunction avisarAtrasadas(tarefas: Tarefa[], enviar: (texto: string) => boolean) {\n  return tarefas.filter((t) => t.atrasada).map((t) => enviar('Atrasada: ' + t.titulo));\n}\n\nconst enviar = criaSpy(true);\navisarAtrasadas(\n  [{ titulo: 'PR', atrasada: true }, { titulo: 'Ler', atrasada: false }, { titulo: '1:1', atrasada: true }],\n  enviar,\n);\n\nconsole.log(enviar.chamadas.length);\nconsole.log(enviar.chamadas.map((c) => c[0]).join(' | '));\n",
+          "saida": "2\nAtrasada: PR | Atrasada: 1:1\n",
+          "explicacao": "O spy não envia nada: só guarda os argumentos de cada chamada. Duas tarefas estão atrasadas, então há duas chamadas, com os textos na ordem. É exatamente o que `toHaveBeenCalledTimes(2)` e `toHaveBeenCalledWith(...)` consultam por baixo."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O service calcula o total do plano usando uma função `somar` injetada. A implementação real de `somar` tem um defeito. O teste abaixo passa ou reprova?",
+          "codigo": "import assert from 'node:assert/strict';\n\nconst somarReal = (minutos: number[]) => minutos.reduce((t, m) => t - m, 0);\n\nfunction totalDoPlano(minutos: number[], somar: (m: number[]) => number) {\n  return somar(minutos);\n}\n\nconst somarStub = () => 100;\n\ntry {\n  assert.equal(totalDoPlano([20, 80], somarStub), 100);\n  console.log('teste com stub: PASSOU');\n} catch {\n  console.log('teste com stub: FALHOU');\n}\nconsole.log('producao devolve:', totalDoPlano([20, 80], somarReal));\n",
+          "saida": "teste com stub: PASSOU\nproducao devolve: -100\n",
+          "explicacao": "O teste trocou justamente a peça que tem a regra e depois conferiu o valor que ele mesmo mandou devolver. Passa sempre. A soma real subtrai em vez de somar e devolve -100 em produção. Dublê entra na fronteira (rede, relógio, banco), nunca no lugar da regra que você quer provar."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O dublê precisa caber no tipo da dependência. Este fake de repositório compila?",
+          "codigo": "interface TarefaRepo {\n  buscar(id: string): Promise<string | null>;\n  salvar(id: string, titulo: string): Promise<void>;\n}\n\nconst repoFalso: TarefaRepo = {\n  buscar: async () => null,\n};\n\nexport { repoFalso };\n",
+          "compila": false,
+          "erro": "TS2741",
+          "linha": 6,
+          "explicacao": "Falta `salvar`. A tipagem estrutural exige que o objeto tenha todos os membros da interface. Isso é uma vantagem: quando a dependência real ganha um método, o compilador aponta os dublês que ficaram para trás. Repare que `buscar` sem parâmetro é aceito: função com menos parâmetros cabe onde se espera uma com mais."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você refatorou um service: trocou dois `findMany` por um só com `include`, sem mudar o que a rota devolve. Oito testes unitários quebraram. O que isso indica?",
+          "opcoes": [
+            "A refatoração introduziu um defeito de comportamento",
+            "Os testes estão conferindo a implementação (quais chamadas foram feitas), não o resultado",
+            "Faltou rodar `vi.restoreAllMocks()` entre os testes",
+            "O Vitest não suporta `include` do Prisma"
+          ],
+          "correta": 1,
+          "explicacao": "O comportamento visível não mudou, então teste bom ficaria verde. Quebraram porque conferiam \"chamou `findMany` duas vezes\". É o custo de mockar demais: o teste trava a implementação e pune a refatoração que ele deveria proteger."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vou mockar o Prisma inteiro nos testes dos services para a suíte ficar rápida. Pode ser?\"",
+          "pontos": [
+            "Separou service com regra de service que só repassa",
+            "Explicou que o mock do banco devolve o que a gente imagina, não o que o banco faz",
+            "Propôs o critério: dublê na fronteira, regra pura roda de verdade",
+            "Indicou a alternativa: extrair a regra para função pura e testar rota com banco real",
+            "Reconheceu o ganho de velocidade sem descartar o pedido"
+          ],
+          "modelo": "Para service que tem regra, pode, mas eu faria diferente: tiro a regra para uma função pura e testo ela sem banco nenhum, que fica ainda mais rápido. Para service que só repassa para o Prisma, mockar não compensa: o teste vira \"chamou `create` com tal argumento\", que é a implementação escrita duas vezes. E o mock devolve o que a gente acha que o banco devolve. Constraint, relação e erro de unicidade só aparecem com banco de verdade. Então a regra é: dublê para relógio, rede e notificação; regra pura sem dublê; rota com banco de teste. A suíte de integração é mais lenta, mas são poucos testes por rota."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Stub × spy × mock × fake em uma linha cada.",
+          "verso": "Stub devolve resposta pronta. Spy registra as chamadas. Mock já carrega a expectativa de chamada. Fake é implementação real simplificada (em memória)."
+        },
+        {
+          "frente": "O que merece dublê num teste unitário?",
+          "verso": "A fronteira: rede, relógio, aleatoriedade, arquivo e banco. Código seu, puro e rápido, roda de verdade."
+        },
+        {
+          "frente": "Por que teste com mock demais atrapalha a refatoração?",
+          "verso": "Ele confere quais chamadas foram feitas. Mudar a implementação sem mudar o comportamento quebra o teste."
+        },
+        {
+          "frente": "Quando é legítimo conferir que uma função foi chamada?",
+          "verso": "Quando a chamada é o próprio efeito esperado: enviou o e-mail, publicou o evento, gravou a auditoria."
+        },
+        {
+          "frente": "No Vitest, `vi.fn()` × `vi.spyOn(obj, 'metodo')`",
+          "verso": "`vi.fn()` cria uma função nova para injetar. `vi.spyOn` observa (e pode substituir) um método que já existe no objeto."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Mocks Aren't Stubs",
+          "url": "https://martinfowler.com/articles/mocksArentStubs.html"
+        },
+        {
+          "titulo": "Vitest — Mocking",
+          "url": "https://vitest.dev/guide/mocking"
+        }
+      ]
+    },
+    {
+      "id": "test-04",
+      "titulo": "TDD em regra pura",
+      "minutos": 10,
+      "ponte": "Antes de escrever uma function de cálculo, você costuma montar a lista de casos: valor normal, zero, nulo, limite. TDD é escrever essa lista como código **antes** da function e deixar cada caso puxar a próxima linha. Onde a analogia quebra: aqui o ciclo dura um ou dois minutos e roda dezenas de vezes por hora, sem compilar no banco nem abrir tela.",
+      "texto": "*TDD* (*test-driven development*, desenvolvimento guiado por testes) é um ciclo curto de três passos:\n\n1. **Vermelho:** escreva um teste pequeno para um comportamento que ainda não existe. Rode e **veja falhar**.\n2. **Verde:** escreva o mínimo de código que faz esse teste passar. Mínimo mesmo, pode ser feio.\n3. **Refatorar:** com tudo verde, limpe o código e os testes. Rode de novo.\n\nVer o vermelho não é cerimônia. É a prova de que o teste **consegue reprovar**. Teste que nasce verde pode estar conferindo nada (você aprofunda isso em test-09).\n\n### Um exemplo: a capacidade do plano do dia\n\nA regra: a capacidade é a jornada menos as reuniões, nunca negativa, e reserva 20% de folga para imprevisto.\n\nCiclo 1. O teste: `capacidade(480, 0)` é 384 (480 menos 20%). Vermelho, porque a função não existe. O mínimo: `return jornada * 0.8`. Verde.\n\nCiclo 2. O teste: `capacidade(480, 80)` é 320. Vermelho, a função ignora reuniões. O mínimo: `return (jornada - reunioes) * 0.8`. Verde.\n\nCiclo 3. O teste: `capacidade(60, 120)` é 0. Vermelho, devolve -48. O ajuste:\n\n```ts\nexport function capacidade(jornadaMin: number, reunioesMin: number): number {\n  const livre = Math.max(0, jornadaMin - reunioesMin);\n  return Math.floor(livre * 0.8);\n}\n```\n\nO `Math.floor` entrou quando um quarto teste (`capacidade(50, 0)` é 40, mas `capacidade(51, 0)` daria 40.8) forçou a decisão de arredondar. O teste fez a pergunta de negócio aparecer cedo: arredonda para cima ou para baixo? Essa é a segunda utilidade do TDD: ele transforma dúvida de regra em pergunta concreta antes de o código existir.\n\n### Quando rende\n\n- **Regra pura:** entra dado, sai dado, sem banco nem tela. Cálculo, validação, máquina de estados, conversão.\n- **Correção de defeito:** primeiro o teste que reproduz o defeito (vermelho), depois a correção (verde). O defeito não volta.\n- **Regra com muitos casos de canto.** A lista de casos vira a lista de testes.\n\n### Quando não rende\n\n- **Exploração:** você ainda não sabe a forma da solução, está experimentando uma biblioteca ou um desenho de API. Escreva o protótipo, aprenda, jogue fora e então teste.\n- **Tela e layout.** O que importa ali se vê com o olho.\n- **Código de cola** entre framework e banco. O teste de integração depois cobre melhor.\n\nA opinião de sênior: TDD é uma ferramenta, não uma religião. Exigir TDD em tudo gera teste de cola e de mock. Não usar nunca deixa a regra de negócio sem a rede que ela mais merece. O critério é a pureza do código: quanto mais regra e menos infraestrutura, mais o ciclo compensa.",
+      "naPratica": "No Cockpit, regra de plano do dia, cálculo de foco e validação de recorrência são funções puras: bom terreno para o ciclo. Ao corrigir um defeito, o PR deve trazer o teste que falhava antes da correção. Isso é o que o revisor procura primeiro.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A mesma lista de testes roda contra três versões da função, uma por ciclo. Qual o placar de cada versão?",
+          "codigo": "import assert from 'node:assert/strict';\n\ntype Fn = (jornada: number, reunioes: number) => number;\nconst v1: Fn = (j) => j * 0.8;\nconst v2: Fn = (j, r) => (j - r) * 0.8;\nconst v3: Fn = (j, r) => Math.floor(Math.max(0, j - r) * 0.8);\n\nconst testes: [number, number, number][] = [\n  [480, 0, 384],\n  [480, 80, 320],\n  [60, 120, 0],\n];\n\nfor (const [nome, fn] of [['v1', v1], ['v2', v2], ['v3', v3]] as const) {\n  let verdes = 0;\n  for (const [j, r, esperado] of testes) {\n    try { assert.equal(fn(j, r), esperado); verdes++; } catch {}\n  }\n  console.log(nome, verdes + '/' + testes.length);\n}\n",
+          "saida": "v1 1/3\nv2 2/3\nv3 3/3\n",
+          "explicacao": "Cada versão é o mínimo para o teste do seu ciclo. A v1 ignora reuniões e só acerta o primeiro caso. A v2 desconta reuniões, mas devolve -48 no terceiro. A v3 trava em zero e passa tudo. Cada teste novo começou vermelho e puxou uma linha de código."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No ciclo do TDD, por que rodar o teste e vê-lo falhar antes de escrever o código?",
+          "opcoes": [
+            "Para medir a cobertura inicial",
+            "Porque o Vitest só registra testes que já falharam uma vez",
+            "Para provar que o teste é capaz de reprovar e que falha pelo motivo esperado",
+            "Não é necessário: o passo vermelho é opcional"
+          ],
+          "correta": 2,
+          "explicacao": "Um teste que já nasce verde pode ter conferência fraca, estar apontando para a função errada ou nem estar sendo executado. O vermelho, com a mensagem que você esperava, é a evidência de que ele mede alguma coisa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em qual destas tarefas o ciclo vermelho, verde, refatorar rende **menos**?",
+          "opcoes": [
+            "Corrigir um defeito no cálculo de recorrência semanal",
+            "Escrever a validação de sobreposição de horários",
+            "Experimentar uma biblioteca de gráficos para decidir se ela serve",
+            "Implementar a máquina de estados de uma tarefa"
+          ],
+          "correta": 2,
+          "explicacao": "Em exploração você ainda não sabe o que quer do código, então não tem como escrever o teste antes. Prototipe, aprenda e descarte. As outras três são regra pura com casos enumeráveis, o melhor terreno para TDD."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Três ciclos na mão",
+          "minutos": 20,
+          "passos": [
+            "Em `apps/api/src/estudo/`, crie `capacidade.spec.ts` só com o primeiro teste (`capacidade(480, 0)` é 384). Rode `npm run test:watch` e veja o vermelho.",
+            "Crie `capacidade.ts` com o mínimo para ficar verde. Não antecipe as reuniões.",
+            "Acrescente o teste das reuniões, veja o vermelho, ajuste. Repita para o caso negativo.",
+            "Com tudo verde, refatore: dê nome à constante 0.8 e junte os casos numa tabela com `it.each`."
+          ],
+          "prontoQuando": "Há pelo menos 3 testes verdes, você viu cada um vermelho antes de implementar, e a função final não tem número mágico."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os 3 passos do ciclo do TDD?",
+          "verso": "Vermelho (teste que falha), verde (mínimo de código para passar), refatorar (limpar com tudo verde)."
+        },
+        {
+          "frente": "Por que ver o teste falhar antes de implementar?",
+          "verso": "É a prova de que o teste consegue reprovar e falha pelo motivo certo. Teste que nasce verde pode não conferir nada."
+        },
+        {
+          "frente": "Onde TDD rende mais?",
+          "verso": "Regra pura (cálculo, validação, máquina de estados) e correção de defeito: teste que reproduz primeiro, correção depois."
+        },
+        {
+          "frente": "Onde TDD não rende?",
+          "verso": "Exploração e protótipo, layout de tela e código de cola entre framework e banco."
+        },
+        {
+          "frente": "Qual o ganho do TDD além da rede de testes?",
+          "verso": "Ele transforma dúvida de regra em pergunta concreta (arredonda para onde? aceita negativo?) antes de o código existir."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Test Driven Development",
+          "url": "https://martinfowler.com/bliki/TestDrivenDevelopment.html"
+        },
+        {
+          "titulo": "Vitest — API",
+          "url": "https://vitest.dev/api/"
+        }
+      ]
+    },
+    {
+      "id": "test-05",
+      "titulo": "e2e de API com banco de verdade",
+      "minutos": 11,
+      "ponte": "Este é o teste mais parecido com o que você já faz: chamar a rotina de ponta a ponta e conferir no banco. A diferença é que aqui o banco de teste é **só do teste**, nasce pelas migrations e é limpo antes de cada caso. Onde a analogia quebra: ninguém confere em base compartilhada de homologação, porque um teste que depende do dado que outra pessoa deixou não é repetível.",
+      "texto": "O e2e de API sobe a aplicação Nest inteira dentro do processo de teste, dispara requisições HTTP de verdade contra ela e confere a resposta. Ele pega o que o unitário não vê: rota errada, DTO sem validação, guard esquecido, query que não fecha com o schema, constraint do banco.\n\n### O mesmo setup do `main`\n\nA armadilha clássica é montar no teste um app **diferente** do que vai para produção. No Cockpit, prefixo `/api`, versão na URL, `ValidationPipe`, `helmet` e cookies são ligados na função `setupApp`, que o `main.ts` chama. O teste chama a **mesma** função:\n\n```ts\nimport { Test } from '@nestjs/testing';\nimport type { INestApplication } from '@nestjs/common';\nimport request from 'supertest';\nimport { AppModule } from '../src/app.module.js';\nimport { setupApp } from '../src/app.setup.js';\n\nlet app: INestApplication;\n\nbeforeAll(async () => {\n  const modulo = await Test.createTestingModule({ imports: [AppModule] }).compile();\n  app = modulo.createNestApplication();\n  setupApp(app);\n  await app.init();\n});\n\nafterAll(async () => {\n  await app.close();\n});\n\nit('recusa tarefa sem título', async () => {\n  await request(app.getHttpServer()).post('/api/v1/tarefas').send({}).expect(400);\n});\n```\n\nSe o teste esquecesse o `setupApp`, não haveria `ValidationPipe`: o corpo vazio passaria, e o teste estaria verde ou vermelho por motivos que não existem em produção. A regra: **configuração de app mora numa função só, usada pelos dois lados.**\n\nO `supertest` recebe o servidor HTTP do Nest e faz a requisição sem você precisar abrir porta. O `.expect(400)` confere o status; o corpo vem em `resposta.body`.\n\n### Banco real, de teste\n\n- Um banco Postgres **separado**, apontado por uma `DATABASE_URL` própria do ambiente de teste. Nunca o de desenvolvimento.\n- O schema nasce das **mesmas migrations** de produção. Assim a migration também é testada.\n- É o mesmo motor de produção. Trocar por SQLite ou banco em memória para ganhar velocidade faz o teste aprovar SQL que o Postgres recusa.\n\n### Limpar entre testes\n\nCada teste precisa começar de um estado conhecido. Duas estratégias comuns:\n\n| Estratégia | Como | Custo |\n|---|---|---|\n| **Truncar** | `TRUNCATE ... RESTART IDENTITY CASCADE` nas tabelas, num `beforeEach` | simples; alguns ms por teste |\n| **Transação com rollback** | abrir transação antes, desfazer depois | rápido, mas difícil quando a requisição HTTP usa outra conexão do pool |\n\nComece truncando. E cada teste **cria o dado de que precisa**. Teste que depende do que o anterior gravou quebra quando a ordem muda.\n\n### Paralelismo\n\nO Vitest roda arquivos de teste em paralelo por padrão. Com um banco só, dois arquivos truncando ao mesmo tempo se atropelam. As saídas são rodar os e2e em série (a opção `--no-file-parallelism`) ou dar um banco ou schema por processo. Comece em série: é mais lento e não mente.\n\n### Quantos escrever\n\nPor rota: o caminho feliz, a validação recusando, o acesso negado e o não encontrado. Caso de canto de regra fica no unitário, que é cem vezes mais rápido.",
+      "naPratica": "No Cockpit, `npm run test:e2e` usa o `vitest.config.e2e.ts`, que só inclui `*.e2e-spec.ts`. No CI, o Postgres sobe como serviço do job, as migrations rodam e depois os e2e. Se um e2e passa na sua máquina e falha no CI, a primeira suspeita é dado que sobrou no seu banco local.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`banco` faz o papel da tabela. A suíte roda duas vezes: sem limpeza e com limpeza antes de cada teste. O que sai?",
+          "codigo": "import assert from 'node:assert/strict';\n\nconst banco: string[] = [];\nconst testes: [string, () => void][] = [\n  ['cria uma tarefa', () => { banco.push('Ler'); assert.equal(banco.length, 1); }],\n  ['lista comeca vazia', () => { assert.equal(banco.length, 0); }],\n];\n\nfunction rodaSuite(rotulo: string, antesDeCada: () => void) {\n  banco.length = 0;\n  for (const [nome, fn] of testes) {\n    antesDeCada();\n    try { fn(); console.log(rotulo, 'PASSOU', nome); }\n    catch { console.log(rotulo, 'FALHOU', nome); }\n  }\n}\n\nrodaSuite('sem limpar:', () => {});\nrodaSuite('limpando:', () => { banco.length = 0; });\n",
+          "saida": "sem limpar: PASSOU cria uma tarefa\nsem limpar: FALHOU lista comeca vazia\nlimpando: PASSOU cria uma tarefa\nlimpando: PASSOU lista comeca vazia\n",
+          "explicacao": "Sem limpeza, o segundo teste encontra a linha que o primeiro gravou e reprova, embora o código testado esteja certo. Trocando a ordem, passaria. Com a limpeza no `beforeEach`, cada teste parte do zero e o resultado não depende da ordem. No banco real, a limpeza é o `TRUNCATE`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O teste e2e cria o app com `createNestApplication()` e chama `app.init()` direto, sem a função de setup que o `main.ts` usa. Qual a consequência mais provável?",
+          "opcoes": [
+            "Nenhuma: o `AppModule` já carrega toda a configuração",
+            "O teste fica mais lento, pois o Nest refaz a configuração a cada requisição",
+            "O app de teste fica sem prefixo, versionamento e `ValidationPipe`, e o teste confere um comportamento que não é o de produção",
+            "O `supertest` recusa a conexão por falta do `helmet`"
+          ],
+          "correta": 2,
+          "explicacao": "Pipes globais, prefixo e versionamento são ligados no objeto do app, fora dos módulos. Sem repetir o setup, a rota muda de endereço e a validação some. Por isso a configuração fica numa função única, chamada pelo `main` e pelo teste."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Para acelerar os e2e, alguém propõe rodar contra SQLite em memória em vez de Postgres. Qual a melhor objeção?",
+          "opcoes": [
+            "SQLite não funciona em CI",
+            "O teste passaria a aprovar SQL, tipos e constraints que o Postgres trata de outro jeito",
+            "Banco em memória não permite `TRUNCATE`",
+            "O Prisma não gera cliente para dois bancos"
+          ],
+          "correta": 1,
+          "explicacao": "O valor do e2e é provar o encaixe com o banco **real**. Outro motor tem outros tipos, outro comportamento de transação e outras mensagens de erro. O ganho de velocidade custa exatamente a garantia que o teste existia para dar."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, os e2e passam na minha máquina e falham no CI, cada hora num teste diferente. O que você acha que é?\"",
+          "pontos": [
+            "Levantou dependência de dado entre testes como primeira hipótese",
+            "Citou paralelismo de arquivos sobre o mesmo banco",
+            "Propôs um experimento barato para confirmar (rodar em série, rodar um teste isolado, banco zerado)",
+            "Indicou a correção estrutural: limpar antes de cada teste e cada teste criar seu dado",
+            "Não propôs repetir até passar"
+          ],
+          "modelo": "Falha que muda de lugar quase sempre é estado compartilhado. Duas hipóteses. Primeira: algum teste depende do dado que outro gravou, e na sua máquina o banco já tem esse dado. Segunda: os arquivos rodam em paralelo no mesmo banco e um trunca a tabela no meio do outro. Para separar, rode local com o banco zerado e em série, com `--no-file-parallelism`. Se passar em série e falhar em paralelo, é a segunda. Se falhar um teste rodado sozinho, é a primeira. A correção é a mesma disciplina: limpeza no `beforeEach` e cada teste cria o que precisa. Colocar retry no CI só esconde."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "O primeiro e2e do Cockpit",
+          "minutos": 30,
+          "passos": [
+            "Crie um banco Postgres só para teste e um arquivo de ambiente de teste com a `DATABASE_URL` dele. Aplique as migrations nesse banco.",
+            "Em `apps/api/test/`, crie `health.e2e-spec.ts` montando o app com `Test.createTestingModule` e chamando `setupApp`, como na lição.",
+            "Escreva um teste que faz `GET /health` e espera 200, e outro que faz `GET /api/v1/nao-existe` e espera 404.",
+            "Rode `npm run test:e2e`. Depois comente a linha do `setupApp`, rode de novo e anote o que mudou."
+          ],
+          "prontoQuando": "Os dois testes passam com `npm run test:e2e`, e você sabe dizer qual comportamento do app muda sem o `setupApp`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que o e2e deve usar a mesma função de setup do `main.ts`?",
+          "verso": "Prefixo, versão e pipes globais são ligados no app, fora dos módulos. Sem o mesmo setup, o teste confere um app que não existe em produção."
+        },
+        {
+          "frente": "Como garantir que um e2e não dependa de outro?",
+          "verso": "Limpar o banco antes de cada teste (`TRUNCATE`) e cada teste criar o dado de que precisa."
+        },
+        {
+          "frente": "Por que não trocar o Postgres por banco em memória nos e2e?",
+          "verso": "Outro motor aceita SQL, tipos e constraints diferentes. O teste aprovaria o que a produção recusa."
+        },
+        {
+          "frente": "Quais casos mínimos por rota num e2e de API?",
+          "verso": "Caminho feliz, validação recusando (400), acesso negado (401/403) e não encontrado (404)."
+        },
+        {
+          "frente": "e2e falha em lugares diferentes a cada execução. Primeira suspeita?",
+          "verso": "Estado compartilhado: dado que sobrou entre testes ou arquivos rodando em paralelo no mesmo banco."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Testing",
+          "url": "https://docs.nestjs.com/fundamentals/testing"
+        },
+        {
+          "titulo": "Vitest — Guia",
+          "url": "https://vitest.dev/guide/"
+        },
+        {
+          "titulo": "Prisma — Documentação",
+          "url": "https://www.prisma.io/docs"
+        }
+      ]
+    },
+    {
+      "id": "test-06",
+      "titulo": "Teste de componente: Testing Library e MSW",
+      "minutos": 11,
+      "ponte": "Quando você testa uma tela Forms, você não confere o nome interno do item nem a propriedade do canvas. Você lê o rótulo, digita no campo, aperta o botão e olha a mensagem. A Testing Library escreve esse mesmo roteiro como código. Onde a analogia quebra: não há tela aberta nem servidor. O componente é montado num DOM simulado em memória e a API é respondida por um interceptador.",
+      "texto": "Um teste de componente monta um componente React (ou uma página inteira) fora do navegador, interage com ele e confere o que aparece. Três peças trabalham juntas.\n\n### Testing Library: achar como o usuário acha\n\nA regra da biblioteca: **quanto mais o teste se parece com o uso real, mais confiança ele dá.** O usuário não conhece classe CSS nem `id`. Ele vê um botão chamado \"Salvar\" e um campo rotulado \"Título\". As consultas seguem essa ordem de preferência:\n\n1. `getByRole('button', { name: 'Salvar' })`: pelo papel acessível e pelo nome.\n2. `getByLabelText('Título')`: campo de formulário pelo rótulo.\n3. `getByText('Nenhuma tarefa para hoje')`: texto visível.\n4. `getByTestId(...)`: último recurso.\n\nBuscar por `.btn-primary` amarra o teste ao estilo: trocar a classe quebra o teste sem quebrar a tela. Buscar por papel tem um bônus: se o teste não acha o botão pelo papel, um leitor de tela também não acha. O teste vira uma checagem barata de acessibilidade.\n\nOs prefixos mudam o comportamento:\n\n| Prefixo | Não achou | Uso |\n|---|---|---|\n| `getBy` | lança erro na hora | o elemento já está na tela |\n| `queryBy` | devolve `null` | conferir que algo **não** está na tela |\n| `findBy` | espera e tenta de novo (Promise) | o elemento aparece depois de uma resposta |\n\n### user-event: agir como o usuário age\n\n`userEvent` simula a interação completa: clicar dispara foco, *pointer events* e clique, e digitar dispara tecla por tecla. Toda chamada é assíncrona:\n\n```tsx\nconst user = userEvent.setup();\nrender(<NovaTarefa />);\n\nawait user.type(screen.getByLabelText('Título'), 'Revisar PR');\nawait user.click(screen.getByRole('button', { name: 'Salvar' }));\n\nexpect(await screen.findByText('Tarefa criada')).toBeInTheDocument();\n```\n\n### MSW: a rede de mentira, no lugar certo\n\nO componente chama a API. Mockar o `fetch` ou o hook de dados amarra o teste à forma como o componente busca. O *MSW* (Mock Service Worker) intercepta a **requisição HTTP** em si: você declara \"para `GET /api/v1/tarefas`, responda este JSON\" e o código do componente roda inteiro, com cliente HTTP, TanStack Query e tratamento de erro de verdade. Trocar `fetch` por outra biblioteca não quebra o teste.\n\nIsso também permite testar o que é difícil provocar na mão: resposta 500, lista vazia, demora.\n\n### A armadilha\n\nConferir logo depois do clique, com `getBy`, algo que só aparece quando a resposta chega. O teste falha de vez em quando, conforme a velocidade da máquina. Use `findBy`, que espera. E todo `user.click` leva `await`.\n\n### O que não testar aqui\n\nEstado interno, quantas vezes renderizou, nome de hook chamado. Isso é implementação. Confira o que está na tela.\n\nO `apps/web` do Cockpit ainda não tem essas bibliotecas instaladas. Ao instalar, confira na documentação da versão a configuração do ambiente de DOM do Vitest (`jsdom` ou `happy-dom`) e a API de handlers do MSW.",
+      "naPratica": "No Cockpit, o teste de componente cobre a página do plano do dia nos seus estados: carregando, lista vazia, erro da API e lista preenchida. São os estados que ninguém lembra de conferir na mão e que o MSW provoca em uma linha.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma versão de brinquedo da ideia do MSW: uma tabela de rotas responde no lugar do servidor. O código que consome usa `fetch` normalmente. O que as duas linhas imprimem?",
+          "codigo": "const rotas: Record<string, () => Response> = {\n  'GET /api/v1/tarefas': () => Response.json([{ titulo: 'Estudar' }]),\n};\n\nglobalThis.fetch = async (url, init) => {\n  const chave = `${init?.method ?? 'GET'} ${String(url)}`;\n  const responde = rotas[chave];\n  return responde ? responde() : new Response(null, { status: 404 });\n};\n\nasync function carregaTitulos(): Promise<string> {\n  const r = await fetch('/api/v1/tarefas');\n  if (!r.ok) return 'erro ' + r.status;\n  const lista: { titulo: string }[] = await r.json();\n  return lista.map((t) => t.titulo).join(', ');\n}\n\nconsole.log(await carregaTitulos());\ndelete rotas['GET /api/v1/tarefas'];\nconsole.log(await carregaTitulos());\n",
+          "saida": "Estudar\nerro 404\n",
+          "explicacao": "`carregaTitulos` não sabe que a rede é de mentira: faz o `fetch`, confere `ok` e lê o JSON. Com a rota declarada, recebe a lista. Sem ela, recebe 404 e cai no ramo de erro. O MSW de verdade faz a interceptação num nível mais baixo, sem substituir o `fetch`, mas a ideia é esta: o teste declara respostas HTTP, e o código de produção roda sem alteração."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual consulta deixa o teste mais resistente a mudança de layout e ainda verifica acessibilidade?",
+          "opcoes": [
+            "`container.querySelector('.btn-primary')`",
+            "`screen.getByTestId('botao-salvar')`",
+            "`screen.getByRole('button', { name: 'Salvar' })`",
+            "`container.querySelector('#salvar')`"
+          ],
+          "correta": 2,
+          "explicacao": "Papel e nome acessível são o que o usuário e o leitor de tela percebem. Classe e `id` mudam com o estilo. `data-testid` é estável, mas não prova que o botão é alcançável por quem usa a tela: fica como último recurso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de clicar em \"Salvar\", a mensagem \"Tarefa criada\" aparece quando a API responde. Qual conferência é a correta?",
+          "opcoes": [
+            "`expect(screen.getByText('Tarefa criada')).toBeInTheDocument()`",
+            "`expect(await screen.findByText('Tarefa criada')).toBeInTheDocument()`",
+            "`expect(screen.queryByText('Tarefa criada')).toBeNull()`",
+            "Esperar 500 ms com `setTimeout` e então usar `getByText`"
+          ],
+          "correta": 1,
+          "explicacao": "`findBy` devolve uma Promise e tenta de novo até o elemento aparecer ou o prazo estourar. `getBy` logo após o clique roda antes da resposta e falha de forma intermitente. Espera fixa deixa o teste lento e ainda assim frágil."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que interceptar a requisição com MSW em vez de mockar o hook `useTarefas` do componente?",
+          "opcoes": [
+            "Porque hooks não podem ser mockados no Vitest",
+            "Porque o MSW é mais rápido que qualquer mock",
+            "Porque com o hook mockado o teste pula o cliente HTTP, o cache e o tratamento de erro, que são parte do que pode quebrar",
+            "Porque o MSW dispensa escrever conferências"
+          ],
+          "correta": 2,
+          "explicacao": "Mockar o hook corta fora justamente a camada onde mora o encaixe com a API. Interceptando na rede, todo o código do front roda de verdade e o dublê fica na fronteira, como em test-03."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Reescreva consultas frágeis",
+          "minutos": 10,
+          "passos": [
+            "Em `estudo/consultas.md`, escreva três consultas frágeis que você faria por instinto: por classe, por `id` e por posição (o segundo botão).",
+            "Ao lado de cada uma, escreva a versão por papel, rótulo ou texto.",
+            "Para cada versão nova, anote o que o HTML precisa ter para ela funcionar (um `label` ligado ao campo, texto no botão)."
+          ],
+          "prontoQuando": "As três consultas estão reescritas e você identificou pelo menos um requisito de HTML que a consulta por papel obriga a tela a cumprir."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a ordem de preferência das consultas na Testing Library?",
+          "verso": "Papel (`getByRole`), rótulo (`getByLabelText`), texto (`getByText`) e, por último, `getByTestId`."
+        },
+        {
+          "frente": "`getBy` × `queryBy` × `findBy`",
+          "verso": "`getBy` lança se não achar. `queryBy` devolve `null` (para conferir ausência). `findBy` espera e tenta de novo (assíncrono)."
+        },
+        {
+          "frente": "Por que não buscar elemento por classe CSS no teste?",
+          "verso": "Amarra o teste ao estilo: mudar a classe quebra o teste sem quebrar a tela, e não prova que o usuário alcança o elemento."
+        },
+        {
+          "frente": "O que o MSW intercepta?",
+          "verso": "A requisição HTTP. O código do front (cliente, cache, tratamento de erro) roda de verdade e só a rede é de mentira."
+        },
+        {
+          "frente": "Qual a causa clássica de teste de componente intermitente?",
+          "verso": "Conferir com `getBy` algo que só aparece após a resposta, ou esquecer o `await` no `user.click`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Testing Library — About Queries",
+          "url": "https://testing-library.com/docs/queries/about"
+        },
+        {
+          "titulo": "Testing Library — Guiding Principles",
+          "url": "https://testing-library.com/docs/guiding-principles"
+        },
+        {
+          "titulo": "MSW — Documentação",
+          "url": "https://mswjs.io/docs"
+        }
+      ]
+    },
+    {
+      "id": "test-07",
+      "titulo": "Tempo e assíncrono em teste: fake timers",
+      "minutos": 11,
+      "ponte": "Para testar uma rotina que depende de `SYSDATE`, você já recebeu a data por parâmetro ou mexeu no dado para simular \"daqui a 30 dias\". Ninguém espera 30 dias. *Fake timer* (relógio falso) é o mesmo truque para o tempo que passa **dentro** do programa: `setTimeout`, intervalo, retry. Onde a analogia quebra: o relógio falso só avança quando o teste manda, e Promise não é timer. As duas filas andam separadas.",
+      "texto": "Código com tempo é difícil de testar por dois motivos: esperar de verdade deixa a suíte lenta, e o resultado passa a depender da velocidade da máquina. A saída é tirar o tempo real da jogada.\n\n### Relógio falso\n\n`vi.useFakeTimers()` troca `setTimeout`, `setInterval` e `Date` por versões controladas. Nada dispara sozinho. O teste avança o relógio:\n\n```ts\nbeforeEach(() => {\n  vi.useFakeTimers();\n});\nafterEach(() => {\n  vi.useRealTimers();\n});\n\nit('avisa depois de 25 minutos de foco', () => {\n  const avisar = vi.fn();\n  iniciarFoco(avisar);\n\n  vi.advanceTimersByTime(24 * 60_000);\n  expect(avisar).not.toHaveBeenCalled();\n\n  vi.advanceTimersByTime(60_000);\n  expect(avisar).toHaveBeenCalledTimes(1);\n});\n```\n\nVinte e cinco minutos passam em microssegundos. `vi.setSystemTime(data)` fixa o \"agora\" para código que usa `new Date()`. Sempre restaure o relógio real no `afterEach`: relógio falso que vaza para o próximo teste gera falha sem explicação.\n\n### Timer mais Promise: a versão `Async`\n\nUm retry típico espera um tempo e tenta de novo, com `await` no meio. Avançar o relógio de forma síncrona dispara o timer, mas o código depois do `await` é uma *microtask* (você viu em js-06) e ainda não rodou. As variantes assíncronas resolvem: `await vi.advanceTimersByTimeAsync(ms)` avança o relógio e dá vez às Promises entre um timer e outro.\n\nA regra prática: **se o código testado tem `await`, use a variante `Async`.**\n\n### Timeout e retry sem esperar\n\nCom isso você testa \"desiste depois de 3 tentativas com espera de 1, 2 e 4 segundos\" em milissegundos: dispara a operação sem `await`, avança o relógio, e só então espera o resultado. A dependência que falha é um stub (test-03) que rejeita nas primeiras chamadas.\n\n### O erro do teste que termina antes da Promise\n\nA armadilha mais cara do assunto:\n\n```ts\nit('rejeita total negativo', () => {\n  calculaTotal(-1).catch((e) => {\n    expect(e.message).toBe('total inválido');\n  });\n});\n```\n\nFalta `await` ou `return`. A função do teste termina sem erro, o executor marca como **passou**, e o `expect` roda depois, quando ninguém mais está olhando. Se a Promise nem rejeitar, o `expect` nunca roda e o teste continua verde. As formas corretas:\n\n```ts\nawait expect(calculaTotal(-1)).rejects.toThrow('total inválido');\n```\n\nOu `expect.assertions(1)` no início do teste, que reprova se o número de conferências executadas for diferente. A regra de lint `no-floating-promises` pega boa parte desses casos.\n\n### Quando não usar relógio falso\n\nEm teste de integração com banco ou HTTP de verdade, o driver usa timers internos e o relógio falso pode travar tudo. Ali, prefira **injetar o relógio**: a classe recebe uma função `agora()` e o teste passa uma fixa. É mais simples e não mexe em nada global.",
+      "naPratica": "No Cockpit, o temporizador de foco e o retry do cliente HTTP são testados com relógio falso. Regra que só precisa saber \"que dia é hoje\" recebe o relógio por injeção. Se um teste seu tem `await sleep(1000)`, ele está pedindo um relógio falso.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um relógio falso escrito à mão: `agendar` guarda o callback e `avancar` move o tempo. O que sai, e em que ordem?",
+          "codigo": "type Agendado = { quando: number; fn: () => void };\nlet agora = 0;\nconst fila: Agendado[] = [];\n\nconst agendar = (fn: () => void, ms: number) => {\n  fila.push({ quando: agora + ms, fn });\n};\n\nfunction avancar(ms: number) {\n  const fim = agora + ms;\n  fila.sort((a, b) => a.quando - b.quando);\n  while (fila[0] && fila[0].quando <= fim) {\n    const t = fila.shift()!;\n    agora = t.quando;\n    t.fn();\n  }\n  agora = fim;\n}\n\nagendar(() => console.log('timeout em', agora), 30000);\nagendar(() => console.log('lembrete em', agora), 5000);\navancar(4999);\nconsole.log('nada ainda em', agora);\navancar(1);\navancar(60000);\nconsole.log('fim em', agora);\n",
+          "saida": "nada ainda em 4999\nlembrete em 5000\ntimeout em 30000\nfim em 65000\n",
+          "explicacao": "Nenhum callback roda sozinho. Com 4999 ms nada venceu. Mais 1 ms e o lembrete dispara, exatamente em 5000. O avanço de 60 segundos passa pelo timeout de 30000 e termina em 65000. O programa inteiro roda em menos de um milissegundo real. `vi.useFakeTimers()` faz isso com o `setTimeout` verdadeiro."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`buscaTotal` devolve 41, mas os dois testes esperam 42. O primeiro esqueceu o `await`. O que o executor imprime?",
+          "codigo": "import assert from 'node:assert/strict';\n\nprocess.on('unhandledRejection', () => console.log('rejeicao que ninguem esperou'));\n\nasync function it(nome: string, fn: () => unknown) {\n  try {\n    await fn();\n    console.log('PASSOU', nome);\n  } catch {\n    console.log('FALHOU', nome);\n  }\n}\n\nconst buscaTotal = async () => 41;\n\nawait it('sem await', () => {\n  buscaTotal().then((t) => assert.equal(t, 42));\n});\n\nawait it('com await', async () => {\n  assert.equal(await buscaTotal(), 42);\n});\n",
+          "saida": "PASSOU sem await\nFALHOU com await\nrejeicao que ninguem esperou\n",
+          "explicacao": "No primeiro teste, a função termina devolvendo `undefined` antes de o `then` rodar. O executor não tem o que esperar e marca como passou. A conferência falha depois, numa Promise solta, e vira uma rejeição não tratada. No segundo, o `await` mantém a conferência dentro do teste e ele reprova como deveria."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O código testado faz `await esperar(1000)` e depois chama `tentarDeNovo()`. O teste usa `vi.advanceTimersByTime(1000)` e confere que `tentarDeNovo` foi chamado. O teste falha. Qual a causa mais provável?",
+          "opcoes": [
+            "O relógio falso não funciona com `setTimeout` dentro de Promise",
+            "O timer disparou, mas a continuação depois do `await` é uma microtask que ainda não rodou; falta a variante `Async` com `await`",
+            "É preciso avançar 1001 ms, porque o limite é exclusivo",
+            "`vi.fn()` não registra chamadas feitas depois de um `await`"
+          ],
+          "correta": 1,
+          "explicacao": "O avanço síncrono executa o callback do timer, que resolve a Promise. Mas o código depois do `await` só roda quando a fila de microtasks for processada, e o teste confere antes disso. `await vi.advanceTimersByTimeAsync(1000)` avança e dá vez às Promises."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual a forma mais segura de testar que `calculaTotal(-1)` rejeita com a mensagem certa?",
+          "opcoes": [
+            "`calculaTotal(-1).catch((e) => expect(e.message).toBe('total inválido'))`",
+            "`try { calculaTotal(-1) } catch (e) { expect(e.message).toBe('total inválido') }`",
+            "`await expect(calculaTotal(-1)).rejects.toThrow('total inválido')`",
+            "`expect(calculaTotal(-1)).toThrow('total inválido')`"
+          ],
+          "correta": 2,
+          "explicacao": "Com `await` e `.rejects`, o teste espera a Promise e reprova tanto se a mensagem for outra quanto se ela não rejeitar. O `.catch` solto passa mesmo sem rejeição. O `try/catch` sem `await` nunca captura, porque a função assíncrona devolve a Promise em vez de lançar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Retry sem esperar",
+          "minutos": 25,
+          "passos": [
+            "Em `apps/api/src/estudo/`, escreva `comRetry(fn, tentativas)`, que chama `fn`, e em caso de erro espera 1 s, 2 s, 4 s antes de tentar de novo, até o limite.",
+            "No spec, use `vi.useFakeTimers()` e um `vi.fn()` que rejeita duas vezes e resolve na terceira.",
+            "Dispare `comRetry` sem `await`, avance com `await vi.advanceTimersByTimeAsync(3000)` e então espere o resultado.",
+            "Confira o valor devolvido e que o stub foi chamado 3 vezes. Restaure o relógio no `afterEach`."
+          ],
+          "prontoQuando": "O teste passa em menos de 100 ms de tempo real, e trocando para a variante síncrona `advanceTimersByTime` você vê o teste falhar ou travar e sabe explicar por quê."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `vi.useFakeTimers()` faz?",
+          "verso": "Troca `setTimeout`, `setInterval` e `Date` por versões controladas. Nada dispara até o teste avançar o relógio."
+        },
+        {
+          "frente": "Quando usar `advanceTimersByTimeAsync` em vez da versão síncrona?",
+          "verso": "Quando o código testado tem `await` entre timers. A versão `Async` dá vez às Promises a cada timer disparado."
+        },
+        {
+          "frente": "Por que um teste assíncrono sem `await` passa com o código errado?",
+          "verso": "A função do teste termina antes de a conferência rodar. O executor não tem Promise para esperar e marca como passou."
+        },
+        {
+          "frente": "Como testar que uma Promise rejeita?",
+          "verso": "`await expect(promessa).rejects.toThrow('mensagem')`. Reprova se a mensagem for outra ou se não rejeitar."
+        },
+        {
+          "frente": "Alternativa ao relógio falso para regra que só precisa da data atual?",
+          "verso": "Injetar o relógio: a classe recebe `agora()` e o teste passa uma função fixa. Não mexe em nada global."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Vitest — Mocking (timers e datas)",
+          "url": "https://vitest.dev/guide/mocking"
+        },
+        {
+          "titulo": "Vitest — API",
+          "url": "https://vitest.dev/api/"
+        },
+        {
+          "titulo": "MDN — setTimeout",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout"
+        }
+      ]
+    },
+    {
+      "id": "test-08",
+      "titulo": "Playwright: e2e de navegador e o que não testar ali",
+      "minutos": 10,
+      "ponte": "É o roteiro de homologação que você conhece: entrar, cadastrar, consultar, conferir. Só que executado por um robô num navegador de verdade, a cada PR. Onde a analogia quebra: no roteiro manual você cobre cada campo de cada tela. Aqui, cobrir tudo pelo navegador é o caminho mais rápido para uma suíte lenta que falha sem motivo e que o time aprende a ignorar.",
+      "texto": "O Playwright controla um navegador real (Chromium, Firefox, WebKit), abre a aplicação rodando de verdade, com front, API e banco, e executa as ações de um usuário.\n\n```ts\nimport { test, expect } from '@playwright/test';\n\ntest('cria uma tarefa e ela aparece no plano do dia', async ({ page }) => {\n  await page.goto('/');\n  await page.getByRole('button', { name: 'Nova tarefa' }).click();\n  await page.getByLabel('Título').fill('Revisar PR');\n  await page.getByRole('button', { name: 'Salvar' }).click();\n\n  await expect(page.getByRole('listitem').filter({ hasText: 'Revisar PR' })).toBeVisible();\n});\n```\n\nOs localizadores são os mesmos da Testing Library (test-06): papel, rótulo, texto.\n\n### O que só ele prova\n\nQue as peças funcionam **juntas e implantadas**: o build do front carrega, o login grava o cookie, o CORS deixa passar, a rota existe, o dado chega ao banco e volta para a tela. Nenhum outro nível enxerga isso.\n\n### Por que poucos\n\n| | Unitário | e2e de navegador |\n|---|---|---|\n| Tempo por teste | milissegundos | segundos |\n| Quando falha, a causa está | numa função | em qualquer camada |\n| Precisa de | nada | app no ar, banco, navegador |\n| Chance de falha intermitente | quase zero | real |\n\nPor isso o e2e de navegador fica reservado ao **caminho crítico**: os três a dez fluxos que, quebrados, param o produto. No Cockpit: entrar, criar tarefa, montar o plano do dia, concluir. Validação de campo, mensagem de erro e caso de canto de regra são testados nos níveis de baixo, onde custam cem vezes menos.\n\n### Flakiness\n\n*Flaky test* é o teste que passa e falha sem o código mudar. É o maior inimigo: um teste intermitente ensina o time a clicar em \"rodar de novo\", e daí em diante ninguém acredita no vermelho. As causas comuns e o remédio:\n\n- **Espera fixa.** `waitForTimeout(2000)` é lento na máquina rápida e insuficiente na lenta. O Playwright já espera sozinho: antes de clicar, aguarda o elemento estar visível e habilitado (*auto-wait*), e `expect(locator).toBeVisible()` tenta de novo até o prazo. Confie nisso e nunca durma por tempo fixo.\n- **Dado compartilhado.** Dois testes mexendo no mesmo usuário ou na mesma tarefa. Cada teste cria o seu dado, de preferência pela API, que é mais rápido que pela tela.\n- **Dependência de ordem.** Cada teste tem que rodar sozinho.\n- **Serviço externo.** O que não é seu deve ser simulado.\n- **Seletor frágil.** Posição e classe mudam; papel e nome, não.\n\nRepetição automática (*retry*) no CI ajuda a não travar o time, mas é analgésico. Teste que precisou de retry tem que ser investigado. O *trace* do Playwright grava cada passo com a tela, o DOM e a rede: é por ele que se acha a causa.\n\n### A decisão de sênior\n\nAntes de escrever um e2e de navegador, pergunte se um teste de componente ou de API prova a mesma coisa. Se prova, use o mais barato. Suba ao navegador só pelo que só ele vê.",
+      "naPratica": "O Cockpit ainda não tem Playwright instalado. Quando tiver, a meta é uma suíte de fumaça com até cinco fluxos, rodando no CI contra a aplicação subida com `docker compose`. Se a suíte passar de dez minutos, alguém colocou ali o que pertencia a um nível de baixo.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O botão só fica visível na terceira vez que alguém olha (a tela ainda está carregando). Compare olhar uma vez com esperar tentando de novo. O que sai?",
+          "codigo": "let checagens = 0;\nconst botaoVisivel = () => ++checagens >= 3;\n\nasync function esperaAte(cond: () => boolean, tentativas = 5): Promise<number> {\n  for (let i = 1; i <= tentativas; i++) {\n    if (cond()) return i;\n    await new Promise((r) => setTimeout(r, 20));\n  }\n  throw new Error('tempo esgotado');\n}\n\nconsole.log('olhando uma vez:', botaoVisivel());\n\nchecagens = 0;\nconsole.log('tentando de novo: achou na tentativa', await esperaAte(botaoVisivel));\n",
+          "saida": "olhando uma vez: false\ntentando de novo: achou na tentativa 3\n",
+          "explicacao": "A checagem única olha cedo demais e conclui que o botão não existe: é o teste intermitente. A espera com novas tentativas acha o botão assim que ele aparece e não gasta mais tempo que o necessário. É o que o *auto-wait* e as conferências do Playwright fazem. Espera fixa seria o pior dos dois mundos: lenta quando a tela é rápida e insuficiente quando é lenta."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes cenários justifica um e2e de navegador?",
+          "opcoes": [
+            "Conferir que o campo \"duração\" recusa valor negativo",
+            "Conferir as oito combinações da regra de recorrência",
+            "Conferir que, depois do login, o usuário cria uma tarefa e ela aparece no plano do dia",
+            "Conferir a mensagem exibida quando a API devolve 500"
+          ],
+          "correta": 2,
+          "explicacao": "É o fluxo crítico que atravessa login, cookie, front, API e banco: só o navegador prova o conjunto. Validação de campo e estado de erro cabem no teste de componente; combinações de regra, no unitário. Testá-los pelo navegador custa segundos por caso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um e2e falha uma vez a cada dez execuções no CI. Qual a pior resposta?",
+          "opcoes": [
+            "Abrir o trace da execução que falhou e procurar a causa",
+            "Verificar se o teste depende de dado criado por outro teste",
+            "Trocar esperas fixas por conferências que tentam de novo",
+            "Configurar 3 repetições automáticas e seguir em frente sem investigar"
+          ],
+          "correta": 3,
+          "explicacao": "Retry sem investigação esconde o problema e acostuma o time a desconfiar do vermelho. Às vezes a intermitência é um defeito real de concorrência no produto. As outras três são os passos normais de diagnóstico."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Escolha o caminho crítico",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/caminho-critico.md`, liste todos os fluxos do Cockpit que você lembrar (entrar, criar tarefa, montar plano, iniciar foco, registrar 1:1...).",
+            "Para cada um, escreva o que acontece se quebrar em produção e ninguém perceber por um dia.",
+            "Marque no máximo cinco como e2e de navegador. Para os demais, escreva em qual nível o teste fica (componente, API, unitário).",
+            "Para um dos cinco, escreva o roteiro em passos de usuário, com o dado que o teste precisa criar antes."
+          ],
+          "prontoQuando": "A lista tem no máximo cinco fluxos de navegador, cada um com justificativa, e todos os outros têm um nível mais barato atribuído."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que só o e2e de navegador prova?",
+          "verso": "Que as peças funcionam juntas e implantadas: build, login, cookie, CORS, rota, banco e tela no mesmo fluxo."
+        },
+        {
+          "frente": "Por que ter poucos e2e de navegador?",
+          "verso": "São lentos, falham por causas em qualquer camada e têm chance real de intermitência. Reserve para o caminho crítico."
+        },
+        {
+          "frente": "O que é um teste *flaky* e por que é grave?",
+          "verso": "Passa e falha sem mudança no código. Ensina o time a ignorar o vermelho, e aí a suíte inteira perde o valor."
+        },
+        {
+          "frente": "Cite 3 causas de intermitência em e2e.",
+          "verso": "Espera fixa, dado compartilhado entre testes, dependência de ordem, serviço externo, seletor frágil."
+        },
+        {
+          "frente": "Por que não usar `waitForTimeout` no Playwright?",
+          "verso": "Espera fixa é lenta na máquina rápida e curta na lenta. O *auto-wait* e o `expect` já tentam de novo até o prazo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Playwright — Best Practices",
+          "url": "https://playwright.dev/docs/best-practices"
+        },
+        {
+          "titulo": "Playwright — Auto-waiting",
+          "url": "https://playwright.dev/docs/actionability"
+        },
+        {
+          "titulo": "Martin Fowler — Eradicating Non-Determinism in Tests",
+          "url": "https://martinfowler.com/articles/nonDeterminism.html"
+        }
+      ]
+    },
+    {
+      "id": "test-09",
+      "titulo": "O teste que reprova o código errado: controle negativo e mutação",
+      "minutos": 11,
+      "ponte": "Você não confia numa constraint só porque o `INSERT` válido passou. Você tenta gravar o dado inválido e espera o `ORA-`. Com teste é igual: verde só vale se você já viu o vermelho. Onde a analogia quebra: a constraint é declarada e o banco garante. O teste é código escrito por gente, e pode estar verde por engano.",
+      "texto": "Uma suíte verde diz duas coisas possíveis: o código está certo, ou os testes não conseguem perceber que está errado. Olhando só o verde, você não distingue uma da outra.\n\n### Como um teste fica verde por engano\n\n- Conferência fraca (`toBeTruthy`, \"não lançou erro\").\n- Assíncrono sem `await`: o teste termina antes da conferência (test-07).\n- Mock no lugar da regra: confere o valor que o próprio teste mandou devolver (test-03).\n- O teste não roda: nome de arquivo fora do padrão, `it.skip` esquecido, filtro errado.\n- A entrada não exercita o ramo: só valores do meio, nunca a fronteira.\n\n### Controle negativo\n\nO nome vem do laboratório: além da amostra, você roda uma que **tem** que dar negativo, para provar que o exame funciona. Em teste:\n\n1. Com a suíte verde, **quebre o código de propósito**. Troque `<=` por `<`, inverta um `if`, devolva um valor fixo, apague uma linha.\n2. Rode os testes.\n3. Se algum reprovar, a suíte enxerga essa regra. Se tudo continuar verde, você achou um buraco.\n4. Desfaça a quebra.\n\nLeva um minuto. Vale como hábito em regra crítica e como exigência de revisão: **\"esse teste falha sem a sua correção?\"** Para correção de defeito, o controle negativo é rodar o teste novo contra o código antigo. O TDD (test-04) faz isso por construção, no passo vermelho.\n\n### Teste de mutação\n\nÉ o controle negativo automatizado. A ferramenta (no ecossistema JavaScript, a mais conhecida é o Stryker) gera centenas de **mutantes**, cada um com uma alteração pequena no código, e roda a suíte contra cada um. Mutante que faz algum teste falhar foi **morto**. Mutante que passa em tudo **sobreviveu** e aponta uma regra sem teste que a proteja. O resultado é o *mutation score* (percentual de mutantes mortos).\n\nO custo é alto: a suíte roda muitas vezes. Por isso se usa em módulo de regra crítica, de tempos em tempos, e não no projeto inteiro a cada PR. Como noção, basta saber que existe, o que mede e que é a única métrica que avalia a **qualidade** dos testes, não a quantidade.\n\n### Cobertura é mapa, não meta\n\n*Coverage* (cobertura) mede quais linhas e ramos foram **executados** durante os testes. Não mede se alguém **conferiu** o resultado. Um teste que chama a função e não confere nada dá 100% de cobertura.\n\nComo mapa, ela é ótima: cobertura baixa num módulo de regra mostra onde não há teste nenhum. Como meta, estraga: quando o time é cobrado por 90%, aparecem testes sem conferência escritos para pintar a linha de verde. A leitura correta:\n\n- Cobertura **baixa** é informação confiável: ali não há teste.\n- Cobertura **alta** não é informação: pode haver teste bom ou teste vazio.\n\nNo Cockpit, o provedor de cobertura do Vitest já está instalado e `npm run test:cov` gera o relatório. Um piso moderado no CI serve para impedir queda brusca. Exigir número alto em tudo só troca qualidade por aparência.",
+      "naPratica": "Na revisão de PR, a pergunta \"você viu esse teste falhar?\" vale mais que o percentual. No Cockpit, toda correção de defeito traz o teste que reprova o código antigo, e a regra do plano do dia passa por controle negativo manual antes do merge.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A regra original usa `<=`. O mutante troca por `<`. Duas suítes rodam contra as duas versões. Qual mutante sobrevive?",
+          "codigo": "import assert from 'node:assert/strict';\n\ntype Regra = (usados: number, capacidade: number) => boolean;\nconst original: Regra = (u, c) => u <= c;\nconst mutante: Regra = (u, c) => u < c;\n\nconst suiteFraca = (cabe: Regra) => {\n  assert.equal(cabe(100, 480), true);\n  assert.equal(cabe(900, 480), false);\n};\nconst suiteForte = (cabe: Regra) => {\n  suiteFraca(cabe);\n  assert.equal(cabe(480, 480), true);\n};\n\nfunction roda(nome: string, suite: (r: Regra) => void, regra: Regra) {\n  try { suite(regra); console.log(nome, 'passou'); }\n  catch { console.log(nome, 'REPROVOU'); }\n}\n\nroda('fraca x original:', suiteFraca, original);\nroda('fraca x mutante:', suiteFraca, mutante);\nroda('forte x original:', suiteForte, original);\nroda('forte x mutante:', suiteForte, mutante);\n",
+          "saida": "fraca x original: passou\nfraca x mutante: passou\nforte x original: passou\nforte x mutante: REPROVOU\n",
+          "explicacao": "A suíte fraca passa com o código certo e com o errado: o mutante sobreviveu, então ela não protege a fronteira. A suíte forte tem o caso 480 de 480 e mata o mutante. As duas estão verdes contra o original. Só o controle negativo mostra a diferença entre elas."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`prioridade` deveria devolver `'alta'` para tarefa atrasada. O primeiro \"teste\" chama os dois ramos sem conferir nada. O que sai?",
+          "codigo": "import assert from 'node:assert/strict';\n\nconst ramos = new Set<string>();\n\nfunction prioridade(atrasada: boolean): string {\n  if (atrasada) {\n    ramos.add('atrasada');\n    return 'baixa';\n  }\n  ramos.add('em dia');\n  return 'normal';\n}\n\nprioridade(true);\nprioridade(false);\nconsole.log('teste sem conferencia: passou');\nconsole.log('cobertura de ramos:', (ramos.size / 2) * 100 + '%');\n\ntry {\n  assert.equal(prioridade(true), 'alta');\n  console.log('teste com conferencia: passou');\n} catch {\n  console.log('teste com conferencia: REPROVOU');\n}\n",
+          "saida": "teste sem conferencia: passou\ncobertura de ramos: 100%\nteste com conferencia: REPROVOU\n",
+          "explicacao": "Os dois ramos foram executados, então a cobertura é 100%, e o teste sem conferência \"passou\" porque nada lançou erro. O defeito (devolve `'baixa'`) continua lá. Só a conferência do valor reprova. Cobertura mede o que rodou, não o que foi verificado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um PR corrige um defeito e traz um teste novo, verde. Qual verificação dá mais segurança de que o teste protege contra a volta do defeito?",
+          "opcoes": [
+            "Conferir que a cobertura do arquivo subiu",
+            "Rodar o teste novo contra o código de antes da correção e ver que ele reprova",
+            "Rodar a suíte três vezes para garantir que não é intermitente",
+            "Conferir que o teste tem pelo menos três `expect`"
+          ],
+          "correta": 1,
+          "explicacao": "É o controle negativo: se o teste passa também no código antigo, ele não detecta o defeito. Cobertura e número de conferências não dizem se o teste enxerga esta regra. Rodar três vezes só mede estabilidade."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O relatório mostra 35% de cobertura no módulo de regra de recorrência e 98% no módulo de relatórios. O que dá para concluir com segurança?",
+          "opcoes": [
+            "Relatórios está bem testado e recorrência está mal testado",
+            "Boa parte da regra de recorrência não é exercitada por nenhum teste; sobre relatórios, só olhando os testes",
+            "Recorrência tem mais defeitos que relatórios",
+            "Nada: cobertura não serve para nada"
+          ],
+          "correta": 1,
+          "explicacao": "Cobertura baixa é informação confiável: o que não rodou não foi testado. Cobertura alta só diz que o código rodou. Pode haver conferência boa ou nenhuma. A primeira opção acerta metade e erra a outra."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, qual cobertura a gente vai exigir no CI? Estavam falando em 90%.\"",
+          "pontos": [
+            "Explicou que cobertura mede execução, não conferência",
+            "Disse o efeito de meta alta: teste vazio para pintar linha",
+            "Propôs um piso moderado para evitar queda, não um alvo",
+            "Propôs o que exigir no lugar: teste que falha sem a mudança, regra crítica com casos de fronteira",
+            "Citou onde olhar a cobertura: módulos de regra com número baixo"
+          ],
+          "modelo": "Eu não colocaria 90% como meta. Cobertura mede linha executada, não resultado conferido: dá para chegar a 90% com teste que não confere nada, e é o que acontece quando o número vira cobrança. O que eu proponho: um piso moderado no CI, só para o número não despencar sem ninguém notar, e usar o relatório como mapa. Módulo de regra com cobertura baixa entra na fila. E na revisão a gente exige o que importa: todo PR de correção traz um teste que falha sem a correção, e regra de negócio traz os casos de fronteira. Se quiserem uma métrica de qualidade de verdade, dá para rodar teste de mutação no módulo mais crítico uma vez por mês."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é controle negativo em teste?",
+          "verso": "Quebrar o código de propósito e ver a suíte reprovar. Se continuar verde, os testes não enxergam aquela regra."
+        },
+        {
+          "frente": "Por que cobertura alta não prova que o código está testado?",
+          "verso": "Ela mede o que foi executado, não o que foi conferido. Teste sem `expect` dá 100%."
+        },
+        {
+          "frente": "O que é um mutante sobrevivente?",
+          "verso": "Uma alteração pequena no código que nenhum teste percebeu. Aponta uma regra sem proteção."
+        },
+        {
+          "frente": "Cobertura baixa × cobertura alta: qual das duas é informação confiável?",
+          "verso": "A baixa: ali não há teste. A alta só diz que o código rodou."
+        },
+        {
+          "frente": "Que pergunta fazer ao revisar o teste de uma correção de defeito?",
+          "verso": "\"Esse teste falha sem a sua correção?\" Rodar contra o código antigo é o controle negativo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Test Coverage",
+          "url": "https://martinfowler.com/bliki/TestCoverage.html"
+        },
+        {
+          "titulo": "Vitest — Coverage",
+          "url": "https://vitest.dev/guide/coverage"
+        },
+        {
+          "titulo": "Stryker Mutator — Documentação",
+          "url": "https://stryker-mutator.io/docs/"
+        }
+      ]
+    }
+  ]
+}

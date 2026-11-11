@@ -1,0 +1,1408 @@
+{
+  "licoes": [
+    {
+      "id": "mig-01",
+      "titulo": "O mapa: anatomia de uma tela Forms no mundo web",
+      "minutos": 11,
+      "ponte": "Um `.fmb` é um artefato só que faz três trabalhos: desenha a tela, guarda a regra e fala com o banco, tudo dentro de uma sessão aberta para aquele usuário. Na web esses três trabalhos moram em três lugares, separados por rede. Quase toda peça do Forms tem um destino conhecido do outro lado. A analogia quebra em três pontos, e são eles que definem o custo de uma migração: a sessão, o lock e o commit.",
+      "texto": "A arquitetura alvo tem três andares:\n\n- **React** no navegador: desenha, reage ao usuário e guarda o estado da tela.\n- **API NestJS** no servidor: valida, autoriza e coordena a transação.\n- **O banco Oracle de sempre:** dados, *packages* e triggers de banco.\n\nEntre o navegador e a API só passa HTTP com JSON. Entre a API e o banco existe um *pool* (conjunto de conexões reaproveitadas), aberto com um único usuário de serviço.\n\n### De → Para\n\n| No Forms | Na web | Comentário |\n|---|---|---|\n| Form (`.fmb`) | Rota + página React | Uma tela grande costuma virar duas ou três páginas: lista, detalhe, edição |\n| Canvas, window, tab | Layout, componentes, abas, diálogo modal | Posição em pixel não migra. O layout é refeito |\n| Bloco *base table* | Recurso REST (`/fornecedores`) + *query* no front | O bloco fazia `SELECT`, `INSERT`, `UPDATE` e `DELETE` sozinho. Agora cada operação é um endpoint que alguém escreve |\n| Bloco de controle | Estado local do componente | Não vai ao servidor |\n| Item | Campo do formulário + propriedade do DTO (*data transfer object*, o formato do JSON) | Obrigatório, tamanho e máscara são declarados duas vezes: no front por conforto, no back por garantia |\n| Trigger de validação (`WHEN-VALIDATE-ITEM`) | Validação no front + regra no back | Detalhe em mig-08 |\n| Trigger de transação (`PRE-INSERT`, `ON-COMMIT`, `KEY-COMMIT`) | *Service* da API, dentro de uma transação | Detalhe em mig-06 |\n| LOV e *record group* | *Combobox* (campo com lista) com busca no servidor | Detalhe em mig-09 |\n| *Program unit* | Função no front, service no Nest ou package no banco | Depende do que ela faz. Critério em mig-04 |\n| `.pll` | Biblioteca compartilhada: módulo do front, módulo do Nest ou package | Uma `.pll` costuma misturar os três tipos e precisa ser separada |\n| `:GLOBAL` e parâmetros de `CALL_FORM` | URL (id e filtros), estado do front, token (quem é o usuário) | Não existe memória compartilhada entre telas |\n| Alerta e `MESSAGE` | Diálogo de confirmação, *toast* (aviso que some sozinho), erro ao lado do campo | A linha de mensagem do rodapé não tem herdeiro único |\n| Menu (`.mmb`) e *roles* de menu | Navegação + rotas protegidas | Esconder o item não protege nada. Quem confere a permissão é a API |\n| Reports | Serviço de relatório | Quatro destinos, em mig-11 |\n\n### As três coisas sem equivalente direto\n\n**1. Sessão de banco por usuário.** No Forms cada pessoa tem a sua conexão, aberta do login ao fim do expediente. Variável de package, tabela temporária, `USER` e contexto de aplicação vivem ali. Na API, cada requisição pega uma conexão do pool, usa e devolve. A requisição seguinte da mesma pessoa pode cair em outra conexão, e a mesma conexão atende outra pessoa em seguida. Nada que dependa de estado de sessão sobrevive. Consequências em mig-10.\n\n**2. Lock pessimista enquanto edita.** O Forms trava a linha quando o usuário começa a digitar e segura até o commit. Para isso precisa da conexão presa. A web não segura conexão entre requisições, então troca o lock por detecção de conflito na hora de gravar. É mig-06.\n\n**3. Commit único de vários blocos.** O `COMMIT_FORM` grava o que está pendente em todos os blocos numa transação só, sem você escrever nada. Na web, a transação só existe dentro de **uma** requisição. A tela precisa juntar mestre e detalhes e mandar tudo numa chamada.\n\n### A armadilha clássica\n\nTraduzir peça por peça: um endpoint por bloco, uma chamada por trigger, um campo escondido para cada `:GLOBAL`. O resultado funciona e é lento, frágil e caro de manter. O mapa diz **para onde cada responsabilidade vai**. O desenho é refeito por caso de uso: o que o usuário quer fazer nesta tela, que dados isso exige e qual é a unidade de gravação.",
+      "naPratica": "Quando pedirem a sua opinião sobre migrar uma tela, comece pelas três linhas sem equivalente: ela depende de estado de sessão, de registro travado ou de commit de vários blocos? Uma tela que não depende de nenhuma das três é barata. As que dependem pedem desenho novo, e é ali que mora o prazo.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Um item de data tem a propriedade Required ligada e uma `WHEN-VALIDATE-ITEM` que consulta o limite de crédito do cliente. Para onde vai cada coisa?",
+          "opcoes": [
+            "As duas vão só para o front: validação de campo é assunto de tela",
+            "As duas vão só para o back: o front não valida nada",
+            "O obrigatório é declarado no front e no DTO do back. A regra de crédito mora no back, e o front pode consultá-la para avisar cedo",
+            "O obrigatório vai para o front e a regra de crédito vira uma trigger de banco nova"
+          ],
+          "correta": 2,
+          "explicacao": "Validação de formato fica nos dois lados: no front para o usuário ver na hora, no back porque a API pode ser chamada sem a tela. Regra que consulta dado mora no back (service ou package). Deixar tudo no front é o erro mais comum: a regra some para qualquer outro consumidor da API."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas peças do Forms **não** tem equivalente direto na arquitetura web?",
+          "opcoes": [
+            "A linha travada desde que o usuário começa a editar até o commit",
+            "A LOV de clientes com filtro pelo nome",
+            "O alerta de confirmação antes de excluir",
+            "O menu que esconde opções conforme a role"
+          ],
+          "correta": 0,
+          "explicacao": "LOV vira combobox com busca, alerta vira diálogo e menu vira navegação com rotas protegidas. O lock mantido durante a edição depende de uma conexão presa por usuário, que a web não tem. Ele é substituído por outro mecanismo (lock otimista), não traduzido."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A tela de pedidos abre a tela de itens com `CALL_FORM` depois de gravar o número do pedido em `:GLOBAL.pedido_id`. Qual é o destino natural desse valor na web?",
+          "opcoes": [
+            "Uma variável global do JavaScript, lida pela outra página",
+            "Um parâmetro da URL: `/pedidos/42/itens`",
+            "Uma variável de package no banco, gravada pela API",
+            "Um campo escondido enviado em todas as requisições"
+          ],
+          "correta": 1,
+          "explicacao": "Identificador do que está sendo visto vai na URL: sobrevive a recarregar a página, pode ser colado num e-mail e funciona com o botão voltar. Variável global do JavaScript morre ao recarregar. Variável de package não sobrevive entre requisições, porque a conexão volta para o pool."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um arquiteto que nunca trabalhou com Forms pergunta: \"{{nome}}, em duas frases: o que uma tela Forms faz de graça que a gente vai ter que construir na web?\"",
+          "pontos": [
+            "Veredito: quase tudo tem destino conhecido, três coisas não",
+            "Citou sessão de banco por usuário, lock durante a edição e commit único de vários blocos",
+            "Disse a consequência de custo: essas três pedem desenho, não tradução",
+            "Lembrou que o bloco base table gerava o CRUD sozinho e agora cada operação é escrita",
+            "Propôs um primeiro passo: marcar na lista de telas quais dependem de cada uma das três"
+          ],
+          "modelo": "Quase tudo tem destino direto: bloco vira recurso REST, item vira campo, LOV vira combobox, trigger vira validação ou service. Três coisas o Forms dá de graça e a web não tem: uma sessão de banco por usuário, a linha travada enquanto a pessoa edita e o commit de vários blocos numa transação só. O custo da migração mora nelas, porque exigem desenho novo: identidade propagada ao banco, lock otimista e uma chamada de API por unidade de gravação. O risco é alguém traduzir peça por peça e descobrir isso em produção. Como primeiro passo, eu marco na lista de telas quais dependem de cada uma das três. Isso separa as baratas das caras em poucos dias."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Mapear uma tela genérica",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/mapa-pedido.md`. Imagine uma tela genérica de pedido: bloco de cabeçalho, bloco de itens multi-registro, LOV de cliente, LOV de produto, uma validação de quantidade, um total calculado em `POST-QUERY`, um botão que chama o relatório e um `KEY-COMMIT` customizado.",
+            "Monte uma tabela de três colunas (peça do Forms, destino na web, andar: front, API ou banco) com uma linha para cada peça.",
+            "Escreva as rotas do front (por exemplo `/pedidos` e `/pedidos/:id`) e os endpoints da API que a tela precisa, com verbo e caminho.",
+            "Responda em uma linha cada uma: a tela depende de estado de sessão? De registro travado? De commit de vários blocos?",
+            "Marque com um asterisco as linhas em que você ficou em dúvida sobre o destino. Elas são a sua lista de estudo para as próximas lições."
+          ],
+          "prontoQuando": "O arquivo tem a tabela com pelo menos 8 peças mapeadas, a lista de rotas e endpoints e as três respostas sobre sessão, lock e commit."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as três coisas do Forms sem equivalente direto na web?",
+          "verso": "Sessão de banco por usuário, lock pessimista enquanto edita e commit único de vários blocos."
+        },
+        {
+          "frente": "Bloco base table vira o quê na web?",
+          "verso": "Um recurso REST na API (`/fornecedores`) e uma query no front. O CRUD que o bloco fazia sozinho passa a ser escrito, endpoint por endpoint."
+        },
+        {
+          "frente": "Por que variável de package não serve para guardar estado do usuário atrás de uma API?",
+          "verso": "A API usa pool. Cada requisição pode cair em outra conexão, e a mesma conexão atende outra pessoa em seguida."
+        },
+        {
+          "frente": "`:GLOBAL` vira o quê?",
+          "verso": "Depende do conteúdo: id e filtro vão na URL, preferência de tela vai no estado do front, identidade do usuário vem do token."
+        },
+        {
+          "frente": "Por que esconder o item de menu não é controle de acesso na web?",
+          "verso": "A API pode ser chamada sem a tela. A permissão tem que ser conferida no servidor, em cada rota."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Controllers",
+          "url": "https://docs.nestjs.com/controllers"
+        },
+        {
+          "titulo": "React — Managing State",
+          "url": "https://react.dev/learn/managing-state"
+        },
+        {
+          "titulo": "node-oracledb — Connection Handling",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/user_guide/connection_handling.html"
+        }
+      ]
+    },
+    {
+      "id": "mig-02",
+      "titulo": "\"Dá para migrar?\" — as 7 perguntas de viabilidade",
+      "minutos": 10,
+      "ponte": "Quando alguém pergunta \"dá para criar um índice nessa tabela?\", você não responde \"dá\". Você pergunta o volume, quem grava nela e em que janela. É o mesmo reflexo, aplicado a uma tela: a resposta de sênior nunca é só sim ou não.",
+      "texto": "A pergunta \"dá para migrar esse módulo do Forms para a frente moderna?\" quase sempre tem a mesma resposta técnica: **dá**. Quase tudo que uma tela Forms faz pode ser refeito com React na tela, NestJS no meio e o mesmo banco embaixo. A pergunta útil é outra: **quanto custa, o que arrisca e por onde começa**. Estas sete perguntas levam você a essa resposta.\n\n| # | Pergunta | O que ela revela |\n|---|---|---|\n| 1 | **O que a tela faz de verdade?** | O tamanho: blocos, itens, triggers, *program units*, LOVs, relatórios chamados |\n| 2 | **Onde mora a regra?** | Regra em *package* no banco é reaproveitada quase de graça. Regra em trigger de tela precisa ser extraída e testada |\n| 3 | **Com quem ela conversa?** | Outras telas, variáveis globais, bibliotecas `.pll`, jobs, integrações: as dependências que não aparecem no pedido |\n| 4 | **Como ela trata transação e concorrência?** | O Forms trava o registro enquanto o usuário edita e confirma vários blocos num `COMMIT` só. A web não tem conexão presa por usuário: isso muda de desenho |\n| 5 | **Quem usa e como se identifica?** | Usuário de banco, *roles*, auditoria por `USER`. Na web há um usuário de serviço e a identidade vem num token |\n| 6 | **Qual o volume e o jeito de uso?** | Digitação intensa por teclado e blocos com milhares de linhas pedem cuidado de usabilidade e paginação |\n| 7 | **Como conviver e como voltar atrás?** | As duas telas vão rodar juntas sobre o mesmo banco por um tempo. Sem plano de convivência e de retorno, não é migração, é aposta |\n\n### A forma da resposta\n\nUma resposta de sênior tem quatro partes, nesta ordem:\n\n1. **Veredito:** \"dá\", \"dá com ressalvas\" ou \"agora não\".\n2. **Custo:** uma faixa, não um número (\"entre 3 e 5 semanas\"), dizendo do que ela depende.\n3. **Risco principal:** um só, o maior, com o que o reduz.\n4. **Primeiro passo:** algo pequeno que reduz a incerteza (\"em dois dias eu faço o inventário da tela e volto com o número\").\n\nSe você ainda não tem dado para as partes 2 e 3, a resposta honesta é o primeiro passo: **\"Tecnicamente dá. Para dizer o custo, preciso de dois dias de inventário.\"** Isso é diferente de \"não sei\", e muito diferente de \"dá, tranquilo\".\n\n### O atalho que mais reduz custo\n\nSe a regra de negócio já está em *packages* no banco, a primeira versão da API pode só **chamar esses packages**. A tela muda, a regra fica onde está, testada há anos. Reescrever a regra em TypeScript vira uma decisão separada, tomada depois, módulo a módulo.",
+      "naPratica": "Monte uma página com as 7 perguntas e leve para a próxima conversa sobre modernização. Responder com o quadro na mão, em vez de improvisar, é o que faz você ser ouvido como referência do assunto.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela tem toda a regra de cálculo dentro de triggers `WHEN-VALIDATE-ITEM` e `PRE-INSERT` do próprio `.fmb`. O que isso muda na migração?",
+          "opcoes": [
+            "Nada: triggers de tela são convertidas automaticamente para React",
+            "Barateia: a regra já está pronta para ser chamada pela API",
+            "Encarece: a regra precisa ser extraída para um lugar que a API alcance e ganhar testes",
+            "Inviabiliza: regra em trigger de tela não pode ser migrada"
+          ],
+          "correta": 2,
+          "explicacao": "A API não consegue chamar uma trigger de `.fmb`. A regra tem que ir para um package no banco ou para um service no Nest, e como muda de lugar precisa de teste que prove que decide igual."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas respostas tem a forma de uma resposta de sênior?",
+          "opcoes": [
+            "\"Dá sim, é tranquilo, em duas semanas está pronto.\"",
+            "\"Não dá, essa tela é muito complexa.\"",
+            "\"Tecnicamente dá. O risco é o commit de três blocos juntos. Em dois dias de inventário eu volto com a faixa de prazo.\"",
+            "\"Depende.\""
+          ],
+          "correta": 2,
+          "explicacao": "Veredito, risco principal e primeiro passo que reduz a incerteza. As outras ou prometem sem dado, ou fecham a porta sem dado, ou não dizem nada."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a gente consegue migrar a tela de cadastro de fornecedores do Forms para a frente nova?\" Você ainda não abriu a tela. Responda em até um minuto, em voz alta ou por escrito.",
+          "pontos": [
+            "Deu um veredito inicial (tecnicamente dá) sem prometer prazo",
+            "Disse o que precisa descobrir antes do custo (onde mora a regra, dependências, transação)",
+            "Citou a convivência das duas telas sobre o mesmo banco",
+            "Propôs um primeiro passo pequeno com data (inventário)"
+          ],
+          "modelo": "Tecnicamente dá: cadastro é o tipo de tela que migra bem. O custo depende de três coisas que eu ainda não olhei: se a regra está em package ou presa nas triggers da tela, com que outras telas e relatórios ela conversa, e como ela grava (um bloco ou vários no mesmo commit). As duas telas vão conviver sobre o mesmo banco por um tempo, então preciso ver também quem mais grava nessas tabelas. Me dá dois dias para fazer o inventário e eu volto com uma faixa de prazo e o risco principal."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "A sua cola das 7 perguntas",
+          "minutos": 10,
+          "passos": [
+            "Escreva de memória as 7 perguntas num arquivo `estudo/7-perguntas.md`, uma por linha.",
+            "Confira com a lição e complete o que faltou.",
+            "Escolha uma tela genérica que você conhece bem (um cadastro simples) e responda cada pergunta em uma linha."
+          ],
+          "prontoQuando": "O arquivo tem as 7 perguntas e as 7 respostas para uma tela, e você consegue recitar as perguntas sem olhar."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as 4 partes de uma resposta de sênior a \"dá para migrar?\"",
+          "verso": "Veredito, custo em faixa, risco principal e primeiro passo que reduz a incerteza."
+        },
+        {
+          "frente": "Por que regra em package no banco barateia a migração de uma tela Forms?",
+          "verso": "A API pode chamar o package como está. A tela muda e a regra, já testada, fica onde está. Reescrever vira decisão separada."
+        },
+        {
+          "frente": "Cite 4 das 7 perguntas de viabilidade de migração.",
+          "verso": "O que a tela faz; onde mora a regra; com quem conversa; transação e concorrência; quem usa e como se identifica; volume e jeito de uso; convivência e retorno."
+        },
+        {
+          "frente": "O que dizer quando ainda não há dado para estimar uma migração?",
+          "verso": "\"Tecnicamente dá. Para dizer o custo, preciso de N dias de inventário.\" Veredito mais primeiro passo, sem prometer prazo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Strangler Fig Application",
+          "url": "https://martinfowler.com/bliki/StranglerFigApplication.html"
+        }
+      ]
+    },
+    {
+      "id": "mig-03",
+      "titulo": "Inventário de um módulo: blocos, triggers, program units, LOVs e relatórios",
+      "minutos": 13,
+      "ponte": "Antes de alterar um package grande você levanta quem o chama, o que ele grava e de quais objetos depende. O inventário de um módulo Forms é esse mesmo levantamento, com uma coluna a mais: **para onde cada pedaço vai** do outro lado. A diferença é o objetivo. Aqui você não procura impacto de uma mudança, procura o tamanho de uma reconstrução.",
+      "texto": "Estimativa sem inventário é palpite. O inventário é barato (um ou dois dias por módulo médio) e transforma \"acho que umas seis semanas\" em uma faixa com justificativa.\n\n### O que contar\n\nExporte cada tela para texto ou XML e conte por script. Contar na mão, pelo navegador de objetos, falha nas telas grandes.\n\n| O que | Por que importa |\n|---|---|\n| Blocos (base table × controle, um registro × multi-registro) | Cada bloco base table vira endpoints. Multi-registro é mais caro na tela |\n| Itens por bloco | Tamanho dos formulários e dos DTOs |\n| Triggers, por nível (form, bloco, item) e por tipo | A matéria-prima da estimativa |\n| *Program units* e linhas de cada uma | Onde a regra costuma estar escondida |\n| `.pll` anexadas e o que a tela usa de cada uma | Dependência que não aparece dentro do `.fmb` |\n| LOVs e *record groups* (com o SQL) | Cada uma vira busca na API ou lista em cache |\n| Saídas para outras telas (`CALL_FORM`, `OPEN_FORM`, `NEW_FORM`) e `:GLOBAL` lidas e gravadas | O fluxo real do usuário e o acoplamento entre telas |\n| Relatórios chamados, arquivos gerados, comandos de sistema operacional | A parte que não é tela (mig-11) |\n| Objetos de banco tocados: tabelas, packages, sequences e as **triggers de banco** dessas tabelas | O que a API vai reaproveitar e o que continua valendo sozinho |\n\n### Classificar cada trigger\n\nContar não basta. Cada trigger e cada program unit recebe uma de quatro classes, e a classe define o destino e o custo:\n\n| Classe | O que é | Destino | Custo relativo |\n|---|---|---|---|\n| **Apresentação** | Habilita, esconde, navega, posiciona, formata | Front | Baixo. Muitas somem, porque o React resolve com estado |\n| **Validação** | Confere um valor ou a coerência entre campos | Front e back | Médio |\n| **Regra de negócio** | Calcula, decide, consulta outras tabelas para decidir | Package ou service (mig-04) | Alto. Exige teste |\n| **Transação** | Grava, numera, trava, confirma | Service com transação (mig-06) | Alto. Exige desenho |\n\nO **nome** da trigger dá o primeiro chute: `WHEN-VALIDATE-ITEM` é validação, `PRE-INSERT` é transação, `KEY-NEXT-ITEM` é apresentação. A classe \"regra de negócio\" **nunca sai do nome**. Ela só aparece quando você abre o código: uma `WHEN-BUTTON-PRESSED` de trezentas linhas com cursor e cálculo é regra, não apresentação. Por isso o classificador automático é triagem, e toda trigger acima de umas vinte linhas merece leitura.\n\n### A planilha\n\nUma linha por trigger ou program unit, com as colunas: tela, nível, nome, linhas, classe, destino (front, API, package existente, package novo), objetos de banco que toca e observação. Uma segunda aba lista LOVs, saídas para outras telas e relatórios.\n\n### De inventário a estimativa\n\nContagem por classe vezes um peso em horas, com mínimo e máximo. O resultado é uma **faixa**. Os pesos do exemplo abaixo são ponto de partida: depois da primeira tela migrada, você troca pelos números medidos. A conta só cobre as triggers. Fundação, relatórios, convivência e piloto entram por fora, como você verá em mig-12.\n\n### Armadilhas\n\n- **Código herdado.** Triggers vindas de *object library* e de classe de propriedade não aparecem como código da tela e executam do mesmo jeito.\n- **Trigger que só chama uma program unit.** Conte e classifique a unit, não a linha de chamada.\n- **O que ninguém usa.** Bloco escondido, botão desabilitado há anos, relatório sem execução. Marque como \"não migrar\" e confirme com o usuário-chave. É o item que mais reduz a faixa.",
+      "naPratica": "A planilha de inventário é o documento que sustenta a sua resposta quando contestarem o prazo. Sem ela a conversa é opinião contra opinião. Com ela é \"são 5 regras de negócio presas na tela, estas aqui, e cada uma leva de 4 a 12 horas com teste\".",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um classificador de triagem pelo nome da trigger. A ordem das regras importa. O que sai para cada uma?",
+          "codigo": "type Classe = 'apresentacao' | 'validacao' | 'transacao';\nconst regras: [RegExp, Classe][] = [\n  [/^(PRE|ON|POST)-(INSERT|UPDATE|DELETE|COMMIT)$|^POST-FORMS-COMMIT$|^KEY-COMMIT$/, 'transacao'],\n  [/^WHEN-VALIDATE-/, 'validacao'],\n  [/^(KEY-|WHEN-NEW-|WHEN-BUTTON-|POST-QUERY$)/, 'apresentacao'],\n];\nconst classifica = (nome: string): string =>\n  regras.find(([re]) => re.test(nome))?.[1] ?? 'ABRIR O CODIGO';\n\nconst triggers = ['WHEN-VALIDATE-ITEM', 'PRE-INSERT', 'KEY-COMMIT', 'KEY-NEXT-ITEM',\n  'WHEN-BUTTON-PRESSED', 'ON-LOCK', 'WHEN-TIMER-EXPIRED'];\nfor (const t of triggers) console.log(`${t} -> ${classifica(t)}`);\n",
+          "saida": "WHEN-VALIDATE-ITEM -> validacao\nPRE-INSERT -> transacao\nKEY-COMMIT -> transacao\nKEY-NEXT-ITEM -> apresentacao\nWHEN-BUTTON-PRESSED -> apresentacao\nON-LOCK -> ABRIR O CODIGO\nWHEN-TIMER-EXPIRED -> ABRIR O CODIGO\n",
+          "explicacao": "`find` devolve a primeira regra que casa. `KEY-COMMIT` casa com a regra de transação antes de chegar à regra genérica `KEY-`. `ON-LOCK` e `WHEN-TIMER-EXPIRED` não casam com nada e caem no padrão. Repare no limite do método: `WHEN-BUTTON-PRESSED` sai como apresentação, e nenhuma regra devolve \"regra de negócio\". Um botão que calcula e grava só é descoberto lendo o código."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Da contagem por classe à faixa de horas. Pesos em horas por trigger (mínimo, máximo), dia útil de 6 horas de código. O que sai?",
+          "codigo": "const pesos = {\n  apresentacao: [0.5, 1],\n  validacao: [1, 3],\n  regra: [4, 12],\n  transacao: [3, 8],\n} as const;\nconst contagem = { apresentacao: 20, validacao: 12, regra: 5, transacao: 4 };\n\nlet min = 0;\nlet max = 0;\nfor (const classe of Object.keys(pesos) as (keyof typeof pesos)[]) {\n  min += contagem[classe] * pesos[classe][0];\n  max += contagem[classe] * pesos[classe][1];\n}\nconst dias = (horas: number) => Math.ceil(horas / 6);\nconsole.log(`triggers: ${min} a ${max} horas`);\nconsole.log(`dias: ${dias(min)} a ${dias(max)}`);\nconst fatia = Math.round(((contagem.regra * pesos.regra[1]) / max) * 100);\nconsole.log(`as 5 regras respondem por ${fatia}% do teto`);\n",
+          "saida": "triggers: 54 a 148 horas\ndias: 9 a 25\nas 5 regras respondem por 41% do teto\n",
+          "explicacao": "Mínimo: 10 + 12 + 20 + 12 = 54. Máximo: 20 + 36 + 60 + 32 = 148. Em dias de 6 horas, 9 a 25 (148 / 6 = 24,7, arredondado para cima). As 5 regras de negócio são 12% das 41 triggers e 41% do teto (60 de 148). A faixa é larga de propósito: ela estreita quando você lê as regras e calibra os pesos com a primeira tela."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O inventário de uma tela mostra 60 triggers. 52 são `KEY-*` e `WHEN-NEW-ITEM-INSTANCE` de poucas linhas. As outras 8 são `WHEN-BUTTON-PRESSED` com 150 a 400 linhas cada. Qual leitura está certa?",
+          "opcoes": [
+            "Tela cara: 60 triggers é muito, qualquer que seja o tipo",
+            "Tela barata: quase tudo é apresentação, inclusive os botões",
+            "O custo está nos 8 botões. É preciso abrir o código deles antes de dar qualquer número",
+            "Não dá para estimar sem migrar a tela inteira primeiro"
+          ],
+          "correta": 2,
+          "explicacao": "As 52 triggers pequenas de navegação custam pouco, e muitas nem têm destino. Um botão com centenas de linhas quase certamente guarda regra de negócio e transação, que o nome não revela. A contagem bruta engana para os dois lados: o que define a faixa é a classe, e a classe \"regra\" só aparece na leitura."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No inventário você encontra, nas tabelas que a tela grava, duas triggers de banco: uma numera o registro por sequence e outra grava auditoria. Onde elas entram na planilha?",
+          "opcoes": [
+            "Não entram: trigger de banco não é parte da tela",
+            "Entram como itens a reescrever no service do Nest",
+            "Entram como triggers de transação da tela, com o mesmo peso em horas",
+            "Entram na lista de objetos de banco, marcadas como \"continua valendo para a API\", com a observação do que elas assumem (por exemplo `USER`)"
+          ],
+          "correta": 3,
+          "explicacao": "Trigger de banco dispara para quem gravar, Forms ou API. Ela não custa reescrita, e precisa estar no inventário por dois motivos: evita que alguém refaça a numeração na API e revela suposições que mudam, como auditoria por `USER`, que passa a gravar o usuário de serviço. Ignorá-la é o erro tentador, porque ela não está no `.fmb`."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Uma analista de negócio pergunta: \"{{nome}}, o módulo de compras tem 14 telas. Quanto tempo você precisa só para me dizer o tamanho da migração?\"",
+          "pontos": [
+            "Deu um prazo para o inventário, não para a migração",
+            "Explicou o que o inventário entrega: contagem classificada e uma faixa",
+            "Avisou que a faixa inicial é larga e estreita depois da primeira tela",
+            "Pediu algo a ela: quais telas e relatórios são de fato usados",
+            "Marcou a data de retorno"
+          ],
+          "modelo": "Para dizer o tamanho, preciso de uns quatro dias de inventário nas 14 telas. Eu volto com uma planilha: quantos blocos, triggers, LOVs e relatórios, cada trigger classificada em apresentação, validação, regra ou transação, e uma faixa de horas. A condição é eu conseguir os fontes de todas as telas e bibliotecas. O risco é a faixa sair larga no começo, porque os pesos são estimados. Ela estreita depois da primeira tela migrada. Você pode encurtar o trabalho: me diga quais telas e relatórios a área realmente usa. O que ninguém usa sai da conta. Começo amanhã e apresento na sexta."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Inventário de uma tela genérica",
+          "minutos": 30,
+          "passos": [
+            "Escolha uma tela de estudo sua, ou descreva de memória uma tela genérica de cadastro com um bloco mestre e um detalhe. Não use material de empresa.",
+            "Crie `estudo/inventario.csv` com as colunas: nivel, nome, linhas, classe, destino, objetos_banco, observacao.",
+            "Preencha uma linha por trigger e por program unit. Classifique primeiro pelo nome e depois corrija as que têm mais de 20 linhas, lendo o que fazem.",
+            "Numa segunda lista, anote LOVs, saídas para outras telas, relatórios e triggers de banco das tabelas gravadas.",
+            "Aplique os pesos do exercício e escreva a faixa de horas no fim do arquivo, com a porcentagem que as regras de negócio representam."
+          ],
+          "prontoQuando": "O CSV tem todas as triggers e program units classificadas, a segunda lista está preenchida e existe uma faixa de horas com mínimo e máximo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as quatro classes de trigger no inventário de migração?",
+          "verso": "Apresentação (vai para o front), validação (front e back), regra de negócio (package ou service) e transação (service com transação)."
+        },
+        {
+          "frente": "Por que o nome da trigger não basta para classificá-la?",
+          "verso": "A classe \"regra de negócio\" não tem nome próprio. Um `WHEN-BUTTON-PRESSED` pode ter trezentas linhas de cálculo e gravação. Só a leitura revela."
+        },
+        {
+          "frente": "Como o inventário vira estimativa?",
+          "verso": "Contagem por classe vezes peso mínimo e máximo em horas: uma faixa. Os pesos são calibrados com a primeira tela migrada."
+        },
+        {
+          "frente": "Por que listar as triggers de banco das tabelas que a tela grava?",
+          "verso": "Elas continuam valendo para a API. Evita reescrever o que já existe e revela suposições que mudam, como auditoria por `USER`."
+        },
+        {
+          "frente": "Qual item do inventário mais reduz a estimativa?",
+          "verso": "O que ninguém usa: bloco escondido, botão morto, relatório sem execução. Confirmado com o usuário-chave, sai da conta."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Patterns of Legacy Displacement",
+          "url": "https://martinfowler.com/articles/patterns-legacy-displacement/"
+        },
+        {
+          "titulo": "Martin Fowler — Strangler Fig Application",
+          "url": "https://martinfowler.com/bliki/StranglerFigApplication.html"
+        }
+      ]
+    },
+    {
+      "id": "mig-04",
+      "titulo": "Onde fica a regra: package no banco × serviço Nest (3 estratégias)",
+      "minutos": 13,
+      "ponte": "Você já viveu esta discussão dentro do Oracle: a regra fica na trigger da tela ou no package? Quem escolheu o package pôde reaproveitar a regra no batch, no relatório e na integração. A migração repete a pergunta um andar acima: package ou service em TypeScript. A analogia quebra num ponto: PL/SQL e JavaScript **não fazem a mesma conta**. `NUMBER` é decimal, o `number` do JavaScript é binário, e `NULL` não se comporta igual.",
+      "texto": "Para cada regra de negócio do inventário (mig-03) existe uma decisão: onde ela vai morar. São três estratégias, e um módulo real usa as três.\n\n| | Estratégia | Custo | Risco | Quando |\n|---|---|---|---|---|\n| **A** | **Manter no package.** A API só chama | Baixo | Baixo: a regra não muda | A regra já está em package |\n| **B** | **Extrair da tela para um package novo**, e a API chama | Médio: mexe no `.fmb` e pede reteste do Forms | Médio: a regra muda de lugar, não de linguagem | A regra está presa em trigger ou program unit e o Forms continua rodando |\n| **C** | **Reescrever em TypeScript**, num service do Nest | Alto: reescrita mais teste de equivalência | Alto: divergência silenciosa | A regra não é compartilhada, ou é coordenação entre sistemas |\n\n### A: a API chama o package\n\nO service abre a transação, chama a procedure com *binds* e devolve o resultado. No node-oracledb isso é executar um bloco anônimo com parâmetros de entrada e saída (confira a forma exata na documentação da sua versão):\n\n```ts\nawait conexao.execute(\n  `BEGIN pk_pedido.calcula_total(:id, :total); END;`,\n  binds, // :id de entrada, :total de saída\n);\n```\n\nBarato não quer dizer grátis. Package escrito para o Forms costuma ter quatro vícios que a API não tolera:\n\n- **`COMMIT` dentro da procedure:** quebra a transação que o service coordena.\n- **Estado em variável de package:** não sobrevive entre requisições, por causa do pool.\n- **Dependência de `USER` ou de contexto de sessão:** assunto de mig-10.\n- **Erro devolvido como texto solto:** a API precisa de código para decidir a resposta HTTP.\n\nA saída comum é uma **fachada**: um package fino, novo, com a assinatura que a API precisa, chamando o antigo.\n\n### B: extrair para package\n\nA regra sai da `WHEN-VALIDATE-ITEM` ou do `PRE-INSERT` e vira procedure. O ponto que decide o sucesso: **a tela Forms passa a chamar o mesmo package**. Durante a convivência a regra existe num lugar só. Extrair para a API e deixar a cópia antiga na tela é criar duas regras que vão divergir na primeira manutenção.\n\n### C: reescrever em TypeScript\n\nExige **teste de equivalência**: as mesmas entradas passam pelo PL/SQL e pelo TypeScript e as saídas são comparadas, com centenas de casos tirados de dados reais anonimizados e dos limites (zero, negativo, nulo, meio centavo). Sem esse teste, C é aposta. As divergências clássicas:\n\n| | PL/SQL | JavaScript |\n|---|---|---|\n| `ROUND(-2.5)` | `-3` | `Math.round(-2.5)` dá `-2` |\n| `ROUND(1.005, 2)` | `1.01` | `(1.005).toFixed(2)` dá `'1.00'` |\n| `0.1 + 0.2` | `0.3` | `0.30000000000000004` |\n| String vazia | É `NULL` | `''` e `null` são valores diferentes |\n| Texto `'Total: '` concatenado com nulo | `'Total: '` | `'Total: null'` |\n| Data | `DATE` sem fuso | `Date` é um instante, exibido com fuso |\n\nDinheiro em TypeScript pede inteiro em centavos ou biblioteca decimal, nunca `number` com casas.\n\n### Critério por tipo de regra\n\n- **Cálculo financeiro, fiscal ou regulatório:** A ou B. Não reescreva conta que está certa há anos.\n- **Regra usada também por batch, relatório ou integração:** A ou B. O batch não vai chamar a sua API.\n- **Processamento de muitas linhas:** A. Trazer linhas para o Node para devolvê-las ao banco é perder para um `UPDATE`.\n- **Formato, obrigatoriedade, coerência entre campos:** C, no DTO da API.\n- **Coordenação:** chamar outro serviço, enviar e-mail, publicar evento: C. É o que o Nest faz bem.\n- **Regra que só esta tela usa e o Forms será desligado logo:** C é defensável, com o teste de equivalência.\n\nO custo que A e B deixam para depois: dependência de PL/SQL e teste automatizado mais difícil. É uma dívida conhecida e pagável módulo a módulo.",
+      "naPratica": "Em reunião, a pressão costuma ser por reescrever tudo em TypeScript, porque parece mais moderno. A sua contribuição de quem conhece o banco é separar as duas decisões: primeiro troca-se a tela com a regra no package, depois decide-se, regra por regra e com teste de equivalência, o que vale reescrever.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "js",
+          "enunciado": "As mesmas contas que no Oracle dão `-3`, `3`, `1.01`, `1.01` e `0.3`. O que o JavaScript imprime?",
+          "codigo": "console.log(Math.round(-2.5));\nconsole.log(Math.round(2.5));\nconsole.log((1.005).toFixed(2));\nconsole.log(Math.round(1.005 * 100) / 100);\nconsole.log(0.1 + 0.2);\nconsole.log(0.1 + 0.2 === 0.3);\n",
+          "saida": "-2\n3\n1.00\n1\n0.30000000000000004\nfalse\n",
+          "explicacao": "`Math.round` arredonda o meio para cima, em direção ao infinito positivo: `-2.5` vira `-2`, e o `ROUND` do Oracle afasta do zero e dá `-3`. `1.005` não existe em binário: o valor guardado é um pouco menor, então `toFixed(2)` dá `1.00` e `1.005 * 100` dá `100.49999999999999`, que arredonda para `100`. `0.1 + 0.2` acumula o mesmo erro de representação. Nenhuma dessas linhas dá erro: a diferença aparece como um centavo a menos num relatório."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "No Oracle, string vazia é `NULL`, `NVL('', 'padrao')` devolve `'padrao'` e `'Total: ' || NULL` devolve `'Total: '`. E aqui?",
+          "codigo": "const vazio: string | null = '';\nconst nulo: string | null = null;\n\nconsole.log(vazio === nulo);\nconsole.log(`[${vazio ?? 'padrao'}]`);\nconsole.log(`[${vazio || 'padrao'}]`);\nconsole.log(`[${nulo ?? 'padrao'}]`);\nconsole.log('Total: ' + nulo);\nconsole.log(JSON.stringify({ a: vazio, b: nulo }));\n",
+          "saida": "false\n[]\n[padrao]\n[padrao]\nTotal: null\n{\"a\":\"\",\"b\":null}\n",
+          "explicacao": "`''` e `null` são valores diferentes. O operador `??` só troca `null` e `undefined`, então a string vazia passa (`[]`). O `||` troca qualquer valor *falsy*, inclusive `''`, e por isso se parece mais com o `NVL` para texto, mas também trocaria o número `0`. Concatenar `null` escreve a palavra `null`. No JSON os dois viajam distintos: a API precisa decidir se grava `''` como `NULL`, que é o que o Oracle fará de qualquer forma."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O cálculo de imposto de um pedido está num package, usado pela tela Forms, por um job noturno e por uma integração. A tela vai ser migrada. Qual estratégia?",
+          "opcoes": [
+            "C: reescrever em TypeScript, para a API não depender de PL/SQL",
+            "A: manter no package e a API chama, se preciso por uma fachada",
+            "B: extrair para um package novo, exclusivo da API",
+            "Copiar a fórmula para o front, para o usuário ver o valor mais rápido"
+          ],
+          "correta": 1,
+          "explicacao": "A regra já está em package, é numérica e tem três consumidores. Reescrever cria uma segunda versão que o job e a integração não usam, com risco de arredondamento diferente. Um package novo só para a API duplica do mesmo jeito. A tentação de C vem de confundir \"modernizar a tela\" com \"reescrever a regra\"."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A validação de limite de desconto está numa `WHEN-VALIDATE-ITEM`. O time extrai a regra para um service do Nest e deixa a trigger da tela Forms como está, porque \"o Forms vai morrer mesmo\". As duas telas vão conviver por oito meses. Qual é o problema?",
+          "opcoes": [
+            "Nenhum: cada tela valida do seu jeito e o resultado é o mesmo",
+            "Desempenho: validar no Nest é mais lento que na trigger",
+            "A trigger da tela deixa de disparar quando a API passa a gravar na tabela",
+            "A regra passa a existir em dois lugares. A primeira mudança de limite será feita em um só e as telas vão decidir diferente"
+          ],
+          "correta": 3,
+          "explicacao": "Convivência longa com regra duplicada é a origem mais comum de dado inconsistente em migração. O caminho é a estratégia B: a regra vai para um package que a tela Forms e a API chamam. A trigger da tela continua disparando no Forms normalmente, e esse é justamente o problema: ela continua valendo com a versão antiga."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um colega desenvolvedor, vindo de JavaScript, pergunta: \"{{nome}}, por que a gente não reescreve logo essas packages em TypeScript? Deixar regra no banco não é coisa do passado?\"",
+          "pontos": [
+            "Veredito: dá para reescrever, mas regra por regra, não em bloco",
+            "Custo: reescrita mais teste de equivalência contra o PL/SQL",
+            "Risco: divergência numérica e de nulo, e regra duplicada enquanto o Forms roda",
+            "Critério: cálculo e regra compartilhada ficam no package, coordenação e formato vão para o Nest",
+            "Primeiro passo concreto: escolher uma regra pequena e montar o teste de equivalência"
+          ],
+          "modelo": "Dá para reescrever, mas regra por regra, não em bloco. Cada regra reescrita custa a reescrita mais um teste de equivalência: as mesmas entradas no PL/SQL e no TypeScript, comparando a saída. Sem isso a gente descobre a diferença em produção, porque o Oracle arredonda decimal e o JavaScript trabalha em binário, e string vazia lá é nulo. O risco maior é a duplicação: enquanto o Forms roda, a regra tem que existir num lugar só. Minha proposta: cálculo e regra que o batch também usa ficam no package. Formato, coordenação e integração vão para o Nest. Para começar, a gente escolhe uma regra pequena, monta o teste de equivalência e mede quanto custou."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as três estratégias para a regra de negócio numa migração de Forms?",
+          "verso": "A: manter no package e a API chama. B: extrair da tela para um package novo. C: reescrever em TypeScript, com teste de equivalência."
+        },
+        {
+          "frente": "Por que reescrever uma regra de PL/SQL em TypeScript exige teste de equivalência?",
+          "verso": "As linguagens divergem em silêncio: arredondamento, decimal × binário, string vazia × nulo, datas. Só comparar saídas com as mesmas entradas prova que decide igual."
+        },
+        {
+          "frente": "`Math.round(-2.5)` e `ROUND(-2.5)` do Oracle dão o quê?",
+          "verso": "JavaScript: `-2` (meio vai para cima). Oracle: `-3` (meio se afasta do zero)."
+        },
+        {
+          "frente": "Na estratégia B, o que a tela Forms tem que passar a fazer?",
+          "verso": "Chamar o mesmo package novo. Assim a regra existe num lugar só durante a convivência."
+        },
+        {
+          "frente": "Cite dois vícios de package feito para o Forms que atrapalham a API.",
+          "verso": "`COMMIT` dentro da procedure, estado em variável de package, dependência de `USER` ou de contexto de sessão, erro como texto solto."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "node-oracledb — Executing PL/SQL",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/user_guide/plsql_execution.html"
+        },
+        {
+          "titulo": "MDN — Math.round()",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/round"
+        },
+        {
+          "titulo": "NestJS — Providers",
+          "url": "https://docs.nestjs.com/providers"
+        }
+      ]
+    },
+    {
+      "id": "mig-05",
+      "titulo": "Estrangulamento (strangler fig) e a convivência Forms + web",
+      "minutos": 12,
+      "ponte": "Você nunca trocou um package grande de uma vez. Criou a versão nova ao lado, apontou um chamador por vez e só apagou a antiga quando ninguém mais a usava. *Strangler fig* (figueira estranguladora) é esse método aplicado a um sistema inteiro: o novo cresce em volta do antigo, tela a tela, até o antigo poder ser removido. A analogia quebra no que é compartilhado: aqui os dois lados gravam nas mesmas tabelas ao mesmo tempo, com usuários diferentes em cada um, durante meses.",
+      "texto": "A alternativa ao estrangulamento é o *big bang*: reescrever tudo e trocar num fim de semana. Em sistema grande e vivo ele costuma falhar pelo mesmo motivo: o valor só aparece no fim, o risco se acumula até lá, e o sistema antigo continua mudando enquanto o novo é escrito.\n\nNo estrangulamento, cada tela migrada entra em produção sozinha, com o Forms rodando ao lado **sobre o mesmo banco**. Três peças fazem isso funcionar.\n\n### 1. O desvio\n\nAlgo precisa decidir, para cada usuário e cada tela, se ele vai para o Forms ou para a web. Na prática é o menu: o item da tela migrada deixa de abrir o form e passa a abrir a URL nova no navegador. O desvio consulta uma tabela de controle com a tela, a fase (piloto ou todos) e o grupo piloto. Voltar atrás é mudar uma linha nessa tabela, sem publicar nada.\n\n### 2. As condições de convivência\n\nQuatro coisas precisam ser verdade antes da primeira tela com escrita entrar no ar:\n\n| Condição | Por quê | Como garantir |\n|---|---|---|\n| **A regra mora num lugar só** | Dois lados com cópias da regra decidem diferente na primeira manutenção | Estratégias A e B de mig-04: package chamado pelos dois |\n| **As triggers de banco valem para os dois** | Numeração, auditoria e integridade não podem depender de quem gravou | Conferir que nenhuma trigger de banco assume sessão de Forms (`USER`, contexto, variável de package) |\n| **A auditoria é coerente** | \"Quem alterou\" tem que dar a mesma resposta nos dois caminhos | Propagar a identidade da API ao banco (mig-10) |\n| **Nada depende de `:GLOBAL`** | A tela nova não recebe nem devolve globais | Trocar por parâmetro explícito ou por dado lido do banco |\n\nHá uma quinta, menos óbvia: **o dado gravado por um lado precisa ser legível pelo outro**. Um valor novo de situação que só a tela web conhece quebra a tela Forms que lista o mesmo registro.\n\nE um efeito do lock: o Forms trava a linha enquanto o usuário edita. Uma gravação da API nessa linha fica esperando. A API precisa de tempo limite na espera e de uma mensagem decente (\"registro em uso por outra pessoa\"), em vez de uma requisição pendurada.\n\n### 3. Grupo piloto\n\nA tela nova começa com poucos usuários, escolhidos: gente que usa a tela todo dia, tolera defeito e reclama com detalhe. O resto continua no Forms. Para o piloto funcionar, um usuário não pode ficar alternando entre os dois mundos dentro da mesma tarefa, e por isso a fatia é o fluxo, como você verá em mig-12.\n\nDuas semanas de piloto sem incidente valem mais que dois meses de homologação: só o uso real encontra o atalho de teclado que faltou e o caso que ninguém especificou.\n\n### Quando desligar a tela antiga\n\nO critério é combinado **antes** e medido, não sentido:\n\n1. Todos os usuários roteados para a web há um período combinado (por exemplo, um ciclo de fechamento completo).\n2. Uso da tela Forms igual a zero nesse período, **medido** por registro de acesso.\n3. Nenhum incidente aberto que exija voltar.\n4. Relatórios, integrações e outras telas que chamavam a antiga já resolvidos.\n\nDesligar tem dois tempos: primeiro tirar do menu, depois, passado mais um ciclo, remover o form. Remover direto elimina o caminho de volta no pior momento.\n\n### O custo que ninguém orça\n\nConvivência custa. Enquanto os dois lados existem, toda mudança de regra é testada duas vezes, toda coluna nova precisa fazer sentido para os dois, e o suporte atende duas telas. Por isso o estrangulamento precisa de ritmo: migração que para na metade deixa a empresa pagando dois sistemas por tempo indeterminado.",
+      "naPratica": "Quando alguém propuser \"a gente reescreve tudo e vira a chave em dezembro\", a pergunta que desmonta o plano com educação é: \"e durante os doze meses de reescrita, quem replica no novo as mudanças que o negócio vai pedir no antigo?\". Depois ofereça a alternativa: uma tela de consulta em produção em poucas semanas.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O desvio por tela migrada e grupo piloto. Para onde vai cada acesso? Repare na última linha.",
+          "codigo": "const migradas = new Map<string, 'todos' | 'piloto'>([\n  ['consulta-cliente', 'todos'],\n  ['cadastro-fornecedor', 'piloto'],\n]);\nconst grupoPiloto = new Set(['ana', 'bruno']);\n\nfunction destino(tela: string, usuario: string): 'web' | 'forms' {\n  const fase = migradas.get(tela);\n  if (fase === 'todos') return 'web';\n  if (fase === 'piloto' && grupoPiloto.has(usuario)) return 'web';\n  return 'forms';\n}\n\nconsole.log(destino('consulta-cliente', 'carla'));\nconsole.log(destino('cadastro-fornecedor', 'ana'));\nconsole.log(destino('cadastro-fornecedor', 'carla'));\nconsole.log(destino('pedido', 'ana'));\nmigradas.delete('cadastro-fornecedor'); // plano de retorno\nconsole.log(destino('cadastro-fornecedor', 'ana'));\n",
+          "saida": "web\nweb\nforms\nforms\nforms\n",
+          "explicacao": "Tela em fase `todos` manda qualquer usuário para a web. Em fase `piloto`, só quem está no grupo. Tela que não está no mapa cai no padrão, que é o Forms: o padrão seguro é o sistema antigo. A última linha é o plano de retorno: tirar a tela do mapa devolve todo mundo ao Forms sem publicar código. Em produção, o mapa é uma tabela de controle."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Critério de desligamento medido: acessos por dia à tela Forms depois que todos foram roteados para a web. Exigência: 5 dias seguidos sem uso. O que sai?",
+          "codigo": "const acessosForms = [38, 21, 9, 0, 0, 2, 0, 0, 0];\nconst diasExigidos = 5;\n\nlet seguidos = 0;\nlet ultimoUso = -1;\nacessosForms.forEach((n, dia) => {\n  if (n === 0) seguidos++;\n  else {\n    seguidos = 0;\n    ultimoUso = dia + 1;\n  }\n});\n\nconsole.log(`dias seguidos sem uso: ${seguidos}`);\nconsole.log(`último uso: dia ${ultimoUso}`);\nconsole.log(seguidos >= diasExigidos ? 'pode tirar do menu' : 'ainda não');\n",
+          "saida": "dias seguidos sem uso: 3\núltimo uso: dia 6\nainda não\n",
+          "explicacao": "A contagem zera sempre que aparece um dia com uso. Os dias 4 e 5 ficaram sem acesso, mas no dia 6 houve 2, e a contagem recomeçou: são 3 dias seguidos (7, 8 e 9), abaixo dos 5 exigidos. Aqueles 2 acessos do dia 6 são a informação mais valiosa da lista: alguém voltou ao Forms por algum motivo, e descobrir qual é o que falta para desligar."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A tela web de cadastro de fornecedor entrou em piloto. A tabela tem uma trigger de banco de auditoria que grava `USER` na coluna \"alterado por\". O que os registros alterados pela tela nova vão mostrar?",
+          "opcoes": [
+            "O login da pessoa, porque a trigger é a mesma",
+            "Nulo, porque a API não tem `USER`",
+            "O usuário de serviço da API, igual para todas as pessoas",
+            "Erro na gravação, porque a trigger rejeita conexão de pool"
+          ],
+          "correta": 2,
+          "explicacao": "A trigger dispara normalmente, e isso é bom. Mas `USER` é o usuário da conexão, e a API conecta com um usuário de serviço só. A auditoria fica incoerente entre os dois caminhos: no Forms aparece a pessoa, na web aparece o serviço. É uma das condições de convivência a resolver antes da primeira tela com escrita (mig-10)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de três semanas com todos na tela web, o gestor quer \"apagar logo o form antigo para não ter dois\". Qual é a melhor resposta?",
+          "opcoes": [
+            "Tirar do menu agora, se o uso medido está em zero e não há incidente, e remover o form depois de mais um ciclo",
+            "Apagar agora: três semanas sem reclamação provam que está estável",
+            "Manter as duas telas disponíveis indefinidamente, por segurança",
+            "Apagar só quando o módulo inteiro estiver migrado"
+          ],
+          "correta": 0,
+          "explicacao": "Desligar em dois tempos preserva o caminho de volta enquanto ele ainda pode ser necessário, por exemplo num fechamento de mês que ainda não aconteceu. Apagar direto troca uma economia pequena por um risco grande. Manter para sempre é o erro oposto: paga-se a convivência sem prazo e ninguém confia que a tela nova é a oficial."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "O gestor pergunta: \"{{nome}}, não é mais simples parar tudo, reescrever o módulo inteiro e trocar de uma vez? Conviver com os dois me parece o dobro de trabalho.\"",
+          "pontos": [
+            "Veredito: tela a tela, com convivência",
+            "Reconheceu que a convivência tem custo real",
+            "Explicou o risco do big bang: valor só no fim, sistema antigo mudando, sem caminho de volta",
+            "Citou as condições: regra num lugar só, auditoria coerente, retorno por configuração",
+            "Propôs o primeiro passo: uma consulta em produção com grupo piloto"
+          ],
+          "modelo": "Eu recomendo tela a tela. Você tem razão num ponto: conviver custa, toda mudança de regra é testada nos dois lados enquanto durar. Só que trocar de uma vez custa mais e de um jeito pior: o negócio fica um ano sem ver nada, o Forms continua mudando nesse ano e o novo precisa correr atrás, e no dia da virada não existe caminho de volta. Com a convivência, cada tela entra sozinha, para um grupo piloto, e voltar é mudar uma configuração. A condição é a regra ficar num lugar só, no banco, chamada pelos dois lados. O primeiro passo que eu proponho é uma tela de consulta em produção para cinco usuários, em poucas semanas."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é o padrão strangler fig?",
+          "verso": "Substituir um sistema aos poucos: o novo cresce em volta do antigo, pedaço a pedaço em produção, até o antigo poder ser removido."
+        },
+        {
+          "frente": "Quais são as quatro condições para Forms e web conviverem sobre o mesmo banco?",
+          "verso": "Regra num lugar só, triggers de banco que valem para os dois, auditoria coerente e nada dependendo de `:GLOBAL`."
+        },
+        {
+          "frente": "Por que o big bang costuma falhar em sistema grande e vivo?",
+          "verso": "O valor só aparece no fim, o risco se acumula, o sistema antigo continua mudando durante a reescrita e não há caminho de volta na virada."
+        },
+        {
+          "frente": "Qual é o critério para desligar a tela Forms antiga?",
+          "verso": "Combinado antes e medido: todos na web por um ciclo completo, uso do Forms em zero, nenhum incidente e dependências resolvidas. Primeiro sai do menu, depois o form é removido."
+        },
+        {
+          "frente": "Como é o plano de retorno numa migração por estrangulamento?",
+          "verso": "Uma configuração: tirar a tela da tabela de desvio manda todos de volta ao Forms, sem publicar código."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Strangler Fig Application",
+          "url": "https://martinfowler.com/bliki/StranglerFigApplication.html"
+        },
+        {
+          "titulo": "Martin Fowler — Patterns of Legacy Displacement",
+          "url": "https://martinfowler.com/articles/patterns-legacy-displacement/"
+        },
+        {
+          "titulo": "Martin Fowler — Canary Release",
+          "url": "https://martinfowler.com/bliki/CanaryRelease.html"
+        }
+      ]
+    },
+    {
+      "id": "mig-06",
+      "titulo": "Transação e lock: do bloqueio pessimista do Forms ao otimista da web",
+      "minutos": 13,
+      "ponte": "Você conhece a mensagem FRM-40654, \"o registro foi alterado por outro usuário\". Ela aparece quando o Forms vai travar a linha e percebe que o que está na tela já não é o que está no banco. Lock otimista é exatamente essa conferência, feita na hora de gravar. A analogia quebra depois: no Forms, passada a conferência, a linha fica travada até o commit. Na web não existe \"até o commit\", porque a conexão não fica com o usuário.",
+      "texto": "### Por que o lock do Forms não atravessa\n\nNo Forms, a primeira tecla num registro dispara o lock da linha, e ele dura até o `COMMIT` ou o `ROLLBACK`. Isso exige uma sessão de banco presa àquele usuário enquanto ele pensa, atende o telefone ou vai almoçar.\n\nNa web, cada requisição pega uma conexão do pool, trabalha e devolve. A transação precisa **terminar antes da resposta sair**. Um lock que sobrevivesse à requisição ficaria numa conexão que já está atendendo outra pessoa. Não há como \"travar enquanto edita\" com lock de banco.\n\n### Lock otimista\n\nA ideia: ninguém trava nada ao abrir o registro. Na hora de gravar, a API confere se o registro ainda é o que a tela leu. Se alguém gravou no meio, a gravação é recusada.\n\nO mecanismo mais simples é uma **coluna de versão**. A leitura devolve a versão junto com os dados, a tela a devolve na gravação, e o `UPDATE` só acerta se ela não mudou:\n\n```sql\nUPDATE fornecedor\n   SET nome = :nome, versao = versao + 1\n WHERE id = :id AND versao = :versao_lida\n```\n\nZero linhas alteradas significa conflito (ou registro excluído). A API responde **409 Conflict**.\n\n| Como detectar | Vantagem | Custo |\n|---|---|---|\n| Coluna de versão | Simples e explícita | Coluna nova, e **todo** gravador precisa incrementá-la |\n| `ORA_ROWSCN` | Não cria coluna | Por padrão o valor é por bloco, não por linha, e gera conflito falso. Precisão por linha depende de como a tabela foi criada |\n| Comparar os valores lidos (ou um *hash* deles) | Não muda a tabela. É o que o próprio Forms faz | A tela devolve os valores antigos, e a comparação cresce com as colunas |\n\nNa convivência, o Forms não sabe da coluna de versão. A saída é incrementá-la numa **trigger de banco**, que vale para os dois lados. A API então só confere a versão no `WHERE`.\n\n### O que mostrar no 409\n\nO usuário não pode ver \"erro 409\". As opções, da mais barata à mais cara:\n\n1. **Avisar e recarregar:** \"Este cadastro foi alterado por outra pessoa enquanto você editava.\" Mostra os dados atuais, e ele refaz a alteração. Atende a maioria dos cadastros.\n2. **Avisar e preservar o que foi digitado**, lado a lado com o valor atual, para ele decidir campo a campo.\n3. **Mesclar sozinho** quando os campos alterados são diferentes. Caro e raramente necessário.\n\nNunca implemente \"o último ganha\" em silêncio: é perda de dado sem aviso.\n\n### Quando o negócio precisa mesmo de exclusividade\n\n\"Enquanto eu analiso este pedido, ninguém mexe\" é uma regra de negócio que pode durar uma hora. Isso não é lock de banco. É uma **reserva**: colunas \"em análise por\" e \"até quando\", gravadas com commit, com prazo de expiração e um jeito de liberar. Custa mais e só vale onde o conflito é frequente e o retrabalho é caro.\n\n### Vários blocos: uma chamada\n\nO `COMMIT_FORM` grava o cabeçalho e os itens numa transação. A tradução ingênua faz `POST /pedidos` e depois um `POST` por item. Se o terceiro falhar, o pedido fica pela metade no banco, porque cada chamada já fez o seu commit.\n\nA unidade de gravação da tela vira **uma** chamada: o JSON leva o cabeçalho e a lista de itens, o service abre a transação, grava tudo e faz commit ou rollback. No node-oracledb a gravação não é confirmada sozinha por padrão: o commit é explícito, e a conexão tem que voltar ao pool sem transação pendurada, inclusive quando dá erro.",
+      "naPratica": "\"E se dois usuários abrirem o mesmo registro?\" é a pergunta que todo usuário de Forms faz na primeira demonstração da tela nova. Tenha a resposta pronta e demonstre: abra o cadastro em duas abas, grave numa, tente gravar na outra e mostre a mensagem.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas pessoas abrem o mesmo fornecedor (versão 7) e gravam uma depois da outra. O que a API responde a cada uma e o que fica no banco?",
+          "codigo": "type Linha = { id: number; nome: string; versao: number };\nconst tabela = new Map<number, Linha>([[1, { id: 1, nome: 'Fornecedor A', versao: 7 }]]);\n\nfunction atualiza(id: number, nome: string, versaoLida: number): number {\n  const atual = tabela.get(id);\n  if (!atual) return 404;\n  if (atual.versao !== versaoLida) return 409; // UPDATE ... AND versao = :lida -> 0 linhas\n  tabela.set(id, { id, nome, versao: atual.versao + 1 });\n  return 200;\n}\n\nconst telaAna = { ...tabela.get(1)! };\nconst telaBruno = { ...tabela.get(1)! };\nconsole.log(atualiza(1, 'Fornecedor A Ltda', telaAna.versao));\nconsole.log(atualiza(1, 'Fornecedor Alfa', telaBruno.versao));\nconsole.log(JSON.stringify(tabela.get(1)));\n",
+          "saida": "200\n409\n{\"id\":1,\"nome\":\"Fornecedor A Ltda\",\"versao\":8}\n",
+          "explicacao": "As duas telas leram a versão 7. A primeira gravação encontra 7, grava e sobe para 8. A segunda chega com 7, encontra 8 e recebe 409: nada é gravado. O nome que fica é o da primeira. Sem a conferência, a segunda gravação apagaria a primeira sem ninguém saber."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um pedido com três itens, e o segundo é inválido. Jeito 1: uma chamada por registro, cada uma com o seu commit. Jeito 2: uma chamada só, uma transação. O que sobra no banco em cada caso?",
+          "codigo": "type Banco = { pedidos: string[]; itens: string[] };\nlet banco: Banco = { pedidos: [], itens: [] };\n\nfunction gravaItem(b: Banco, item: string) {\n  if (item.endsWith('?')) throw new Error('item inválido');\n  b.itens.push(item);\n}\n\n// Jeito 1: várias chamadas à API\nbanco.pedidos.push('P1');\nfor (const item of ['P1-a', 'P1-b?', 'P1-c']) {\n  try { gravaItem(banco, item); } catch { break; } // a tela para no erro\n}\nconsole.log(JSON.stringify(banco));\n\n// Jeito 2: uma chamada, uma transação\nconst tx: Banco = structuredClone(banco);\ntry {\n  tx.pedidos.push('P2');\n  for (const item of ['P2-a', 'P2-b?', 'P2-c']) gravaItem(tx, item);\n  banco = tx; // commit\n} catch { /* rollback: tx é descartado */ }\nconsole.log(JSON.stringify(banco));\n",
+          "saida": "{\"pedidos\":[\"P1\"],\"itens\":[\"P1-a\"]}\n{\"pedidos\":[\"P1\"],\"itens\":[\"P1-a\"]}\n",
+          "explicacao": "No jeito 1, o pedido `P1` e o item `P1-a` já estavam confirmados quando o segundo item falhou: ficou um pedido pela metade, que alguém terá de limpar. No jeito 2, tudo acontece numa cópia de trabalho, e o erro descarta a cópia inteira: a segunda linha é igual à primeira porque `P2` não deixou rastro. É o comportamento do `COMMIT_FORM`, que na web só existe dentro de uma única requisição."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Para o lock otimista de uma tabela que o Forms continua gravando durante a convivência, o time cria a coluna `versao` e a API faz `versao = versao + 1` no `UPDATE`. O que falta?",
+          "opcoes": [
+            "Nada: a API confere e incrementa, está completo",
+            "As gravações do Forms não mudam a versão, então a API não percebe alterações feitas por lá. O incremento precisa ir para uma trigger de banco",
+            "Um `SELECT FOR UPDATE` na API ao abrir o registro, para travar como o Forms",
+            "Trocar a coluna por um campo de data com precisão de segundo"
+          ],
+          "correta": 1,
+          "explicacao": "O mecanismo só funciona se todo gravador mudar a versão. O Forms não conhece a coluna, então uma alteração feita nele passa despercebida e a API sobrescreve. Com o incremento numa trigger de banco, vale para os dois. `SELECT FOR UPDATE` ao abrir não serve: o lock morreria no fim da requisição ou ficaria preso numa conexão do pool."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Analistas de crédito abrem um pedido e levam até 40 minutos analisando. O negócio exige que duas pessoas não analisem o mesmo pedido. Qual desenho atende?",
+          "opcoes": [
+            "Lock otimista simples: o segundo analista recebe 409 quando gravar",
+            "Uma transação aberta na API durante os 40 minutos, com `SELECT FOR UPDATE`",
+            "Uma reserva de negócio: colunas \"em análise por\" e \"até quando\", gravadas com commit, com expiração",
+            "Deixar essa tela no Forms para sempre, porque a web não consegue"
+          ],
+          "correta": 2,
+          "explicacao": "O lock otimista evita perda de dado, mas aqui o problema é trabalho duplicado: o segundo analista só descobriria depois de 40 minutos. Transação aberta por 40 minutos prende conexão do pool e não sobrevive entre requisições. A reserva é dado comum, visível para todos (\"em análise por fulano\"), e precisa de prazo e de liberação para não ficar presa quando alguém fecha o navegador."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um usuário-chave pergunta na demonstração: \"{{nome}}, no sistema atual, quando eu abro um cadastro ninguém mais consegue alterar. Na tela nova duas pessoas abrem o mesmo. Isso não vai bagunçar os dados?\"",
+          "pontos": [
+            "Veredito: não perde dado, o comportamento muda",
+            "Explicou em linguagem de usuário: o sistema confere na hora de gravar e avisa o segundo",
+            "Custo para o usuário: quem recebe o aviso refaz a alteração",
+            "Reconheceu o caso em que isso incomoda e ofereceu a reserva",
+            "Primeiro passo: medir com que frequência duas pessoas editam o mesmo registro"
+          ],
+          "modelo": "Não bagunça, mas o comportamento muda. Hoje o sistema impede a segunda pessoa de começar. Na tela nova as duas abrem, e na hora de gravar o sistema confere se alguém alterou o cadastro nesse meio tempo. A primeira grava normalmente. A segunda recebe um aviso, vê os dados atualizados e refaz a alteração dela. Nenhum dado é sobrescrito em silêncio. O custo é esse retrabalho de quem chegou depois, que em cadastro é raro. Se na sua área é comum duas pessoas pegarem o mesmo registro, existe outra solução: o sistema mostra \"em edição por fulano\" e reserva o registro por um tempo. Custa mais. Antes de decidir, eu levanto com que frequência isso acontece hoje."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que a web não usa lock de banco enquanto o usuário edita?",
+          "verso": "A conexão volta ao pool no fim de cada requisição. A transação tem que terminar antes da resposta, então nenhum lock sobrevive entre uma requisição e outra."
+        },
+        {
+          "frente": "Como funciona o lock otimista com coluna de versão?",
+          "verso": "A tela devolve a versão que leu. `UPDATE ... WHERE id = :id AND versao = :lida`. Zero linhas alteradas é conflito: a API responde 409."
+        },
+        {
+          "frente": "Na convivência com o Forms, onde incrementar a coluna de versão?",
+          "verso": "Numa trigger de banco, para valer também para as gravações do Forms, que não conhece a coluna."
+        },
+        {
+          "frente": "Como o `COMMIT_FORM` de vários blocos é traduzido na web?",
+          "verso": "Uma única chamada de API com cabeçalho e itens no JSON. O service grava tudo numa transação e faz commit ou rollback."
+        },
+        {
+          "frente": "Qual é o risco de usar `ORA_ROWSCN` para detectar conflito?",
+          "verso": "Por padrão ele vale por bloco, não por linha: alteração em outra linha do mesmo bloco gera conflito falso."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Optimistic Offline Lock",
+          "url": "https://martinfowler.com/eaaCatalog/optimisticOfflineLock.html"
+        },
+        {
+          "titulo": "MDN — 409 Conflict",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/409"
+        },
+        {
+          "titulo": "node-oracledb — documentação",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/"
+        }
+      ]
+    },
+    {
+      "id": "mig-07",
+      "titulo": "Bloco, master-detail e multi-registro em React",
+      "minutos": 12,
+      "ponte": "No Forms o bloco é um pacote fechado: ele consulta, pagina, sabe o estado de cada registro (`:SYSTEM.RECORD_STATUS`), coordena o detalhe com o mestre e grava só o que mudou. Você configura propriedades e ganha tudo. No React nada disso vem pronto num componente só. Cada capacidade do bloco vira uma peça separada, que você escolhe e monta. A analogia quebra aqui: não procure \"o componente bloco\". Ele não existe, e tentar construí-lo é o caminho mais caro.",
+      "texto": "### O bloco desmontado\n\n| Capacidade do bloco | Peça na web |\n|---|---|\n| Buscar e manter os registros | Biblioteca de estado de servidor (TanStack Query): busca, guarda em cache, sabe se está carregando ou falhou |\n| Itens, validação e estado de edição | Biblioteca de formulário (React Hook Form) |\n| Gravar | Uma *mutation* (chamada que altera dados) para a API |\n| Navegar entre registros | Rota e lista |\n\n### De → Para\n\n| No Forms | No React | Atenção |\n|---|---|---|\n| Bloco de um registro | Formulário numa página de detalhe (`/fornecedores/42`) | Os valores iniciais vêm da query |\n| Bloco multi-registro | Tabela. Para editar: lista de campos repetidos (`useFieldArray`, no React Hook Form) ou edição de uma linha por vez num diálogo | Editar direto na grade é o mais caro. Só vale para digitação intensa |\n| Master-detail | Rota com o id do mestre + query do detalhe **dependente** desse id | A relação de blocos vira a chave da query |\n| `:SYSTEM.RECORD_STATUS` | *Dirty state* (estado sujo): comparação entre o valor atual e o original | É por comparação, não por evento |\n| Enter-query e execute-query | Campos de filtro que vão para a **URL** + busca paginada na API | O filtro passa a ser compartilhável e sobrevive ao recarregar |\n| \"Registro 1 de ?\" e rolagem | Paginação no servidor, com total | Nunca trazer o bloco inteiro |\n| `CLEAR_BLOCK`, `CLEAR_FORM` | Reiniciar o formulário para os valores originais | |\n\n### Master-detail\n\nNo Forms a relação dispara a consulta do detalhe quando o mestre muda. Na web, o id do mestre está na URL e entra na chave da query do detalhe. A query só roda quando o id existe:\n\n```ts\nconst itens = useQuery({\n  queryKey: ['pedidos', pedidoId, 'itens'],\n  queryFn: () => buscaItens(pedidoId),\n  enabled: pedidoId !== undefined,\n});\n```\n\nMudou o id, mudou a chave, a busca é refeita sozinha. É a coordenação do master-detail sem trigger. Se a tela sempre mostra mestre e itens juntos, prefira um endpoint que devolve os dois de uma vez (mig-14).\n\n### Dirty state não é RECORD_STATUS\n\nNo Forms, o registro vira `CHANGED` na primeira alteração e continua assim mesmo que o usuário redigite o valor antigo. O dirty state de uma biblioteca de formulário compara o valor atual com o valor original: voltou ao que era, o formulário fica limpo de novo. Ele serve para três coisas: habilitar o botão Salvar, avisar antes de sair com alteração pendente e enviar só o que mudou.\n\nPara o multi-registro, o equivalente a `INSERT`, `CHANGED` e `QUERY` por linha sai da mesma comparação: linha sem id é nova, linha com id e conteúdo diferente foi alterada, id que estava na lista original e sumiu foi removido. A tela manda o conjunto numa chamada só (mig-06).\n\n### Filtro na URL\n\nO modo enter-query some. Os filtros são campos comuns, e o valor deles vai para a URL: `/pedidos?situacao=aberto&pagina=2`. A chave da query inclui os filtros, então mudar o filtro refaz a busca. O ganho que o Forms não tinha: o usuário cola o link num chamado e quem abre vê a mesma lista.\n\n### Onde a tela nova costuma perder para a antiga\n\n- **Teclado.** O operador de Forms digita sem olhar: Tab, Enter, tecla de função. Uma tela que exige mouse para incluir um item é rejeitada, e com razão. Ordem de foco, Enter para a próxima linha e atalhos fazem parte do requisito e do prazo.\n- **Volume.** Um bloco rolava cinco mil linhas buscando aos poucos. A tabela web precisa de paginação ou de virtualização (desenhar só as linhas visíveis).\n- **A grade editável genérica.** Reproduzir o multi-registro com edição em qualquer célula é o item mais caro de uma migração. Pergunte antes quantas linhas a pessoa realmente edita por vez.",
+      "naPratica": "Ao estimar uma tela, pese os blocos multi-registro com edição à parte: eles custam várias vezes um bloco de um registro. E leve a pergunta do teclado ao usuário-chave antes de desenhar, porque a resposta muda o componente escolhido.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Dirty state por comparação com o original. O usuário muda a cidade, depois desfaz, depois acrescenta um espaço no nome. O que sai?",
+          "codigo": "type Fornecedor = { nome: string; cidade: string; ativo: boolean };\nconst original: Fornecedor = { nome: 'Alfa', cidade: 'Recife', ativo: true };\nconst atual: Fornecedor = { ...original };\n\nconst sujos = () =>\n  (Object.keys(original) as (keyof Fornecedor)[]).filter((k) => original[k] !== atual[k]);\n\nconsole.log(sujos().length > 0);\natual.cidade = 'Olinda';\nconsole.log(sujos().join(','));\natual.cidade = 'Recife';\nconsole.log(sujos().length > 0);\natual.nome = 'Alfa ';\nconsole.log(sujos().join(','));\n",
+          "saida": "false\ncidade\nfalse\nnome\n",
+          "explicacao": "O estado sujo é uma comparação campo a campo com o original, recalculada a cada consulta. Ao voltar a cidade para `Recife`, o formulário fica limpo de novo, diferente do `RECORD_STATUS` do Forms, que continuaria `CHANGED`. O espaço no fim do nome conta como alteração: se o negócio não quer isso, quem tira o espaço é a normalização do campo, antes de comparar e antes de gravar."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O equivalente ao status por registro num bloco multi-registro, calculado a partir do que veio do banco e do que está na tela. O que sai?",
+          "codigo": "type Item = { id?: number; produto: string; qtd: number };\nconst doBanco: Item[] = [\n  { id: 1, produto: 'Parafuso', qtd: 10 },\n  { id: 2, produto: 'Porca', qtd: 5 },\n  { id: 3, produto: 'Arruela', qtd: 8 },\n];\nconst naTela: Item[] = [\n  { id: 1, produto: 'Parafuso', qtd: 10 },\n  { id: 2, produto: 'Porca', qtd: 7 },\n  { produto: 'Bucha', qtd: 4 },\n];\n\nconst antes = new Map(doBanco.map((i) => [i.id, JSON.stringify(i)]));\nconst status = (i: Item) =>\n  i.id === undefined ? 'INSERT' : antes.get(i.id) === JSON.stringify(i) ? 'QUERY' : 'CHANGED';\n\nfor (const i of naTela) console.log(`${i.produto}: ${status(i)}`);\nconst removidos = doBanco.filter((b) => !naTela.some((t) => t.id === b.id)).map((b) => b.id);\nconsole.log(`removidos: ${removidos.join(',')}`);\n",
+          "saida": "Parafuso: QUERY\nPorca: CHANGED\nBucha: INSERT\nremovidos: 3\n",
+          "explicacao": "Linha sem `id` ainda não existe no banco: `INSERT`. Linha com `id` e conteúdo igual ao original: `QUERY`. Com conteúdo diferente: `CHANGED`. A exclusão não aparece na lista da tela: ela é descoberta pelo `id` que estava no original e sumiu. No Forms o bloco guardava isso por você. Aqui a tela calcula, ou envia a lista inteira e a API calcula, dentro de uma transação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela de lançamento tem um bloco multi-registro em que cada operador digita cerca de 200 linhas por dia, só pelo teclado. Qual desenho escolher na web?",
+          "opcoes": [
+            "Lista somente leitura com um botão \"Editar\" que abre um diálogo por linha",
+            "Tabela editável com campos repetidos, foco e Enter controlados, tratada como requisito e estimada como item caro",
+            "Um formulário de um registro por página, com botão \"Próximo\"",
+            "Importação de planilha, eliminando a digitação"
+          ],
+          "correta": 1,
+          "explicacao": "Com digitação intensa, abrir um diálogo por linha multiplica o tempo de cada lançamento e a tela é rejeitada. Aqui a grade editável se paga. O ponto de sênior é reconhecer que ela é cara e pôr isso na estimativa. O diálogo por linha é a escolha certa no caso oposto: poucas edições por dia."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Onde guardar os filtros de uma lista de pedidos (situação, período, página atual)?",
+          "opcoes": [
+            "Em variáveis do componente, que somem ao recarregar",
+            "No `localStorage` do navegador",
+            "Na URL, como parâmetros de busca",
+            "Numa tabela de preferências no banco, gravada a cada mudança"
+          ],
+          "correta": 2,
+          "explicacao": "Filtro na URL sobrevive ao recarregar, funciona com voltar e avançar e pode ser enviado a um colega. Estado só no componente se perde ao recarregar. `localStorage` é a tentação: guarda, mas não é compartilhável e faz a lista abrir filtrada sem o usuário entender por quê."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um colega do front pergunta: \"{{nome}}, você que conhece Forms: o que é esse tal de bloco que os usuários tanto pedem? Dá para eu fazer um componente genérico que resolva todos?\"",
+          "pontos": [
+            "Explicou o bloco pelas capacidades: busca, status por registro, coordenação mestre e detalhe, gravação do que mudou",
+            "Veredito: não fazer o componente genérico",
+            "Custo e risco: é reescrever o Forms, cada tela pede uma exceção",
+            "Alternativa: peças prontas (query, formulário, tabela) montadas por caso de uso",
+            "Primeiro passo: duas telas reais, e só depois extrair o que se repetiu"
+          ],
+          "modelo": "Bloco é a peça do Forms que busca os registros, sabe o estado de cada um, liga mestre com detalhe e grava só o que mudou. Um componente genérico que faça tudo isso eu não recomendo: é reescrever o Forms dentro do React, e cada tela vai pedir uma exceção. O custo é alto e nunca termina. O que funciona é montar com peças que já existem: uma biblioteca para os dados do servidor, uma para o formulário e uma tabela. O risco de ir por tela é repetir código, e isso se resolve depois. Proponho fazer duas telas reais, uma de registro único e uma com itens, e só então extrair o que se repetiu nas duas."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Master-detail do Forms vira o quê no React?",
+          "verso": "O id do mestre na rota e uma query do detalhe cuja chave inclui esse id. Mudou o id, a busca é refeita."
+        },
+        {
+          "frente": "Qual é a diferença entre `RECORD_STATUS = CHANGED` e dirty state?",
+          "verso": "O status do Forms liga na primeira alteração e não volta. O dirty state compara o valor atual com o original: se o usuário desfaz, o formulário fica limpo."
+        },
+        {
+          "frente": "Enter-query e execute-query viram o quê?",
+          "verso": "Campos de filtro cujo valor vai para a URL, mais busca paginada na API. A chave da query inclui os filtros."
+        },
+        {
+          "frente": "Por que não construir um \"componente bloco\" genérico no React?",
+          "verso": "É reimplementar o Forms. Sai caro e cada tela pede exceção. Monte com peças prontas (query, formulário, tabela) e extraia só o que se repetir."
+        },
+        {
+          "frente": "Como a tela descobre quais linhas de um multi-registro foram inseridas, alteradas e removidas?",
+          "verso": "Comparando com o original: sem id é nova, id com conteúdo diferente é alterada, id do original que sumiu foi removida."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TanStack Query — Dependent Queries",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/dependent-queries"
+        },
+        {
+          "titulo": "React Hook Form — useFieldArray",
+          "url": "https://react-hook-form.com/docs/usefieldarray"
+        },
+        {
+          "titulo": "React — Managing State",
+          "url": "https://react.dev/learn/managing-state"
+        }
+      ]
+    },
+    {
+      "id": "mig-08",
+      "titulo": "Triggers de Forms viram o quê: eventos, validação e estado",
+      "minutos": 13,
+      "ponte": "No Forms, a trigger é a unidade de tudo: você escolhe o evento, escreve PL/SQL e ali dentro pode validar, calcular, mudar propriedade de item e gravar. Na web não existe uma peça que faça os quatro. Cada trigger é desmontada pelo **que ela faz**, não pelo nome, e os pedaços vão para lugares diferentes. A analogia de \"trigger = evento do React\" serve para os botões e quebra em quase todo o resto.",
+      "texto": "### A tabela de destino\n\n| Trigger | Destino na web | Observação |\n|---|---|---|\n| `PRE-FORM`, `WHEN-NEW-FORM-INSTANCE` | Query da página, disparada quando ela abre. Checagem de acesso vira proteção de rota no front e *guard* na API | Não é \"código que roda ao abrir\". É declarar de que dados a página precisa |\n| `PRE-QUERY` | Parâmetros da busca enviados à API | O `WHERE` montado em trigger vira filtro explícito do endpoint |\n| `POST-QUERY` | Campo derivado ou *join* **na API**, devolvido junto com a linha | Nunca uma chamada por linha (mig-14) |\n| `WHEN-VALIDATE-ITEM` | Validação do campo no front + a mesma regra no back | O front avisa cedo. O back garante |\n| `WHEN-VALIDATE-RECORD` | Validação do formulário inteiro (coerência entre campos) no front + no DTO ou service | |\n| `PRE-INSERT`, `PRE-UPDATE`, `PRE-DELETE` | Service da API, dentro da transação | Numeração, valores padrão, conferência final |\n| `ON-INSERT`, `ON-UPDATE`, `ON-LOCK` | O SQL ou a chamada de package escrita no service (mig-06) | |\n| `KEY-COMMIT` | O envio do formulário: validação, mutation, tratamento do retorno | |\n| `POST-FORMS-COMMIT` | Evento emitido **depois** do commit: e-mail, integração, fila | Nunca antes do commit |\n| `WHEN-BUTTON-PRESSED` | *Handler* (função que trata o clique). Se altera dado, uma mutation | Leia o código: costuma esconder regra |\n| `KEY-*` de navegação e função | Atalhos de teclado e controle de foco | Parte some. O navegador reserva algumas teclas |\n| `WHEN-TIMER-EXPIRED` | Rebusca periódica da query | |\n| `ON-ERROR`, `ON-MESSAGE` | Tratamento central de erro: filtro de exceção na API, aviso padrão no front | |\n\n### Estado: a mudança de cabeça\n\nBoa parte das triggers de apresentação existe para dar ordens à tela: `SET_ITEM_PROPERTY(..., ENABLED, PROPERTY_FALSE)` quando a situação muda. É programação imperativa: a cada evento, você ajusta a tela.\n\nNo React a tela é **calculada a partir do estado**, a cada renderização:\n\n```tsx\n<input disabled={pedido.situacao !== 'ABERTO'} />\n```\n\nNão há o momento de desabilitar. Há uma regra que diz quando o campo está desabilitado, e ela vale sempre. Uma dúzia de triggers que ligavam e desligavam itens em eventos diferentes costuma virar três ou quatro expressões como essa. É por isso que a classe \"apresentação\" do inventário custa pouco.\n\n### O risco central\n\n- **Trigger de banco continua valendo.** Ela dispara para o Forms e para a API. Auditoria, numeração e integridade feitas ali sobrevivem sem esforço.\n- **Trigger de tela some.** Ela só existia dentro do `.fmb`. Tudo o que protegia o dado e morava em `WHEN-VALIDATE-ITEM` ou `PRE-INSERT` deixa de existir para quem grava pela API, a menos que alguém o reconstrua no back.\n\nA pergunta que decide o destino de cada trigger: **isto serve a pessoa que está olhando a tela, ou protege o dado?** Se serve a pessoa (foco, mensagem, habilitar), vai para o front. Se protege o dado, vai para o back, e o front ganha no máximo uma cópia de cortesia para avisar cedo.\n\nValidação só no front é o defeito mais comum de uma migração. A tela nova passa em todos os testes, porque todos os testes usam a tela. A regra some para a integração, para o próximo aplicativo e para qualquer pessoa com a ferramenta de desenvolvedor do navegador aberta.\n\n### Dois efeitos de vir do banco\n\n- **Erro de trigger de banco ou de package** chega à API como `ORA-20xxx` com texto. A API precisa traduzir para uma resposta HTTP com mensagem legível, e nunca repassar ao navegador a pilha de erro com nomes de objetos.\n- **A ordem dos eventos deixa de ser a do Forms.** Não existe a sequência de navegação que disparava validação ao sair do item. Código que dependia de \"esta trigger roda antes daquela\" precisa ser reescrito como dependência de dados.",
+      "naPratica": "Em revisão de código de tela migrada, a pergunta que mais encontra defeito é: \"se eu chamar este endpoint direto, sem passar pela tela, o que me impede de gravar um valor inválido?\". Se a resposta for \"a tela não deixa\", a regra ficou no lugar errado.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A regra \"desconto máximo de 10%\" veio de uma `WHEN-VALIDATE-ITEM`. A tela valida. Alguém chama a API direto com 90%. O que cada versão da API responde, e quantos pedidos são gravados?",
+          "codigo": "type Pedido = { cliente: string; desconto: number };\nconst validaNoFront = (p: Pedido) => (p.desconto > 10 ? 'Desconto máximo: 10%' : null);\nconst gravados: Pedido[] = [];\n\nfunction apiSemRegra(p: Pedido): number {\n  gravados.push(p);\n  return 201;\n}\nfunction apiComRegra(p: Pedido): number {\n  if (p.desconto > 10) return 422;\n  gravados.push(p);\n  return 201;\n}\n\nconst pedido: Pedido = { cliente: 'C1', desconto: 90 };\nconsole.log('tela:', validaNoFront(pedido));\nconsole.log('API sem regra:', apiSemRegra(pedido));\nconsole.log('API com regra:', apiComRegra(pedido));\nconsole.log('gravados:', gravados.length);\n",
+          "saida": "tela: Desconto máximo: 10%\nAPI sem regra: 201\nAPI com regra: 422\ngravados: 1\n",
+          "explicacao": "A validação do front funciona, mas só para quem passa pela tela. A API sem regra aceita os 90% e grava (201): esse é o registro contado em `gravados`. A API com regra recusa (aqui com 422. Há times que usam 400, e o importante é a convenção ser uma só). No Forms isso não acontecia porque a tela era a única porta. Na web a porta é a API."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O herdeiro da `POST-FORMS-COMMIT`: um evento que envia e-mail. Três gravações: a 1 emite o evento antes do commit e o commit falha, a 2 emite depois e o commit falha, a 3 emite depois e dá certo. O que sai?",
+          "codigo": "import { EventEmitter } from 'node:events';\n\nconst eventos = new EventEmitter();\neventos.on('pedido.gravado', (id: number) => console.log(`e-mail enviado: pedido ${id}`));\n\nfunction grava(id: number, commitFalha: boolean, emiteAntes: boolean) {\n  try {\n    if (emiteAntes) eventos.emit('pedido.gravado', id);\n    if (commitFalha) throw new Error('ORA-02291');\n    console.log(`pedido ${id}: commit`);\n    if (!emiteAntes) eventos.emit('pedido.gravado', id);\n  } catch {\n    console.log(`pedido ${id}: rollback`);\n  }\n}\n\ngrava(1, true, true);\ngrava(2, true, false);\ngrava(3, false, false);\n",
+          "saida": "e-mail enviado: pedido 1\npedido 1: rollback\npedido 2: rollback\npedido 3: commit\ne-mail enviado: pedido 3\n",
+          "explicacao": "No pedido 1 o evento saiu antes do commit, e o commit falhou: o cliente recebeu e-mail de um pedido que não existe. No pedido 2 o erro aconteceu antes da emissão, e nada foi enviado. No 3, commit e depois e-mail. O que sai do sistema (e-mail, integração, fila) não tem rollback, então só pode ser disparado depois de a transação estar confirmada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma `POST-QUERY` busca o nome do cliente para cada linha do bloco de pedidos. Qual é a tradução correta?",
+          "opcoes": [
+            "Um efeito no componente de cada linha, que chama `GET /clientes/:id`",
+            "O endpoint da lista já devolve o nome do cliente em cada pedido, resolvido por join na API",
+            "Uma trigger de banco que grava o nome do cliente na tabela de pedidos",
+            "Carregar todos os clientes no navegador e procurar o nome lá"
+          ],
+          "correta": 1,
+          "explicacao": "A tradução literal (uma chamada por linha) transforma uma tela de 50 pedidos em 51 requisições. O dado derivado é montado no servidor e chega junto com a linha. Carregar todos os clientes só serve para listas pequenas e estáveis, o que cadastro de cliente raramente é."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tabela tem numeração por sequence feita numa trigger de banco `BEFORE INSERT`. A tela Forms tinha, além disso, uma `PRE-INSERT` que preenchia a situação inicial com \"ABERTO\". A API passa a inserir nessa tabela. O que acontece se ninguém tratar essas duas triggers?",
+          "opcoes": [
+            "As duas continuam funcionando: trigger é trigger",
+            "Nenhuma funciona: a API não dispara triggers",
+            "A situação é preenchida, mas a numeração falha",
+            "A numeração funciona, porque é do banco. A situação inicial fica vazia, porque morava na tela"
+          ],
+          "correta": 3,
+          "explicacao": "Trigger de banco dispara para qualquer gravador. A `PRE-INSERT` pertencia ao `.fmb` e não existe para a API. O valor padrão precisa ser reconstruído: no service, num `DEFAULT` da coluna ou na própria trigger de banco, que tem a vantagem de valer para os dois lados durante a convivência."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um desenvolvedor do front pergunta: \"{{nome}}, já pus todas as validações da tela antiga no formulário, com mensagem bonita em cada campo. Precisa mesmo repetir no back? É trabalho dobrado.\"",
+          "pontos": [
+            "Veredito: precisa, para as regras que protegem o dado",
+            "Separou formato e conforto (front) de regra que protege dado (back)",
+            "Risco: a API é chamável sem a tela, e no Forms a tela era a única porta",
+            "Custo: reduzir a duplicação com esquema compartilhado ou regra já existente em package",
+            "Primeiro passo: listar as validações e marcar as que protegem dado"
+          ],
+          "modelo": "Precisa, mas não é tudo dobrado. O que você fez no formulário é o que o usuário vê, e está certo. No back entram as regras que protegem o dado: limite de desconto, situação permitida, coerência entre campos. O risco de não repetir é concreto: no Forms a tela era a única porta para a tabela, e aqui a porta é a API, que qualquer integração ou outra tela pode chamar sem passar pelo seu formulário. O custo cai bastante se o esquema de validação for compartilhado entre front e back, e se a regra pesada já estiver em package. Como primeiro passo, me passa a lista das validações e a gente marca juntos quais protegem dado. Essas vão para o back."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual pergunta decide o destino de uma trigger de Forms?",
+          "verso": "Ela serve a pessoa que olha a tela ou protege o dado? Serve a pessoa: front. Protege o dado: back, com no máximo uma cópia de cortesia no front."
+        },
+        {
+          "frente": "Por que validação só no front é defeito?",
+          "verso": "A API pode ser chamada sem a tela: integração, outro aplicativo, ferramenta do navegador. No Forms a tela era a única porta. Na web a porta é a API."
+        },
+        {
+          "frente": "`POST-QUERY` vira o quê?",
+          "verso": "Campo derivado ou join resolvido na API e devolvido junto com a linha. Nunca uma chamada por linha."
+        },
+        {
+          "frente": "Na migração, o que acontece com trigger de banco e com trigger de tela?",
+          "verso": "A de banco continua valendo para Forms e API. A de tela some para quem grava pela API e precisa ser reconstruída no back."
+        },
+        {
+          "frente": "`SET_ITEM_PROPERTY` para habilitar e desabilitar itens vira o quê no React?",
+          "verso": "Estado derivado: uma expressão como `disabled={situacao !== 'ABERTO'}`, recalculada a cada renderização. Não há o momento de desabilitar."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Validation",
+          "url": "https://docs.nestjs.com/techniques/validation"
+        },
+        {
+          "titulo": "React — Reacting to Input with State",
+          "url": "https://react.dev/learn/reacting-to-input-with-state"
+        },
+        {
+          "titulo": "NestJS — Events",
+          "url": "https://docs.nestjs.com/techniques/events"
+        }
+      ]
+    },
+    {
+      "id": "mig-09",
+      "titulo": "LOV, record group, listas e busca",
+      "minutos": 12,
+      "ponte": "Uma LOV é três coisas juntas: uma consulta (o record group), um mapeamento de colunas para itens e uma validação (\"Validate from List\"). O filtro roda dentro da sessão, colado ao banco, e por isso uma LOV de cem mil clientes com auto-redução funciona sem ninguém pensar nisso. Na web cada pedaço fica num andar, e entre a tecla e o banco existe rede. A analogia quebra aqui: o que era uma propriedade vira uma decisão de desenho por lista.",
+      "texto": "### Primeira pergunta: de que tamanho é a lista?\n\n| Tipo de lista | Exemplo genérico | Desenho na web |\n|---|---|---|\n| **Pequena e estável** | Situação, tipo de documento, unidade da federação | Carrega uma vez, fica em cache por bastante tempo, filtra no navegador. Um `select` simples ou um combobox local |\n| **Grande** | Clientes, produtos, fornecedores | Busca no servidor enquanto digita, com mínimo de caracteres, *debounce*, limite de linhas e paginação |\n| **Dependente** | Cidade conforme o estado | A chave da query inclui o valor do pai. Mudou o pai, a lista é outra |\n| **Montada em tempo de execução** (`POPULATE_GROUP_WITH_QUERY`) | Produtos permitidos para este tipo de pedido | Endpoint com parâmetros. A condição vira filtro explícito da API |\n\nO erro dos dois lados: tratar lista grande como pequena (o navegador baixa cem mil clientes ao abrir a tela) e tratar lista pequena como grande (uma requisição a cada tecla para escolher entre cinco situações).\n\n### Lista grande: busca no servidor\n\nQuatro cuidados, todos obrigatórios:\n\n1. **Mínimo de caracteres.** Buscar com uma letra devolve meio cadastro. Dois ou três é o usual.\n2. **Debounce** (esperar a pessoa parar de digitar). Sem ele, digitar \"alfa\" dispara quatro requisições. Com uma espera de uns 300 ms, dispara uma.\n3. **Limite no SQL.** O endpoint devolve as primeiras 20 ou 50 linhas, ordenadas, e avisa se há mais. Nunca a lista inteira.\n4. **Resposta fora de ordem.** As requisições viajam em paralelo e a resposta da busca antiga pode chegar depois da nova. A tela só pode mostrar a resposta da **última** busca feita. Uma biblioteca como o TanStack Query resolve isso pela chave da query: o resultado exibido é sempre o da chave atual.\n\n```ts\nconst lista = useQuery({\n  queryKey: ['fornecedores', 'busca', termo],\n  queryFn: () => buscaFornecedores(termo),\n  enabled: termo.length >= 3,\n});\n```\n\nNo lado do banco, a busca roda muito mais vezes que a LOV rodava. `LIKE '%termo%'` numa tabela grande, a cada pausa de digitação de cada usuário, é varredura completa repetida. Prefira busca pelo início (`LIKE 'termo%'`, com índice), separe a busca por código da busca por nome e use sempre *bind*, nunca concatenação: o termo vem direto do teclado do usuário.\n\n### Lista pequena: cache\n\nLista estável é buscada uma vez e reaproveitada por todas as telas, com prazo de validade longo. A decisão é o prazo: uma lista de situações pode valer a sessão inteira, uma tabela de preços não. Se o cadastro muda e a tela precisa refletir na hora, o cache é invalidado na gravação.\n\n### O código digitado direto\n\nO usuário de Forms não abre a LOV: digita o código e dá Tab. A tela nova precisa aceitar isso. O campo aceita o código, busca aquele registro pela chave e preenche a descrição. Um combobox que só funciona por nome, com mouse, é regressão para quem digita o dia inteiro.\n\n### \"Validate from List\" vai para o back\n\nNo Forms, a LOV garantia que o valor do item estava na lista. Na web, a lista do combobox é uma sugestão: nada impede que a API receba um código que nunca apareceu nela. A **API valida o código recebido**. A chave estrangeira garante que o registro existe. Ela não garante o que o `WHERE` do record group garantia: que está ativo, que é permitido para aquele tipo de pedido, que aquele usuário pode usá-lo. Esse filtro é regra, e precisa estar também na gravação.\n\n### Descrição junto com o código\n\nO mapeamento de colunas da LOV preenchia código e descrição. Na consulta, o endpoint do registro já devolve os dois (mig-14). Na edição, o item escolhido no combobox já traz os dois. A descrição não é buscada numa segunda chamada.",
+      "naPratica": "No inventário (mig-03), anote ao lado de cada LOV o número de linhas da consulta e se o `WHERE` contém regra (ativo, permitido, do usuário). Essas duas colunas dizem o desenho da lista e apontam as validações que precisam existir no back.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Debounce de 60 ms. O usuário digita `a` (0 ms), `al` (20 ms), `alf` (40 ms), faz uma pausa e digita `alfa` (150 ms). Quais requisições saem?",
+          "codigo": "function debounce<T>(fn: (v: T) => void, ms: number) {\n  let timer: ReturnType<typeof setTimeout> | undefined;\n  return (v: T) => {\n    clearTimeout(timer);\n    timer = setTimeout(() => fn(v), ms);\n  };\n}\n\nconst busca = debounce((termo: string) => console.log(`GET /fornecedores?busca=${termo}`), 60);\nconst digita = (termo: string, quando: number) => setTimeout(() => busca(termo), quando);\n\ndigita('a', 0);\ndigita('al', 20);\ndigita('alf', 40);\ndigita('alfa', 150);\n",
+          "saida": "GET /fornecedores?busca=alf\nGET /fornecedores?busca=alfa\n",
+          "explicacao": "Cada tecla cancela o timer anterior e arma um novo de 60 ms. `a` e `al` são cancelados antes de vencer (a tecla seguinte chega 20 ms depois). `alf` fica 60 ms sem nova tecla e dispara, por volta dos 100 ms. `alfa` chega aos 150 ms e dispara aos 210. Quatro teclas, duas requisições. Sem debounce seriam quatro, e as três primeiras inúteis."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A busca por `al` é lenta (120 ms) e a busca por `alfa` é rápida (30 ms). As duas são disparadas nessa ordem. O que a tela mostra no fim, com e sem proteção?",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\nasync function api(termo: string) {\n  await espera(termo === 'al' ? 120 : 30);\n  return `resultado de ${termo}`;\n}\n\nlet naTela = '';\nlet ultima = 0;\nasync function buscaIngenua(termo: string) {\n  naTela = await api(termo);\n}\nasync function buscaSegura(termo: string) {\n  const minha = ++ultima;\n  const r = await api(termo);\n  if (minha === ultima) naTela = r;\n}\n\nawait Promise.all([buscaIngenua('al'), buscaIngenua('alfa')]);\nconsole.log('ingênua:', naTela);\nawait Promise.all([buscaSegura('al'), buscaSegura('alfa')]);\nconsole.log('segura:', naTela);\n",
+          "saida": "ingênua: resultado de al\nsegura: resultado de alfa\n",
+          "explicacao": "Na versão ingênua, quem responde por último vence: `alfa` chega aos 30 ms, e `al` chega aos 120 ms e sobrescreve. O campo mostra `alfa` e a lista mostra o resultado de `al`. Na versão segura, cada busca guarda o seu número e só grava na tela se ainda for a última disparada: a resposta atrasada de `al` é descartada. É o que a chave da query faz por você numa biblioteca de estado de servidor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A LOV de fornecedores do Forms tinha `WHERE situacao = 'ATIVO'`. A tela web tem um combobox que busca só ativos. Uma integração chama `POST /pedidos` com o código de um fornecedor inativo. O que deve acontecer?",
+          "opcoes": [
+            "A API grava: a chave estrangeira confirma que o fornecedor existe",
+            "A API grava: quem filtra ativos é o combobox",
+            "A API recusa, porque valida na gravação a mesma condição que a LOV garantia",
+            "O banco recusa sozinho, por causa da chave estrangeira"
+          ],
+          "correta": 2,
+          "explicacao": "A chave estrangeira só garante existência, e um fornecedor inativo existe. O filtro do combobox é uma sugestão de tela e não vale para quem chama a API direto. A condição do record group era regra de negócio disfarçada de lista, e precisa ser conferida no back, na gravação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela tem duas listas: \"tipo de pedido\" (6 valores, mudam uma vez por ano) e \"produto\" (80 mil linhas). Qual desenho?",
+          "opcoes": [
+            "As duas com busca no servidor e debounce, para padronizar",
+            "As duas carregadas inteiras ao abrir a tela, para a busca ficar instantânea",
+            "Tipo de pedido com busca no servidor e produto em cache",
+            "Tipo de pedido carregado uma vez e mantido em cache. Produto com busca no servidor, mínimo de caracteres, debounce e limite"
+          ],
+          "correta": 3,
+          "explicacao": "O tamanho e a estabilidade da lista decidem o desenho. Seis valores estáveis não justificam uma requisição por tecla. Oitenta mil linhas não podem ir para o navegador. Padronizar pelas duas pontas é tentador e erra nas duas: ou a tela simples fica lenta, ou a tela pesada trava ao abrir."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um usuário-chave reclama: \"{{nome}}, na tela antiga eu digitava o código do produto e dava Tab. Nessa nova tenho que digitar o nome e ficar escolhendo com o mouse. Dá para ser como era?\"",
+          "pontos": [
+            "Veredito: dá, e a reclamação é legítima",
+            "Disse como: o campo aceita o código, busca pela chave e preenche a descrição, sem abrir a lista",
+            "Custo: pequeno por campo, melhor resolver no componente compartilhado",
+            "Risco: código inexistente ou inativo precisa de mensagem clara, e a API valida de qualquer forma",
+            "Primeiro passo: levantar quais campos da tela são digitados por código"
+          ],
+          "modelo": "Dá, e você tem razão: para quem digita o dia todo, isso é perda de velocidade. O campo pode aceitar o código direto: você digita, dá Tab, o sistema busca aquele produto pela chave e preenche a descrição, sem abrir lista nenhuma. A busca por nome continua para quem não sabe o código. O custo é pequeno por campo, e fica menor se a gente resolver uma vez no componente que todas as telas usam. O cuidado é o código que não existe ou está inativo: tem que aparecer mensagem clara na hora, e a gravação confere de novo no servidor. Me diz quais campos dessa tela você digita por código e eu começo por eles."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual é a primeira pergunta ao migrar uma LOV?",
+          "verso": "De que tamanho é a lista e com que frequência muda. Pequena e estável: cache e filtro local. Grande: busca no servidor."
+        },
+        {
+          "frente": "Quais são os quatro cuidados da busca no servidor enquanto digita?",
+          "verso": "Mínimo de caracteres, debounce, limite de linhas no SQL e descartar a resposta que não é da última busca."
+        },
+        {
+          "frente": "Por que o \"Validate from List\" da LOV precisa ser refeito no back?",
+          "verso": "O combobox é só sugestão: a API pode receber qualquer código. A chave estrangeira garante existência, não as condições do `WHERE` da LOV (ativo, permitido)."
+        },
+        {
+          "frente": "O que é debounce?",
+          "verso": "Esperar a pessoa parar de digitar por um intervalo antes de disparar a busca. Cada tecla cancela o timer anterior."
+        },
+        {
+          "frente": "O que o usuário de Forms espera de um campo com LOV na tela nova?",
+          "verso": "Poder digitar o código e dar Tab, com a descrição preenchida sozinha, sem abrir a lista nem usar o mouse."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TanStack Query — Query Keys",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/query-keys"
+        },
+        {
+          "titulo": "TanStack Query — Paginated Queries",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/paginated-queries"
+        },
+        {
+          "titulo": "React — You Might Not Need an Effect",
+          "url": "https://react.dev/learn/you-might-not-need-an-effect"
+        }
+      ]
+    },
+    {
+      "id": "mig-10",
+      "titulo": "Identidade: de usuário de banco a SSO e token; auditoria e contexto de sessão",
+      "minutos": 14,
+      "ponte": "No Forms, a identidade é o próprio login de banco. O `USER` é a pessoa, os *grants* e *roles* dizem o que ela pode, a trigger de auditoria grava `USER`, e a política de VPD lê o contexto daquela sessão. Tudo isso funciona porque existe uma sessão por pessoa. Atrás de uma API, o banco vê **um** usuário, o de serviço, e a mesma conexão atende dezenas de pessoas por minuto. O banco deixa de saber quem é quem, a menos que a API conte a ele a cada requisição.",
+      "texto": "### O que muda de lugar\n\n| No Forms | Na web |\n|---|---|\n| Login com usuário e senha de banco | SSO (*single sign-on*, login único corporativo). A pessoa se autentica no provedor de identidade e o front recebe um **token** |\n| `USER` identifica a pessoa | A API valida o token a cada requisição e tira dele a identidade |\n| *Grants* e *roles* de banco autorizam | A **API** autoriza, rota por rota |\n| Sessão própria, com contexto e variáveis de package | Conexão de pool, compartilhada e reaproveitada |\n\n### Autorização sobe para a API\n\nO usuário de serviço precisa de acesso a tudo o que a aplicação faz. Para o banco, toda requisição tem a mesma permissão. Quem distingue o comprador do aprovador passa a ser a API: no Nest, um *guard* (classe que decide se a requisição prossegue) confere o papel exigido pela rota contra o que o token traz.\n\nDois cuidados:\n\n- **A identidade vem do token, nunca do corpo da requisição.** Um campo `usuario` no JSON é texto que qualquer um preenche.\n- **Privilégio mínimo no usuário de serviço.** De preferência, permissão de executar packages em vez de DML livre em todas as tabelas. Se a API for comprometida, o estrago é o que esse usuário pode fazer.\n\nAs roles de banco não somem de um dia para o outro: o Forms continua usando. Durante a convivência existem dois modelos de permissão, e alguém precisa mantê-los coerentes.\n\n### Auditoria: propagar a identidade\n\nA trigger que grava `USER` passa a gravar o usuário de serviço em toda linha alterada pela web. A auditoria continua existindo e deixa de dizer quem foi.\n\nA solução é a API **informar ao banco, a cada requisição, em nome de quem está agindo**. O Oracle tem três mecanismos:\n\n| Mecanismo | O que é | Uso |\n|---|---|---|\n| ***Client identifier*** | Um texto associado à sessão, lido com `SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER')` | O mais simples. Resolve auditoria e aparece nas visões de sessão do DBA |\n| ***Application context*** | Pares de nome e valor num contexto próprio, gravados só por um package autorizado | Quando há mais do que o login (filial, perfil) ou política de VPD que lê contexto |\n| ***Proxy authentication*** | O usuário de serviço conecta em nome de um usuário de banco real | Preserva `USER`, grants e roles. Exige que cada pessoa continue existindo como usuário de banco |\n\nO node-oracledb oferece atributos de conexão para o client identifier e um ponto de extensão do pool para preparar a sessão quando a conexão é entregue. Os nomes variam com a versão: confira a seção de *connection handling* da documentação antes de escrever.\n\nA trigger de auditoria muda uma linha e passa a servir aos dois lados:\n\n```sql\n:new.alterado_por := NVL(SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER'), USER);\n```\n\nPelo Forms não há client identifier, e vale o `USER`. Pela API, vale o login propagado.\n\n### A armadilha do pool\n\nA conexão devolvida ao pool **leva consigo** o que foi configurado nela: client identifier, contexto, variáveis de package. A próxima requisição que pegar aquela conexão herda tudo. Se uma rota propaga a identidade e outra esquece, a segunda grava auditoria em nome do usuário da primeira. E com VPD o efeito é pior: uma pessoa enxerga as linhas de outra.\n\nA regra é uma só: **definir a identidade no início de toda requisição, sem exceção**, num ponto central (onde a conexão é obtida), e não em cada service. Limpar no fim é uma segunda barreira, não a principal. Rota sem usuário, como um job interno, define um identificador próprio.\n\n### Qual escolher\n\nComece pelo client identifier: custo baixo, resolve a auditoria. Passe para application context se houver VPD ou package que lê contexto. Proxy authentication só se justifica quando as regras de acesso estão em grants por usuário e não serão reescritas tão cedo, porque mantém a gestão de usuários de banco que a migração queria aposentar.",
+      "naPratica": "Antes da primeira tela com escrita ir ao ar, rode este teste: grave pela tela nova com dois usuários diferentes, um logo depois do outro, e consulte a coluna de auditoria. Se aparecer o usuário de serviço, falta propagar. Se aparecer o mesmo nome nas duas linhas, falta definir a identidade em toda requisição.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um pool com uma conexão. A primeira requisição propaga a identidade. A segunda é uma rota que esqueceu de propagar. Primeiro sem limpar a conexão na devolução, depois limpando. O que a auditoria registra?",
+          "codigo": "type Conexao = { clientId: string | null };\nconst pool: Conexao[] = [{ clientId: null }];\nconst auditoria: string[] = [];\n\nfunction requisicao(usuario: string | null, acao: string, limpaAoDevolver: boolean) {\n  const c = pool.pop()!;\n  if (usuario) c.clientId = usuario; // quando é null, a rota não propagou\n  auditoria.push(`${acao} por ${c.clientId ?? 'APP_SERVICO'}`);\n  if (limpaAoDevolver) c.clientId = null;\n  pool.push(c);\n}\n\nrequisicao('ana', 'aprovou pedido 10', false);\nrequisicao(null, 'excluiu pedido 11', false);\nrequisicao('bruno', 'alterou pedido 12', true);\nrequisicao(null, 'excluiu pedido 13', true);\nconsole.log(auditoria.join('\\n'));\n",
+          "saida": "aprovou pedido 10 por ana\nexcluiu pedido 11 por ana\nalterou pedido 12 por bruno\nexcluiu pedido 13 por APP_SERVICO\n",
+          "explicacao": "A conexão voltou ao pool com o identificador de `ana`. A segunda requisição não definiu nada e herdou: a exclusão do pedido 11 ficou registrada em nome de quem não a fez. Com limpeza na devolução, a rota que esquece cai no usuário de serviço: errado, mas visível e não incriminador. Nenhuma das duas é a solução. A solução é não existir rota que esquece: a identidade é definida num ponto central, a cada conexão entregue."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um guard simplificado: a rota de aprovar exige o papel `aprovador`. O corpo da requisição traz um campo `usuario`. O que sai?",
+          "codigo": "type Token = { sub: string; papeis: string[] };\ntype Corpo = { pedido: number; usuario: string };\n\nconst exige = (papel: string) => (t: Token) => (t.papeis.includes(papel) ? 200 : 403);\nconst podeAprovar = exige('aprovador');\n\nconst tokenAna: Token = { sub: 'ana', papeis: ['comprador'] };\nconst tokenBruno: Token = { sub: 'bruno', papeis: ['comprador', 'aprovador'] };\nconst corpo: Corpo = { pedido: 10, usuario: 'bruno' };\n\nconsole.log(podeAprovar(tokenAna));\nconsole.log(podeAprovar(tokenBruno));\nconsole.log(`quem a tela diz que é: ${corpo.usuario}`);\nconsole.log(`quem o token prova que é: ${tokenAna.sub}`);\n",
+          "saida": "403\n200\nquem a tela diz que é: bruno\nquem o token prova que é: ana\n",
+          "explicacao": "O guard decide pelo token: `ana` não tem o papel e recebe 403, `bruno` tem e passa. As duas últimas linhas mostram o ataque mais simples que existe: `ana` envia o corpo dizendo que é `bruno`. Se a API usasse o campo do corpo para autorizar ou auditar, ela aprovaria em nome dele. O token é assinado pelo provedor de identidade e conferido pela API. O corpo é só texto."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tabela tem política de VPD que filtra as linhas pela filial gravada num application context no login do Forms. A API passa a consultar essa tabela pelo pool, sem tratar o contexto. O que pode acontecer?",
+          "opcoes": [
+            "A política não se aplica a conexões de pool, e a API vê tudo",
+            "O banco recusa a conexão por falta de contexto",
+            "A consulta devolve o que o contexto daquela conexão disser: nada, se estiver vazio, ou as linhas da filial de outra pessoa, se sobrou de uma requisição anterior",
+            "A API sempre vê as linhas da filial do usuário de serviço"
+          ],
+          "correta": 2,
+          "explicacao": "A política de VPD vale para qualquer sessão e lê o contexto da sessão em que roda. Numa conexão de pool, esse contexto é o que a última requisição deixou. Sem definir o contexto a cada requisição, o resultado varia conforme a conexão sorteada, e o pior caso é vazamento de dados entre usuários. É o motivo de definir a identidade num ponto central."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Para a auditoria da tela nova, o time propõe: \"o front manda o login no JSON e o service grava na coluna alterado_por\". Qual é a melhor crítica?",
+          "opcoes": [
+            "Nenhuma: é simples e funciona",
+            "O login deve vir do token validado pela API, e ser propagado ao banco, para que a trigger de auditoria continue sendo a única responsável",
+            "O login deveria ir num cabeçalho HTTP em vez de ir no JSON",
+            "Melhor criar um usuário de banco por pessoa e abrir uma conexão por requisição"
+          ],
+          "correta": 1,
+          "explicacao": "Um login enviado pelo front, em corpo ou cabeçalho, pode ser forjado. A identidade confiável é a do token, que a API valida. E gravar a coluna no service cria um segundo caminho de auditoria, diferente do Forms: propagando o client identifier, a mesma trigger atende os dois. Abrir conexão por requisição joga fora o pool e custa caro a cada chamada."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "A responsável pela auditoria interna pergunta: \"{{nome}}, hoje eu sei quem alterou cada registro porque cada um entra com o seu usuário. Com essa tela nova, que usa um usuário só no banco, eu perco esse rastro?\"",
+          "pontos": [
+            "Veredito: não perde, desde que a identidade seja propagada",
+            "Explicou sem jargão: login corporativo, e o sistema informa ao banco quem está agindo",
+            "Condição: vale para toda requisição, num ponto central, e a trigger de auditoria é ajustada",
+            "Risco: gravar o usuário de serviço ou o nome de outra pessoa",
+            "Primeiro passo: teste com dois usuários, validado por ela, antes da primeira tela com escrita"
+          ],
+          "modelo": "Não perde, mas isso não vem pronto: precisa ser construído e testado. Na tela nova a pessoa entra com o login corporativo. O sistema confere esse login a cada operação e informa ao banco em nome de quem está gravando. A mesma rotina de auditoria que existe hoje passa a ler essa informação, então o registro mostra a pessoa, tanto pela tela antiga quanto pela nova. A condição é isso valer para toda operação, sem exceção. O risco, se for malfeito, é aparecer o usuário do sistema no lugar da pessoa, ou pior, o nome de outra pessoa. Por isso eu proponho um teste antes de qualquer tela com gravação ir ao ar: dois usuários gravam em seguida e você confere o rastro comigo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Atrás de uma API com pool, o que `USER` devolve numa trigger de auditoria?",
+          "verso": "O usuário de serviço, igual para todas as pessoas. A identidade real precisa ser propagada pela API."
+        },
+        {
+          "frente": "Quais são os três mecanismos do Oracle para a API dizer em nome de quem age?",
+          "verso": "Client identifier (texto na sessão), application context (pares de nome e valor gravados por package autorizado) e proxy authentication (conecta em nome de um usuário de banco real)."
+        },
+        {
+          "frente": "Por que definir a identidade no início de toda requisição, e não só limpar no fim?",
+          "verso": "A conexão do pool guarda o que a requisição anterior deixou. Uma rota que esquece herda a identidade de outra pessoa: auditoria errada ou, com VPD, dados vazados."
+        },
+        {
+          "frente": "Onde fica a autorização depois da migração?",
+          "verso": "Na API, rota por rota (guards no Nest), com base nos papéis do token. Para o banco, toda requisição chega com a permissão do usuário de serviço."
+        },
+        {
+          "frente": "Como a trigger de auditoria atende Forms e API ao mesmo tempo?",
+          "verso": "`NVL(SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER'), USER)`: pela API vale o login propagado, pelo Forms vale o `USER`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "node-oracledb — Connection Handling",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/user_guide/connection_handling.html"
+        },
+        {
+          "titulo": "NestJS — Guards",
+          "url": "https://docs.nestjs.com/guards"
+        },
+        {
+          "titulo": "NestJS — Authentication",
+          "url": "https://docs.nestjs.com/security/authentication"
+        }
+      ]
+    },
+    {
+      "id": "mig-11",
+      "titulo": "Relatórios, impressão, integrações e batch",
+      "minutos": 11,
+      "ponte": "Em todo módulo Forms existe uma parte que não é tela: os relatórios do Reports, a impressão direta, os arquivos gerados com `UTL_FILE`, os DB links e os jobs que rodam de madrugada. Você sabe que é ali que mora metade do valor do sistema. Quem pede a migração costuma não saber, e o pedido chega como \"são só as telas\". A lição é sobre o que fazer com essa parte, e a resposta mais frequente é: não migrar.",
+      "texto": "### Reports: quatro destinos\n\nNão existe \"o substituto do Reports\". Existe um destino por tipo de relatório.\n\n| Tipo de relatório | Destino | Custo |\n|---|---|---|\n| Documento de layout fixo (comprovante, contrato, etiqueta, boleto) | **PDF gerado no servidor** a partir de um modelo | Médio por documento. Layout fino é trabalhoso |\n| Listagem com filtros (\"pedidos do período\") | **Relatório em tela**: tabela paginada com filtros e botão de exportar para planilha | Baixo. É uma tela de consulta |\n| Análise e totais (\"vendas por região e mês\") | **Ferramenta de BI**, lendo o banco ou uma cópia | Baixo para a TI se a ferramenta já existe |\n| Qualquer um, por enquanto | **Manter no Reports** e chamar pela tela nova | Quase zero agora. Mantém a dependência do servidor de relatórios |\n\nDuas observações de quem já viu isso dar errado:\n\n- **Meça o uso antes.** Em todo sistema antigo há relatórios que ninguém roda há anos. Levante quais são executados e por quem. Cada relatório que não migra é custo que desaparece.\n- **Muita listagem não é relatório, é exportação.** A pessoa roda o relatório para copiar os números para uma planilha. Uma tela de consulta com exportar atende melhor e custa menos que reproduzir o layout.\n\nRelatório pesado não cabe numa requisição HTTP comum, que tem tempo limite. O padrão é assíncrono: a tela pede, a API registra o pedido e responde na hora, um processo gera o arquivo e a pessoa é avisada quando está pronto para baixar. Você verá o mecanismo em mig-13.\n\n### Impressão\n\nNo Forms o relatório vai direto para a impressora. No navegador não existe impressão silenciosa: a página abre o diálogo de impressão e a pessoa confirma. Para a maioria dos documentos isso basta (gerar o PDF e imprimir).\n\nO caso difícil é impressão **sem diálogo, em equipamento específico**: etiqueta térmica, matricial, impressora de balcão. Isso exige um serviço de impressão no servidor ou um agente instalado na estação. É risco de projeto. Pergunte cedo: \"alguma tela imprime sem perguntar?\".\n\n### Integrações\n\n| Hoje | Na migração |\n|---|---|\n| Arquivo lido ou gravado na máquina do usuário pela tela | *Upload* e *download* pelo navegador. A página não acessa as pastas do usuário livremente |\n| Arquivo gerado no servidor de banco (`UTL_FILE`), pego por outro sistema | **Fica.** Não depende da tela |\n| DB link para outro banco | **Fica.** A API chama o package, que usa o link |\n| Tela que chama um executável local ou um equipamento | Caso a caso, e caro. O navegador é isolado da máquina |\n\n### Batch e jobs\n\nJobs do `DBMS_SCHEDULER` e rotinas em lote em PL/SQL **não fazem parte da migração de tela**. Eles processam conjuntos grandes, perto do dado, e não têm interface. Levar um fechamento de 2 milhões de linhas para o Node significa trazer os dados pela rede para processar linha a linha: fica mais lento e mais frágil.\n\nO que muda é só o **disparo e o acompanhamento**: a tela Forms que tinha o botão \"Executar fechamento\" vira uma tela web que chama a API, que enfileira o job no banco e mostra a situação.\n\n### O que não migrar\n\n- processamento em lote em PL/SQL;\n- jobs agendados no banco;\n- integrações banco a banco que estão estáveis;\n- relatórios sem uso;\n- relatórios que podem continuar no Reports até o fim da migração das telas.\n\nDizer \"isto não entra\" com o motivo é uma das contribuições mais valiosas de quem conhece o sistema. Reduz escopo, prazo e risco de uma vez.",
+      "naPratica": "Ao receber um pedido de migração de módulo, pergunte logo: \"quais relatórios, impressões e arquivos saem daqui?\". É a parte que falta no pedido em quase todos os casos, e a que mais muda o prazo.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Os usuários rodam todo dia um relatório do Reports, \"pedidos em aberto por fornecedor\", e depois redigitam os números numa planilha. Qual o melhor destino?",
+          "opcoes": [
+            "Reproduzir o layout do relatório em PDF, idêntico ao atual",
+            "Uma tela de consulta com filtros e botão de exportar para planilha",
+            "Um job noturno que envia o PDF por e-mail para todos",
+            "Não migrar: relatório não faz parte de migração de tela"
+          ],
+          "correta": 1,
+          "explicacao": "O uso real é levar os dados para a planilha. A consulta com exportação entrega isso direto e custa menos que reproduzir layout. O PDF idêntico preserva a forma e mantém a redigitação. Não migrar ignora um relatório usado todo dia."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O módulo tem uma rotina de fechamento mensal em PL/SQL que processa 2 milhões de linhas, disparada por um botão numa tela Forms. O que fazer na migração?",
+          "opcoes": [
+            "Reescrever o fechamento em TypeScript, para ficar tudo na stack nova",
+            "Manter a rotina no banco e migrar só o disparo e o acompanhamento para a tela web",
+            "Fazer o React buscar as linhas em páginas e recalcular no navegador",
+            "Transformar a rotina num endpoint que processa tudo dentro de uma requisição HTTP"
+          ],
+          "correta": 1,
+          "explicacao": "Processamento em massa fica perto do dado. Reescrever traz 2 milhões de linhas pela rede e exige teste de equivalência de uma regra crítica. Rodar dentro de uma requisição estoura o tempo limite. O que muda é o botão: a API enfileira o job e a tela mostra a situação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela de expedição imprime a etiqueta direto na impressora térmica do balcão, sem perguntar nada ao usuário. Na migração para o navegador, isso é:",
+          "opcoes": [
+            "Automático: o navegador imprime em qualquer impressora instalada sem diálogo",
+            "Impossível: aplicação web não imprime",
+            "Um risco a tratar cedo: exige serviço de impressão no servidor ou agente na estação",
+            "Resolvido gerando um PDF e pedindo ao usuário para imprimir a cada etiqueta"
+          ],
+          "correta": 2,
+          "explicacao": "O navegador sempre abre o diálogo de impressão: não há impressão silenciosa por padrão. É possível resolver, com um componente fora do navegador, e isso tem custo e depende de infraestrutura. Confirmar o diálogo a cada etiqueta inviabiliza o balcão."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "O gestor pergunta: \"{{nome}}, o módulo financeiro tem uns 60 relatórios no Reports. Dá para migrar todos junto com as telas?\"",
+          "pontos": [
+            "Não aceitou o número 60 como escopo: propôs medir o uso primeiro",
+            "Separou por tipo e destino (PDF de layout fixo, consulta com exportação, BI, manter no Reports por ora)",
+            "Deu o veredito com condição e noção de custo por tipo",
+            "Apontou o risco (impressão direta, relatórios pesados) e o primeiro passo com prazo"
+          ],
+          "modelo": "Dá, mas eu não migraria os 60, e não junto. Primeiro passo: levantar quais foram executados nos últimos meses e por quem. Costuma sobrar uma parte bem menor. Depois eu separo em três grupos. Documento de layout fixo vira PDF gerado no servidor, e é o mais caro por unidade. Listagem vira tela de consulta com exportar para planilha, que é barata. Relatório de análise vai para a ferramenta de BI. Enquanto isso, a tela nova pode continuar chamando o Reports, então relatório não trava a migração das telas. O risco é impressão direta em equipamento. Em uma semana eu trago a lista classificada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os quatro destinos de um relatório do Reports?",
+          "verso": "PDF gerado no servidor, relatório em tela com exportação, ferramenta de BI, ou manter no Reports por enquanto."
+        },
+        {
+          "frente": "Por que medir o uso dos relatórios antes de estimar a migração?",
+          "verso": "Sistema antigo acumula relatório que ninguém roda. Cada um que não migra é escopo, prazo e risco a menos."
+        },
+        {
+          "frente": "O que acontece com jobs e rotinas em lote numa migração de tela?",
+          "verso": "Ficam no banco. Só o disparo e o acompanhamento passam para a tela web, via API."
+        },
+        {
+          "frente": "Qual é a limitação de impressão no navegador?",
+          "verso": "Não há impressão silenciosa: sempre abre o diálogo. Impressão direta em equipamento exige serviço no servidor ou agente na estação."
+        },
+        {
+          "frente": "Por que relatório pesado não roda dentro de uma requisição HTTP?",
+          "verso": "A requisição tem tempo limite. O padrão é assíncrono: pedir, gerar em segundo plano e avisar quando o arquivo estiver pronto."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Streaming files",
+          "url": "https://docs.nestjs.com/techniques/streaming-files"
+        },
+        {
+          "titulo": "NestJS — Queues",
+          "url": "https://docs.nestjs.com/techniques/queues"
+        },
+        {
+          "titulo": "Martin Fowler — Patterns of Legacy Displacement",
+          "url": "https://martinfowler.com/articles/patterns-legacy-displacement/"
+        }
+      ]
+    },
+    {
+      "id": "mig-12",
+      "titulo": "Estimar e fatiar uma migração: riscos e plano de corte",
+      "minutos": 13,
+      "ponte": "Você nunca publicaria uma alteração grande de package sem script de retorno e sem janela combinada. Plano de migração é a mesma disciplina, com uma diferença de escala: o retorno não é um script, é um caminho de volta para os usuários, e a janela dura semanas de convivência.",
+      "texto": "Com o inventário (mig-03), a estratégia de regra (mig-04) e as condições de convivência (mig-05), dá para montar o plano. Ele responde quatro perguntas: em que pedaços, em que ordem, quanto custa e como voltar.\n\n### Fatiar por fluxo, não por tela\n\nA fatia natural parece ser a tela. Não é. Um usuário que cadastra um pedido passa por três telas: consulta o cliente, lança o pedido, emite o comprovante. Se só a do meio for migrada, ele alterna entre Forms e navegador a cada pedido, e rejeita a novidade com razão.\n\nA fatia boa é um **fluxo de usuário completo**: do começo ao fim de uma tarefa, a pessoa fica de um lado só. Às vezes um fluxo é uma tela. Muitas vezes são duas ou três telas e um relatório.\n\n### A ordem\n\n1. **Uma consulta de baixo risco.** Só leitura, usada por bastante gente, sem regra pesada. O objetivo é provar a arquitetura inteira: login único, API, pool, identidade propagada, publicação, monitoramento. Se der errado, ninguém perdeu dado.\n2. **Um cadastro simples com escrita.** Prova o lock otimista, a auditoria e a convivência de gravação com o Forms.\n3. **Um fluxo de negócio de verdade**, com master-detail e regra em package.\n4. **Os fluxos críticos e os mais complexos**, quando o time e a plataforma já erraram no que era barato.\n\nA primeira fatia custa muito mais que as seguintes, porque paga a fundação. Diga isso antes: a primeira tela demorar o triplo é o esperado, não é sinal de que o projeto vai mal.\n\n### Estimar em faixa\n\nUse o inventário: contagem por classe vezes o peso, calibrado pela primeira fatia. Some o que não é trigger:\n\n- fundação (uma vez): autenticação, estrutura da API, publicação;\n- por fluxo: telas, API, testes, **convivência** (ajustes no Forms e no banco), piloto e acompanhamento;\n- relatórios e integrações do fluxo (mig-11).\n\nEntregue faixa e premissas: \"de 6 a 9 semanas, supondo que a regra de preço já está em package. Se estiver em trigger de tela, some de 2 a 3 semanas\". A premissa escrita protege você quando ela não se confirma.\n\n### Os riscos típicos\n\n| Risco | Sinal | O que reduz |\n|---|---|---|\n| Regra escondida em trigger de tela | Inventário raso, tela antiga, autor que saiu | Inventário com classificação. Teste comparando o que os dois lados gravam |\n| API tagarela e tela lenta | Tela traduzida bloco a bloco | Endpoint por caso de uso, medir cedo (mig-14) |\n| Usuários de teclado rejeitam | Digitação intensa, muitas teclas de função | Protótipo testado com usuário real antes de construir tudo |\n| Relatórios e impressão fora do escopo | Pedido fala só de telas | Levantar no inventário |\n| Convivência quebra | Dependência de `:GLOBAL`, auditoria por `USER` | Lista de condições da mig-05, conferida por fluxo |\n\n### Plano de corte e plano de retorno\n\n**Corte** é o momento em que um grupo passa a usar o fluxo novo como oficial. O plano diz: quem, quando, o que foi comunicado, quem atende dúvida no primeiro dia e o que será observado (erros da API, tempo de resposta, chamados).\n\n**Retorno** é o caminho de volta. No estrangulamento ele é barato, desde que você o preserve:\n\n- a tela Forms continua instalada e funcionando durante o período combinado;\n- voltar é trocar o roteamento (o item de menu aponta de novo para o Forms);\n- **o dado gravado pela tela nova precisa ser legível pela antiga.** Se a nova gravar algo que o Forms não entende, o retorno deixa de existir. Essa é a condição que mais se perde sem perceber.\n\nDefina antes o gatilho de retorno (\"se tal erro acontecer, voltamos\") e quem decide. Decidir isso durante o incidente é tarde.\n\n### Piloto\n\nComece com um grupo pequeno, que inclua um usuário exigente, por um ciclo completo do negócio. Se o processo tem fechamento mensal, o piloto atravessa um fechamento. Uma semana tranquila não prova nada sobre o último dia do mês.",
+      "naPratica": "Quando pedirem \"o plano de migração do módulo\", entregue uma página: fluxos na ordem, faixa por fluxo com premissas, os três maiores riscos com o que os reduz, e o plano de corte e retorno da primeira fatia. Uma página com isso vale mais que um cronograma de cinquenta linhas.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Um módulo tem 12 telas. Qual é a melhor primeira fatia de migração?",
+          "opcoes": [
+            "A tela mais complexa, para eliminar logo o maior risco",
+            "A tela de lançamento de pedido, que é a mais usada e a mais crítica",
+            "Uma consulta usada por muita gente, só de leitura, sem regra pesada",
+            "As 12 telas juntas, para não haver convivência"
+          ],
+          "correta": 2,
+          "explicacao": "A primeira fatia prova a fundação (login, API, pool, publicação, monitoramento) com dano máximo pequeno. Começar pela mais complexa ou pela mais crítica mistura o risco da plataforma nova com o risco da regra de negócio. As 12 juntas são a virada única, sem caminho de volta."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A tela nova de pedidos passou a gravar um campo de situação com um valor novo, \"EM_ANALISE\", que a tela Forms não conhece. Qual é a consequência para o plano de retorno?",
+          "opcoes": [
+            "Nenhuma: o Forms ignora valores que não conhece",
+            "O retorno fica comprometido: os pedidos gravados pela nova podem não funcionar na tela antiga",
+            "O retorno fica mais fácil, porque dá para identificar os pedidos da tela nova",
+            "Basta apagar os pedidos gravados pela tela nova antes de voltar"
+          ],
+          "correta": 1,
+          "explicacao": "Voltar ao Forms só é barato se o dado gravado pela tela nova for legível pela antiga. Um valor que a tela antiga não trata pode quebrar validação, lista ou regra. Apagar pedidos reais não é plano de retorno."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A primeira tela migrada levou 6 semanas. O gestor projeta: \"12 telas, então 72 semanas\". Qual é a leitura correta?",
+          "opcoes": [
+            "Está certo: o custo por tela é constante",
+            "Está otimista: as próximas sempre demoram mais que a primeira",
+            "A primeira pagou a fundação. As próximas se estimam pelo inventário de cada fluxo, com os pesos calibrados pela primeira",
+            "Não dá para estimar nada antes de migrar todas"
+          ],
+          "correta": 2,
+          "explicacao": "A primeira fatia inclui autenticação, estrutura, publicação e aprendizado, que não se repetem. Multiplicar esse custo superestima. O método é separar a fundação, calibrar os pesos por classe e aplicar ao inventário de cada fluxo, em faixa."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "O diretor pergunta: \"{{nome}}, quanto tempo para migrar o módulo de compras inteiro? Preciso de um número para o orçamento do ano que vem.\"",
+          "pontos": [
+            "Não recusou responder nem deu um número solto: deu faixa com premissas, ou o caminho curto até ela",
+            "Explicou que a primeira fatia custa mais, por causa da fundação",
+            "Propôs fatiar por fluxo, começando por uma consulta",
+            "Nomeou o risco que mais alarga a faixa (regra em trigger de tela, relatórios)",
+            "Deu o primeiro passo com prazo (inventário)"
+          ],
+          "modelo": "Um número fechado hoje seria chute. Eu consigo te dar uma faixa confiável em duas semanas, e te digo agora o formato dela. Eu faço o inventário do módulo e separo em fluxos de usuário. O primeiro fluxo, uma consulta, custa mais que os outros porque monta a fundação: login, API, publicação. A partir dele eu calibro e estimo os demais. O que mais alarga a faixa é regra presa nas telas e a quantidade de relatórios, e o inventário mostra as duas coisas. Para o orçamento, eu sugiro aprovar agora o inventário e a primeira fatia, e fechar o resto com os números medidos."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "O gerente de operações pergunta: \"{{nome}}, e se a tela nova der problema no meio do expediente? A operação não pode parar.\"",
+          "pontos": [
+            "Disse que existe caminho de volta e como ele funciona (a tela Forms continua instalada, troca do roteamento)",
+            "Disse em quanto tempo e quem decide",
+            "Citou a condição técnica: o dado gravado pela nova continua legível pela antiga",
+            "Citou piloto e o que será observado no dia do corte"
+          ],
+          "modelo": "Não para. Durante o período de convivência a tela antiga continua instalada e funcionando sobre o mesmo banco. Se a nova der problema, a gente aponta o item de menu de volta para a antiga, e isso leva minutos. O que foi gravado pela tela nova continua lá e aparece na antiga, porque a gente desenha a nova para não gravar nada que a antiga não entenda. Antes de liberar para todo mundo, um grupo pequeno usa por um ciclo completo, incluindo o fechamento. E a gente combina antes qual tipo de erro dispara o retorno e quem dá a ordem, para ninguém decidir no susto."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Plano de uma página para um módulo genérico",
+          "minutos": 30,
+          "passos": [
+            "Imagine um módulo genérico de compras com 5 telas: consulta de fornecedor, cadastro de fornecedor, pedido e itens, aprovação de pedido e um relatório de pedidos em aberto. Não use nomes reais de sistema, tela ou tabela.",
+            "Crie `estudo/plano-migracao.md` e agrupe as telas em fluxos de usuário (2 a 4 fluxos).",
+            "Ordene os fluxos e escreva em uma linha por que cada um está naquela posição.",
+            "Para cada fluxo, escreva uma faixa em semanas e a premissa que, se cair, alarga a faixa.",
+            "Escreva os três maiores riscos com o que reduz cada um, e o plano de corte e retorno do primeiro fluxo (quem, quando, gatilho de retorno, quem decide)."
+          ],
+          "prontoQuando": "O arquivo cabe em uma página e tem: fluxos ordenados com justificativa, faixa e premissa por fluxo, três riscos com mitigação, e corte e retorno do primeiro fluxo com gatilho e responsável."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que fatiar a migração por fluxo de usuário e não por tela?",
+          "verso": "Se só uma tela do fluxo migra, a pessoa alterna entre Forms e navegador a cada tarefa. O fluxo inteiro fica de um lado só."
+        },
+        {
+          "frente": "Qual é a melhor primeira fatia de uma migração?",
+          "verso": "Uma consulta de baixo risco, só leitura e bem usada: prova a arquitetura inteira sem arriscar dado."
+        },
+        {
+          "frente": "Por que a primeira tela migrada custa muito mais que as seguintes?",
+          "verso": "Ela paga a fundação: autenticação, estrutura da API, publicação, monitoramento e o aprendizado do time."
+        },
+        {
+          "frente": "Qual condição técnica mantém o plano de retorno vivo?",
+          "verso": "O dado gravado pela tela nova precisa continuar legível pela tela antiga."
+        },
+        {
+          "frente": "Quanto tempo deve durar um piloto?",
+          "verso": "Um ciclo completo do negócio. Se há fechamento mensal, o piloto atravessa um fechamento."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Patterns of Legacy Displacement",
+          "url": "https://martinfowler.com/articles/patterns-legacy-displacement/"
+        },
+        {
+          "titulo": "Martin Fowler — Strangler Fig Application",
+          "url": "https://martinfowler.com/bliki/StranglerFigApplication.html"
+        },
+        {
+          "titulo": "Martin Fowler — Canary Release",
+          "url": "https://martinfowler.com/bliki/CanaryRelease.html"
+        }
+      ]
+    },
+    {
+      "id": "mig-13",
+      "titulo": "\"Dá para implementar X no app moderno?\" — o roteiro de resposta",
+      "minutos": 13,
+      "ponte": "Quando perguntam \"dá para fazer isso no Forms?\", você responde em segundos, porque conhece os mecanismos: sabe o que é um timer, o que uma trigger alcança, o que o cliente consegue fazer. Na stack nova você ainda não tem esse catálogo de cabeça. O roteiro abaixo substitui a memória por método, até a memória se formar.",
+      "texto": "Em mig-02 você respondeu \"dá para migrar?\". Esta é a outra pergunta do corredor: \"dá para a tela nova fazer X?\". Quase sempre dá. O valor da sua resposta está em **qual mecanismo, a que custo e com que restrição**.\n\n### Os cinco passos\n\n**1. Reformule em comportamento observável.** \"Quero notificação\" não é requisito. \"Quando um pedido for aprovado, o solicitante vê um aviso na tela em até um minuto, sem recarregar\" é. Pergunte: quem, quando, em quanto tempo, com que volume.\n\n**2. Classifique onde o problema mora.** Tela, API, banco, integração ou infraestrutura. Um pedido pode tocar várias, e a mais cara define o custo. \"Exportar para planilha\" é tela e API. \"Trabalhar sem internet\" é quase tudo.\n\n**3. Procure o mecanismo padrão.** Quase todo pedido comum tem solução conhecida:\n\n| Pedido | Mecanismo padrão | Atenção |\n|---|---|---|\n| Anexar arquivo | *Upload* multipart, recebido pela API e guardado fora da tabela principal | Limite de tamanho, tipo permitido, quem pode baixar |\n| Aviso em tempo real | SSE (o servidor empurra eventos) ou WebSocket (dois sentidos) | Muitas vezes, rebuscar a cada 30 segundos atende e custa quase nada |\n| Exportar planilha ou PDF | Gerado no servidor e baixado | Arquivo grande vira processamento longo |\n| Assinatura digital | Integração com serviço ou certificado | Não é um botão: há requisito jurídico e fornecedor |\n| Trabalhar sem internet | Aplicação instalável, com armazenamento local e sincronização | O mais caro da lista: conflito de dados na volta |\n| Busca textual | `LIKE` com índice, recurso de texto do banco ou motor de busca | Comece pelo banco. Motor separado é mais uma peça para manter |\n| Agendamento | Agendador na API ou job no banco | Com várias instâncias da API, o agendador roda em todas |\n| Processamento longo | Fila: a API responde na hora e um processo trabalha depois | A tela precisa mostrar a situação e o resultado |\n| Permissão por campo | A API omite o campo na resposta e rejeita na gravação | Esconder no front não é permissão |\n| Auditoria | Trigger de banco + identidade propagada (mig-10) | Vale também para o que o Forms grava |\n| Vários idiomas | Biblioteca de tradução no front. O back devolve códigos de erro | Caro se entrar depois de as telas estarem prontas |\n| Falar com sistema legado | A API chama package, DB link ou troca arquivo | Isole numa camada só, para o resto do código não conhecer o legado |\n\nSe o pedido não aparece em tabela nenhuma e você não acha mecanismo conhecido, isso é informação: ou o pedido está mal formulado (volte ao passo 1), ou é pesquisa, e pesquisa se estima com um experimento de prazo fixo.\n\n**4. Aponte a restrição.** São quatro famílias:\n\n- **Segurança:** quem pode ver ou fazer isso? O dado é sensível?\n- **Desempenho:** qual o volume? Cabe numa requisição?\n- **Navegador:** a página não acessa arquivos, impressoras e dispositivos da máquina como um cliente instalado.\n- **Legado:** o Forms precisa enxergar ou respeitar isso durante a convivência?\n\n**5. Responda no formato.** Veredito → custo → risco → primeiro passo, como em mig-02.\n\n### Um exemplo completo\n\nPedido: \"dá para o sistema avisar quando o pedido for aprovado?\"\n\n1. Comportamento: o solicitante vê o aviso em até um minuto, com a tela aberta.\n2. Onde mora: API e tela.\n3. Mecanismo: com tolerância de um minuto, rebuscar periodicamente atende. Se fosse \"na hora\", SSE.\n4. Restrição: a aprovação ainda é feita no Forms, então a API precisa perceber uma mudança que ela não fez. Isso resolve com consulta periódica ao banco.\n5. Resposta: \"Dá. Com tolerância de um minuto é simples, coisa de dias. Se precisar ser instantâneo, sobe para semanas, porque a aprovação ainda sai do Forms. Começo confirmando com a área se um minuto atende.\"\n\n### As três respostas ruins\n\n- **\"Dá, tranquilo.\"** Promete sem ter passado pelos passos 1 e 4.\n- **\"Não dá.\"** Quase nunca é verdade. O honesto é \"dá, e custa tanto\", e quem pede decide se vale.\n- **\"Depende.\"** Só é resposta se vier seguida de \"e depende disto\".",
+      "naPratica": "Leve a tabela do passo 3 impressa, ou num arquivo à mão, nas primeiras semanas. Depois de responder umas vinte perguntas com ela, você terá o catálogo de cabeça, como tem o do Forms.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Pedem: \"a tela precisa gerar um arquivo com 500 mil linhas para o usuário baixar\". Qual mecanismo se aplica?",
+          "opcoes": [
+            "Um endpoint comum que monta o arquivo em memória e devolve na mesma requisição",
+            "Processamento longo: a API registra o pedido, um processo gera o arquivo e a tela avisa quando estiver pronto",
+            "O React busca as 500 mil linhas em uma chamada e monta o arquivo no navegador",
+            "Não dá: aplicação web não gera arquivo desse tamanho"
+          ],
+          "correta": 1,
+          "explicacao": "Meio milhão de linhas estoura tempo limite e memória numa requisição comum, e trava o navegador se for montado no front. O mecanismo padrão é fila mais aviso. E \"não dá\" está errado: dá, com o mecanismo certo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um analista pede: \"o campo de margem de lucro só pode ser visto por gerentes\". Qual resposta descreve a implementação correta?",
+          "opcoes": [
+            "O React esconde o campo quando o perfil não é gerente",
+            "A API não inclui o campo na resposta para quem não é gerente, e rejeita se ele vier numa gravação. O front só reflete isso",
+            "O campo é enviado cifrado e o front decifra para gerentes",
+            "Cria-se uma tela separada só para gerentes, com o mesmo endpoint"
+          ],
+          "correta": 1,
+          "explicacao": "Se a API devolve o campo, qualquer pessoa o vê nas ferramentas do navegador, mesmo com o campo escondido na tela. Decifrar no front exige mandar a chave para o navegador. Uma tela separada sobre o mesmo endpoint expõe o mesmo dado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual é o primeiro passo do roteiro quando alguém pede \"quero que o sistema tenha notificação\"?",
+          "opcoes": [
+            "Escolher entre SSE e WebSocket",
+            "Estimar o prazo",
+            "Reformular em comportamento observável: quem recebe, quando, em quanto tempo, com a tela aberta ou fechada",
+            "Verificar se o servidor suporta conexões longas"
+          ],
+          "correta": 2,
+          "explicacao": "\"Notificação\" cobre de um contador que atualiza a cada minuto até aviso no celular com o aplicativo fechado. São custos de ordens de grandeza diferentes. Escolher tecnologia ou prazo antes de saber o comportamento é responder à pergunta errada."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "O gestor pergunta: \"{{nome}}, dá para os vendedores usarem a tela nova de pedidos no tablet, sem internet, quando estiverem no cliente?\"",
+          "pontos": [
+            "Reformulou o pedido: o que precisa funcionar sem rede (consultar, lançar pedido, os dois?)",
+            "Deu veredito honesto: dá, e é dos recursos mais caros",
+            "Nomeou o risco principal: sincronização e conflito na volta (preço, estoque e crédito mudaram)",
+            "Ofereceu alternativa mais barata (rascunho local que só é enviado com rede)",
+            "Propôs o primeiro passo: medir com que frequência ficam sem sinal"
+          ],
+          "modelo": "Dá, mas é dos recursos mais caros que existem em aplicação web, então vale entender bem antes. A parte fácil é a tela abrir sem rede. A difícil é a volta: o vendedor lançou o pedido com o preço e o estoque que estavam no tablet, e quando reconecta isso pode ter mudado. Alguém precisa decidir o que vale. Existe um meio-termo bem mais barato: ele preenche um rascunho no tablet e o pedido só é enviado e validado quando houver sinal. Antes de estimar, eu queria saber duas coisas: com que frequência eles ficam mesmo sem internet, e se o rascunho já resolve."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Uma analista de negócio pergunta: \"{{nome}}, dá para anexar a nota fiscal digitalizada no cadastro do pedido, na tela nova?\"",
+          "pontos": [
+            "Deu veredito claro: dá, é recurso padrão",
+            "Fez as perguntas que definem o custo: tipo e tamanho do arquivo, quantos por pedido, quem pode ver",
+            "Apontou a restrição de convivência: a tela Forms precisa enxergar o anexo?",
+            "Deu noção de custo e primeiro passo"
+          ],
+          "modelo": "Dá, anexar arquivo é recurso padrão: a tela envia, a API recebe, guarda e registra o vínculo com o pedido. Para te dar o custo eu preciso de quatro respostas. Que tipos de arquivo e até que tamanho? Quantos por pedido? Quem pode ver e baixar? E o pessoal que ainda usa a tela antiga precisa enxergar o anexo? Essa última é a que mais pesa: se precisar, a gente tem que definir onde guardar de um jeito que os dois lados alcancem. Sem isso é coisa de poucos dias. Me passa as respostas e eu volto com a faixa."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um colega desenvolvedor pergunta: \"{{nome}}, o cliente quer que a lista de pedidos atualize sozinha quando alguém aprovar. Vou colocar WebSocket, o que você acha?\"",
+          "pontos": [
+            "Perguntou a tolerância de atraso antes de opinar sobre a tecnologia",
+            "Apresentou a opção mais simples primeiro (rebuscar por intervalo) e quando ela não basta",
+            "Diferenciou SSE (servidor para tela) de WebSocket (dois sentidos)",
+            "Apontou a restrição do legado: aprovação feita pelo Forms não passa pela API"
+          ],
+          "modelo": "Antes do WebSocket, eu perguntaria ao cliente em quanto tempo a lista precisa atualizar. Se trinta segundos atendem, rebuscar por intervalo resolve com uma linha de configuração e nenhuma peça nova. Se precisar ser na hora, o fluxo é só do servidor para a tela, então SSE é mais simples que WebSocket, que serve quando a tela também manda mensagens o tempo todo. E tem um detalhe do nosso cenário: parte das aprovações ainda sai do Forms, e essas não passam pela API. Para empurrar o evento, a API teria que descobrir a mudança no banco. Com rebusca por intervalo esse problema nem aparece."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os cinco passos para responder \"dá para implementar X?\"",
+          "verso": "Reformular em comportamento observável; classificar onde mora; procurar o mecanismo padrão; apontar a restrição; responder veredito → custo → risco → primeiro passo."
+        },
+        {
+          "frente": "Quais são as quatro famílias de restrição a conferir?",
+          "verso": "Segurança, desempenho, navegador e legado."
+        },
+        {
+          "frente": "Por que \"não dá\" quase nunca é a resposta certa?",
+          "verso": "Quase tudo dá. O honesto é dizer o custo e o risco, e deixar quem pede decidir se vale."
+        },
+        {
+          "frente": "Qual é o mecanismo padrão para processamento longo?",
+          "verso": "Fila: a API registra o pedido e responde na hora, um processo trabalha depois e a tela mostra a situação."
+        },
+        {
+          "frente": "Aviso em tempo real: qual opção considerar antes de SSE e WebSocket?",
+          "verso": "Rebuscar por intervalo. Se alguns segundos de atraso atendem, custa quase nada e não adiciona peça."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — File upload",
+          "url": "https://docs.nestjs.com/techniques/file-upload"
+        },
+        {
+          "titulo": "NestJS — Server-Sent Events",
+          "url": "https://docs.nestjs.com/techniques/server-sent-events"
+        },
+        {
+          "titulo": "NestJS — Task Scheduling",
+          "url": "https://docs.nestjs.com/techniques/task-scheduling"
+        }
+      ]
+    },
+    {
+      "id": "mig-14",
+      "titulo": "Desempenho: do round-trip do Forms à API tagarela",
+      "minutos": 12,
+      "ponte": "Uma tela Forms faz dezenas de idas ao banco sem você notar: uma `POST-QUERY` por registro, uma consulta por LOV, um `SELECT` em cada validação. É barato porque a conexão já está aberta e cada ida custa perto de um milissegundo. Na web, cada ida do navegador à API é uma requisição HTTP completa, com autenticação, rede e uma conexão tirada do pool. O mesmo desenho que era invisível no Forms vira uma tela lenta.",
+      "texto": "### Por que cada chamada custa\n\nUma requisição do navegador à API paga, toda vez: latência de rede (dezenas de milissegundos, mais em rede ruim), validação do token, pegar conexão no pool, executar, serializar em JSON e voltar. O trabalho de banco, que era o custo todo no Forms, vira a menor parte.\n\nHá ainda um limite do navegador: com HTTP/1.1 ele abre poucas conexões simultâneas por servidor (em geral seis). Com HTTP/2 as requisições compartilham uma conexão, mas cada uma continua ocupando a API e o pool.\n\n### API tagarela\n\n*Chatty API* (API tagarela) é a que obriga a tela a fazer muitas chamadas pequenas para montar uma coisa só. Ela nasce de duas traduções literais:\n\n- **um endpoint por bloco ou por tabela**, e a tela junta tudo;\n- **uma chamada por linha**, herdeira direta da `POST-QUERY`: busca a lista, depois busca um detalhe para cada item. É o problema N+1 visto do navegador.\n\nUma tela de pedido com cabeçalho, 12 itens e a descrição de cada produto vira 14 chamadas ou mais.\n\n### Os remédios\n\n| Remédio | O que é | Custo |\n|---|---|---|\n| **Endpoint por caso de uso** | `GET /pedidos/42` já devolve cabeçalho, itens e descrições | A API fica desenhada para a tela, menos genérica |\n| **BFF** (*backend for frontend*, back-end feito para um front) | Uma camada da API que agrega dados no formato que a tela precisa | Mais uma camada para manter. No Nest pode ser só um módulo |\n| **Paginação no servidor** | Nunca devolver o bloco inteiro | Filtro e ordenação passam a ser do servidor |\n| **Só as colunas da tela** | Sem `SELECT *` de tabela com 80 colunas | DTO de resposta explícito |\n| **Cache de listas** | Listas estáveis carregam uma vez (mig-09) | Decidir o prazo de validade |\n| **Paralelizar o que é independente** | Disparar juntas as buscas que não dependem uma da outra | Não reduz a carga na API, só o tempo percebido |\n\nO primeiro é o mais importante. A regra prática: **o endpoint acompanha o que a tela precisa, não a tabela.** Se a tela precisa de três coisas para desenhar, o ideal é uma chamada, ou três em paralelo. Nunca treze em sequência.\n\n### O outro lado: não exagere\n\nO oposto também existe: um endpoint gigante que devolve tudo o que o módulo sabe, \"para garantir\". Ele é lento sempre, impossível de guardar em cache por partes e quebra a cada mudança de tela. O alvo é o endpoint do tamanho de **uma** necessidade.\n\n### Entre a API e o banco\n\nA mesma conversa acontece do outro lado. Um service que faz um `execute` por item dentro de um laço repete a `POST-QUERY` no servidor. Os remédios são os que você já conhece do PL/SQL: join, operação em conjunto, um package que recebe a coleção e faz tudo numa ida, ou a execução em lote do driver para muitos `INSERT`.\n\n### Medir antes\n\nOtimizar sem medir é palpite. A ordem:\n\n1. **Aba de rede do navegador:** quantas requisições a tela faz para abrir? Estão em cascata (uma espera a outra) ou em paralelo? Quanto pesa cada resposta?\n2. **Log da API com tempo por requisição:** onde está o tempo, no banco ou fora dele?\n3. **O SQL:** aí você está em casa, com plano de execução e índices.\n\nO sintoma típico de API tagarela é uma cascata de dezenas de chamadas rápidas. Cada uma parece saudável e a soma é ruim. Olhar só o tempo do SQL não mostra o problema, porque cada SQL está ótimo.\n\n### Meta honesta\n\nA tela Forms na rede local responde de imediato. A tela web bem feita abre em menos de um segundo e responde a ações em uma ou duas centenas de milissegundos. Isso é alcançável, mas não acontece por acaso: vem de contar as chamadas no desenho da tela, antes de codificar.",
+      "naPratica": "No review de uma tela nova, abra a aba de rede e conte as requisições ao carregar. Mais de cinco ou seis para abrir uma tela comum já merece a pergunta: \"quais destas poderiam ser uma só?\".",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A mesma lista de pedidos com o nome do cliente, montada de dois jeitos. Quantas chamadas cada um faz?",
+          "codigo": "let chamadas = 0;\nconst clientes = new Map([[1, 'Alfa'], [2, 'Beta']]);\nconst pedidos = [{ id: 10, cliente: 1 }, { id: 11, cliente: 2 }, { id: 12, cliente: 1 }];\nasync function api<T>(rota: string, dado: T): Promise<T> {\n  chamadas++;\n  return dado;\n}\nasync function tagarela() {\n  const lista = await api('/pedidos', pedidos);\n  const linhas: string[] = [];\n  for (const p of lista) {\n    linhas.push(`${p.id} ${await api('/clientes/' + p.cliente, clientes.get(p.cliente))}`);\n  }\n  return linhas;\n}\nasync function agregada() {\n  return api('/telas/pedidos', pedidos.map((p) => `${p.id} ${clientes.get(p.cliente)}`));\n}\nconsole.log(await tagarela(), chamadas);\nchamadas = 0;\nconsole.log(await agregada(), chamadas);\n",
+          "saida": "[ '10 Alfa', '11 Beta', '12 Alfa' ] 4\n[ '10 Alfa', '11 Beta', '12 Alfa' ] 1\n",
+          "explicacao": "O resultado é idêntico. A versão tagarela faz uma chamada para a lista e uma para cada pedido: 1 + 3 = 4. Repare que o cliente 1 foi buscado duas vezes. Com 200 pedidos seriam 201 chamadas. A versão agregada resolve o nome do cliente no servidor (na vida real, um join) e devolve tudo em uma."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma tela precisa do cabeçalho e de 12 detalhes. Cada requisição leva 40 ms. Calcule o tempo em sequência, em paralelo com 6 conexões por vez, e numa chamada agregada que leva 15 ms a mais de banco.",
+          "codigo": "const latenciaMs = 40;\nconst detalhes = 12;\n\nconst emSequencia = (1 + detalhes) * latenciaMs;\nconst ondas = Math.ceil(detalhes / 6);\nconst emParalelo = latenciaMs + ondas * latenciaMs;\nconst agregada = latenciaMs + 15;\n\nconsole.log(`sequencia: ${emSequencia} ms em ${1 + detalhes} chamadas`);\nconsole.log(`paralelo: ${emParalelo} ms em ${1 + detalhes} chamadas`);\nconsole.log(`agregada: ${agregada} ms em 1 chamada`);\n",
+          "saida": "sequencia: 520 ms em 13 chamadas\nparalelo: 120 ms em 13 chamadas\nagregada: 55 ms em 1 chamada\n",
+          "explicacao": "Em sequência são 13 esperas de 40 ms. Em paralelo, o cabeçalho vem primeiro e os 12 detalhes saem em duas ondas de 6: 40 + 80 = 120 ms. Melhorou para o usuário, mas a API continua atendendo 13 requisições e ocupando 13 vezes o pool. A agregada paga uma latência e um pouco mais de banco. É um modelo simplificado, com números redondos: na tela real, meça."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A tela nova de pedidos está lenta para abrir. O DBA olhou e disse que todos os SQL rodam em menos de 5 ms. Qual é o próximo passo?",
+          "opcoes": [
+            "Criar índices nas tabelas de pedido e item",
+            "Aumentar o pool de conexões da API",
+            "Abrir a aba de rede do navegador e contar as requisições e a cascata ao carregar a tela",
+            "Reescrever a tela com outra biblioteca de tabela"
+          ],
+          "correta": 2,
+          "explicacao": "SQL rápido e tela lenta é a assinatura da API tagarela: muitas chamadas pequenas, cada uma saudável. Índice não ajuda se o SQL já roda em 5 ms. Aumentar pool e trocar biblioteca são palpites. A aba de rede mostra em minutos se o problema é o número de requisições."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Para resolver uma tela tagarela, alguém propõe um endpoint único, `GET /compras/tudo`, que devolve fornecedores, pedidos, itens e produtos do módulo inteiro. Qual é a avaliação?",
+          "opcoes": [
+            "Ótimo: uma chamada é sempre melhor que várias",
+            "Exagero para o outro lado: lento sempre, sem cache por partes e acoplado a todas as telas. O alvo é um endpoint por necessidade da tela",
+            "Bom, desde que a resposta venha compactada",
+            "Indiferente: o custo é o mesmo de várias chamadas"
+          ],
+          "correta": 1,
+          "explicacao": "Reduzir chamadas não é o objetivo em si. O objetivo é trazer o que a tela precisa, em poucas idas. Um endpoint que devolve o módulo inteiro traz dado que ninguém vai ver, pesa no banco e quebra quando qualquer tela muda. Compactar reduz o tráfego, não o trabalho de montar a resposta."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Um usuário-chave reclama: \"{{nome}}, no Forms essa tela abria na hora. Na nova demora três segundos. A tecnologia nova é mais lenta?\"",
+          "pontos": [
+            "Não defendeu a tecnologia nem culpou o usuário: tratou como defeito de desenho",
+            "Explicou a diferença em termos simples (muitas idas baratas antes, cada ida custa mais agora)",
+            "Disse o que vai medir e onde costuma estar a causa (número de chamadas ao abrir)",
+            "Deu expectativa: abrir em menos de um segundo é alcançável, e prazo para voltar"
+          ],
+          "modelo": "Três segundos para abrir é defeito nosso, não característica da tecnologia. A diferença é que o Forms fica com uma linha direta aberta com o banco e faz dezenas de consultas pequenas quase de graça. Na web, cada ida ao servidor custa mais. Quando a tela nova é montada com muitas idas pequenas, como era no Forms, o tempo soma. O conserto costuma ser juntar essas idas em uma ou duas. Eu vou medir hoje quantas chamadas essa tela faz ao abrir. Uma tela como essa deve abrir em menos de um segundo, e amanhã eu te digo o que encontrei e quando fica pronto."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que um desenho com muitos round-trips é barato no Forms e caro na web?",
+          "verso": "O Forms usa uma conexão aberta, e cada ida custa perto de 1 ms. Na web cada ida é uma requisição HTTP: rede, token, pool e JSON."
+        },
+        {
+          "frente": "O que é uma API tagarela?",
+          "verso": "A que obriga a tela a fazer muitas chamadas pequenas para montar uma coisa só: endpoint por bloco ou tabela, ou uma chamada por linha."
+        },
+        {
+          "frente": "Qual é o principal remédio contra API tagarela?",
+          "verso": "Endpoint por caso de uso: o endpoint acompanha o que a tela precisa, não a tabela."
+        },
+        {
+          "frente": "Qual é o sintoma de API tagarela na medição?",
+          "verso": "Todos os SQL são rápidos e a tela é lenta. A aba de rede mostra uma cascata de dezenas de requisições."
+        },
+        {
+          "frente": "Paralelizar chamadas resolve a API tagarela?",
+          "verso": "Só o tempo percebido. A API e o pool continuam atendendo o mesmo número de requisições."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Remote Facade",
+          "url": "https://martinfowler.com/eaaCatalog/remoteFacade.html"
+        },
+        {
+          "titulo": "node-oracledb — Connection Handling",
+          "url": "https://node-oracledb.readthedocs.io/en/latest/user_guide/connection_handling.html"
+        },
+        {
+          "titulo": "web.dev — Learn Performance",
+          "url": "https://web.dev/learn/performance"
+        }
+      ]
+    }
+  ]
+}

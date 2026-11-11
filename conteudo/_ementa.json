@@ -1,0 +1,969 @@
+{
+  "niveis": {
+    "1": "Fundamento",
+    "2": "Pleno",
+    "3": "Sênior"
+  },
+  "trilhas": [
+    {
+      "id": "ts",
+      "nome": "TypeScript",
+      "icone": "🟦",
+      "descricao": "A linguagem: tipos como revisor automático do seu código.",
+      "licoes": [
+        {
+          "id": "ts-01",
+          "nivel": 1,
+          "titulo": "Tipos básicos e inferência: o compilador como revisor"
+        },
+        {
+          "id": "ts-02",
+          "nivel": 1,
+          "titulo": "any, unknown e never"
+        },
+        {
+          "id": "ts-03",
+          "nivel": 1,
+          "titulo": "Uniões e estreitamento (narrowing)"
+        },
+        {
+          "id": "ts-04",
+          "nivel": 1,
+          "titulo": "Uniões discriminadas: o CASE tipado"
+        },
+        {
+          "id": "ts-05",
+          "nivel": 1,
+          "titulo": "Tipagem estrutural, type × interface"
+        },
+        {
+          "id": "ts-06",
+          "nivel": 1,
+          "titulo": "Funções e genéricos: o tipo como parâmetro"
+        },
+        {
+          "id": "ts-07",
+          "nivel": 2,
+          "titulo": "Genéricos com restrição (extends) e keyof"
+        },
+        {
+          "id": "ts-08",
+          "nivel": 2,
+          "titulo": "Tipos utilitários: Pick, Omit, Partial, Record, Readonly"
+        },
+        {
+          "id": "ts-09",
+          "nivel": 1,
+          "titulo": "Os tipos somem na execução: validar a borda (Zod, class-validator)"
+        },
+        {
+          "id": "ts-10",
+          "nivel": 2,
+          "titulo": "tsconfig: strict e noUncheckedIndexedAccess"
+        },
+        {
+          "id": "ts-11",
+          "nivel": 2,
+          "titulo": "as const, satisfies e literais; por que evitar enum"
+        },
+        {
+          "id": "ts-12",
+          "nivel": 3,
+          "titulo": "Tipos mapeados e condicionais: ler, não decorar"
+        },
+        {
+          "id": "ts-13",
+          "nivel": 2,
+          "titulo": "Módulos: ESM × CommonJS, import type e o .js no import"
+        },
+        {
+          "id": "ts-14",
+          "nivel": 2,
+          "titulo": "Ler erro longo do compilador e nunca calar (as, !, ts-ignore)"
+        }
+      ]
+    },
+    {
+      "id": "js",
+      "nome": "JavaScript e Node",
+      "icone": "🟨",
+      "descricao": "O que roda de verdade: assíncrono, closures, o runtime.",
+      "licoes": [
+        {
+          "id": "js-01",
+          "nivel": 1,
+          "titulo": "Valor × referência, igualdade e imutabilidade"
+        },
+        {
+          "id": "js-02",
+          "nivel": 1,
+          "titulo": "Desestruturação, spread, optional chaining e ??"
+        },
+        {
+          "id": "js-03",
+          "nivel": 1,
+          "titulo": "Arrays: map, filter, reduce, find, sort e as armadilhas"
+        },
+        {
+          "id": "js-04",
+          "nivel": 1,
+          "titulo": "Closures: a função que lembra"
+        },
+        {
+          "id": "js-05",
+          "nivel": 2,
+          "titulo": "this, arrow functions e classes"
+        },
+        {
+          "id": "js-06",
+          "nivel": 1,
+          "titulo": "Event loop: por que o Node \"não espera\""
+        },
+        {
+          "id": "js-07",
+          "nivel": 1,
+          "titulo": "Promises por dentro"
+        },
+        {
+          "id": "js-08",
+          "nivel": 1,
+          "titulo": "async/await e tratamento de erro"
+        },
+        {
+          "id": "js-09",
+          "nivel": 2,
+          "titulo": "Concorrência: Promise.all, allSettled, race e limite de paralelismo"
+        },
+        {
+          "id": "js-10",
+          "nivel": 2,
+          "titulo": "Node por dentro: processo, variáveis de ambiente, sinais e streams"
+        },
+        {
+          "id": "js-11",
+          "nivel": 1,
+          "titulo": "npm: package.json, semver, lockfile e scripts"
+        }
+      ]
+    },
+    {
+      "id": "http",
+      "nome": "HTTP e APIs",
+      "icone": "🌐",
+      "descricao": "O protocolo e o desenho de API que todo o resto usa.",
+      "licoes": [
+        {
+          "id": "http-01",
+          "nivel": 1,
+          "titulo": "Anatomia de uma requisição: a web não tem sessão"
+        },
+        {
+          "id": "http-02",
+          "nivel": 1,
+          "titulo": "Métodos, segurança e idempotência"
+        },
+        {
+          "id": "http-03",
+          "nivel": 1,
+          "titulo": "Códigos de status: 400, 401, 403, 404, 409, 422 e 5xx"
+        },
+        {
+          "id": "http-04",
+          "nivel": 2,
+          "titulo": "Cabeçalhos, negociação de conteúdo e cache HTTP (ETag)"
+        },
+        {
+          "id": "http-05",
+          "nivel": 1,
+          "titulo": "Cookies: httpOnly, secure e sameSite"
+        },
+        {
+          "id": "http-06",
+          "nivel": 1,
+          "titulo": "CORS e preflight: o que o navegador bloqueia e por quê"
+        },
+        {
+          "id": "http-07",
+          "nivel": 2,
+          "titulo": "Desenho REST: recursos, paginação, filtros e ordenação"
+        },
+        {
+          "id": "http-08",
+          "nivel": 2,
+          "titulo": "Erros padronizados (RFC 9457) e contrato OpenAPI"
+        },
+        {
+          "id": "http-09",
+          "nivel": 3,
+          "titulo": "Evoluir uma API sem quebrar: versão, expand/contract, idempotency key"
+        },
+        {
+          "id": "http-10",
+          "nivel": 3,
+          "titulo": "REST × GraphQL × gRPC × tRPC × SSE × WebSocket: quando cada um"
+        }
+      ]
+    },
+    {
+      "id": "nest",
+      "nome": "NestJS",
+      "icone": "🟥",
+      "descricao": "O framework de back-end: módulos, injeção, ciclo da requisição.",
+      "licoes": [
+        {
+          "id": "nest-01",
+          "nivel": 1,
+          "titulo": "O que o Nest é: módulos e a árvore da aplicação"
+        },
+        {
+          "id": "nest-02",
+          "nivel": 1,
+          "titulo": "Providers e injeção de dependência"
+        },
+        {
+          "id": "nest-03",
+          "nivel": 2,
+          "titulo": "DI por dentro: um mini-injetor em 40 linhas"
+        },
+        {
+          "id": "nest-04",
+          "nivel": 1,
+          "titulo": "Controllers, rotas e DTOs"
+        },
+        {
+          "id": "nest-05",
+          "nivel": 1,
+          "titulo": "Pipes e validação (ValidationPipe, whitelist, transform)"
+        },
+        {
+          "id": "nest-06",
+          "nivel": 1,
+          "titulo": "Guards: autenticação e autorização"
+        },
+        {
+          "id": "nest-07",
+          "nivel": 2,
+          "titulo": "Interceptors"
+        },
+        {
+          "id": "nest-08",
+          "nivel": 1,
+          "titulo": "Filtros de exceção"
+        },
+        {
+          "id": "nest-09",
+          "nivel": 1,
+          "titulo": "O ciclo de vida da requisição: a ordem completa"
+        },
+        {
+          "id": "nest-10",
+          "nivel": 2,
+          "titulo": "Configuração validada e ciclo de vida da aplicação (hooks, shutdown)"
+        },
+        {
+          "id": "nest-11",
+          "nivel": 2,
+          "titulo": "Decorators próprios e metadados (Reflector)"
+        },
+        {
+          "id": "nest-12",
+          "nivel": 2,
+          "titulo": "Escopos de provider e o perigo do estado em singleton"
+        },
+        {
+          "id": "nest-13",
+          "nivel": 3,
+          "titulo": "Módulos dinâmicos: forRoot e forFeature"
+        },
+        {
+          "id": "nest-14",
+          "nivel": 2,
+          "titulo": "Eventos e agendamento — e o problema das várias instâncias"
+        },
+        {
+          "id": "nest-15",
+          "nivel": 3,
+          "titulo": "Filas com BullMQ: retry, idempotência e fila de mortos"
+        },
+        {
+          "id": "nest-16",
+          "nivel": 3,
+          "titulo": "Tempo real: SSE × WebSocket (gateways)"
+        },
+        {
+          "id": "nest-17",
+          "nivel": 3,
+          "titulo": "Cache no back-end e invalidação"
+        },
+        {
+          "id": "nest-18",
+          "nivel": 2,
+          "titulo": "Testar no Nest: módulo de teste, mocks de provider e e2e"
+        }
+      ]
+    },
+    {
+      "id": "dados",
+      "nome": "Dados",
+      "icone": "🗄️",
+      "descricao": "O seu terreno, com sotaque novo: Postgres, ORM, Oracle a partir do Node.",
+      "licoes": [
+        {
+          "id": "dados-01",
+          "nivel": 1,
+          "titulo": "Postgres para quem sabe Oracle"
+        },
+        {
+          "id": "dados-02",
+          "nivel": 1,
+          "titulo": "ORM: o que entrega e o que cobra (Prisma: schema e client)"
+        },
+        {
+          "id": "dados-03",
+          "nivel": 2,
+          "titulo": "Migrations seguras"
+        },
+        {
+          "id": "dados-04",
+          "nivel": 2,
+          "titulo": "Relações 1:N e N:N, onDelete e exclusão lógica"
+        },
+        {
+          "id": "dados-05",
+          "nivel": 1,
+          "titulo": "Transações e isolamento: aqui o padrão é autocommit"
+        },
+        {
+          "id": "dados-06",
+          "nivel": 2,
+          "titulo": "Concorrência: lock pessimista × otimista"
+        },
+        {
+          "id": "dados-07",
+          "nivel": 2,
+          "titulo": "O problema N+1 e como enxergá-lo"
+        },
+        {
+          "id": "dados-08",
+          "nivel": 2,
+          "titulo": "Índices e EXPLAIN ANALYZE"
+        },
+        {
+          "id": "dados-09",
+          "nivel": 2,
+          "titulo": "SQL puro dentro do ORM e injeção de SQL"
+        },
+        {
+          "id": "dados-10",
+          "nivel": 3,
+          "titulo": "Pool de conexões"
+        },
+        {
+          "id": "dados-11",
+          "nivel": 3,
+          "titulo": "TypeORM, Drizzle e Knex: ler qualquer camada de dados"
+        },
+        {
+          "id": "dados-12",
+          "nivel": 2,
+          "titulo": "Oracle a partir do Node: node-oracledb, chamar package, REF CURSOR, thin × thick"
+        },
+        {
+          "id": "dados-13",
+          "nivel": 3,
+          "titulo": "Redis: cache, fila, trava e sessão"
+        }
+      ]
+    },
+    {
+      "id": "seg",
+      "nome": "Segurança",
+      "icone": "🔐",
+      "descricao": "O que um sênior não deixa passar num review.",
+      "licoes": [
+        {
+          "id": "seg-01",
+          "nivel": 1,
+          "titulo": "Modelo de ameaça da web e o OWASP Top 10 em 10 minutos"
+        },
+        {
+          "id": "seg-02",
+          "nivel": 1,
+          "titulo": "Senhas: hash, sal e argon2"
+        },
+        {
+          "id": "seg-03",
+          "nivel": 1,
+          "titulo": "Sessão × JWT: o que tem dentro de um token"
+        },
+        {
+          "id": "seg-04",
+          "nivel": 2,
+          "titulo": "Access token + refresh rotativo com detecção de reuso"
+        },
+        {
+          "id": "seg-05",
+          "nivel": 2,
+          "titulo": "Onde guardar o token: XSS × CSRF"
+        },
+        {
+          "id": "seg-06",
+          "nivel": 2,
+          "titulo": "Autorização: RBAC, ABAC e a falha IDOR/BOLA"
+        },
+        {
+          "id": "seg-07",
+          "nivel": 2,
+          "titulo": "Injeção, validação de entrada e mass assignment"
+        },
+        {
+          "id": "seg-08",
+          "nivel": 2,
+          "titulo": "Segredos, variáveis de ambiente e dado sensível em log (LGPD)"
+        },
+        {
+          "id": "seg-09",
+          "nivel": 3,
+          "titulo": "Cadeia de dependências: npm audit, lockfile e pacote malicioso"
+        },
+        {
+          "id": "seg-10",
+          "nivel": 3,
+          "titulo": "OAuth 2.0, OpenID Connect e SSO corporativo"
+        },
+        {
+          "id": "seg-11",
+          "nivel": 2,
+          "titulo": "Cabeçalhos de segurança, CSP e rate limit"
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "nome": "Testes",
+      "icone": "🧪",
+      "descricao": "Teste como rotina: o que prova que o código decide certo.",
+      "licoes": [
+        {
+          "id": "test-01",
+          "nivel": 1,
+          "titulo": "Para que serve teste: pirâmide × troféu"
+        },
+        {
+          "id": "test-02",
+          "nivel": 1,
+          "titulo": "Teste unitário com Vitest: preparar, agir, conferir"
+        },
+        {
+          "id": "test-03",
+          "nivel": 2,
+          "titulo": "Dublês: mock, stub e spy — com critério"
+        },
+        {
+          "id": "test-04",
+          "nivel": 2,
+          "titulo": "TDD em regra pura"
+        },
+        {
+          "id": "test-05",
+          "nivel": 2,
+          "titulo": "e2e de API com banco de verdade"
+        },
+        {
+          "id": "test-06",
+          "nivel": 2,
+          "titulo": "Teste de componente: Testing Library e MSW"
+        },
+        {
+          "id": "test-07",
+          "nivel": 2,
+          "titulo": "Tempo e assíncrono em teste: fake timers"
+        },
+        {
+          "id": "test-08",
+          "nivel": 3,
+          "titulo": "Playwright: e2e de navegador e o que não testar ali"
+        },
+        {
+          "id": "test-09",
+          "nivel": 3,
+          "titulo": "O teste que reprova o código errado: controle negativo e mutação"
+        }
+      ]
+    },
+    {
+      "id": "react",
+      "nome": "React",
+      "icone": "⚛️",
+      "descricao": "A maior virada para quem vem do Forms: descrever a tela, não mandar nela.",
+      "licoes": [
+        {
+          "id": "react-01",
+          "nivel": 1,
+          "titulo": "Declarativo × imperativo: a maior virada"
+        },
+        {
+          "id": "react-02",
+          "nivel": 1,
+          "titulo": "Componentes, JSX e props"
+        },
+        {
+          "id": "react-03",
+          "nivel": 1,
+          "titulo": "Estado é uma foto (state as a snapshot)"
+        },
+        {
+          "id": "react-04",
+          "nivel": 1,
+          "titulo": "Eventos e atualização de estado: forma funcional e lote"
+        },
+        {
+          "id": "react-05",
+          "nivel": 1,
+          "titulo": "Listas e key"
+        },
+        {
+          "id": "react-06",
+          "nivel": 2,
+          "titulo": "Quando o React renderiza de novo"
+        },
+        {
+          "id": "react-07",
+          "nivel": 1,
+          "titulo": "Onde pôr o estado: levantar, derivar, não duplicar"
+        },
+        {
+          "id": "react-08",
+          "nivel": 2,
+          "titulo": "useReducer e máquinas de estado"
+        },
+        {
+          "id": "react-09",
+          "nivel": 2,
+          "titulo": "useRef e o DOM"
+        },
+        {
+          "id": "react-10",
+          "nivel": 1,
+          "titulo": "useEffect: sincronizar, limpar — e quando NÃO usar"
+        },
+        {
+          "id": "react-11",
+          "nivel": 2,
+          "titulo": "Stale closure e timers"
+        },
+        {
+          "id": "react-12",
+          "nivel": 2,
+          "titulo": "Hooks próprios"
+        },
+        {
+          "id": "react-13",
+          "nivel": 2,
+          "titulo": "Context e composição (children, slots)"
+        },
+        {
+          "id": "react-14",
+          "nivel": 2,
+          "titulo": "Formulários: campo controlado, React Hook Form e Zod"
+        },
+        {
+          "id": "react-15",
+          "nivel": 2,
+          "titulo": "Suspense, lazy e error boundary"
+        },
+        {
+          "id": "react-16",
+          "nivel": 3,
+          "titulo": "Performance: medir, memo e o React Compiler"
+        },
+        {
+          "id": "react-17",
+          "nivel": 3,
+          "titulo": "React 19: Actions, use, useOptimistic e ref como prop"
+        },
+        {
+          "id": "react-18",
+          "nivel": 3,
+          "titulo": "Next.js e Server Components: o que são e quando fazem sentido"
+        }
+      ]
+    },
+    {
+      "id": "front",
+      "nome": "Dados no front",
+      "icone": "🔄",
+      "descricao": "Onde mora cada estado e como o front conversa com a API.",
+      "licoes": [
+        {
+          "id": "front-01",
+          "nivel": 1,
+          "titulo": "Estado do servidor × estado da tela"
+        },
+        {
+          "id": "front-02",
+          "nivel": 1,
+          "titulo": "TanStack Query: query, cache, staleTime × gcTime"
+        },
+        {
+          "id": "front-03",
+          "nivel": 2,
+          "titulo": "Query keys e invalidação"
+        },
+        {
+          "id": "front-04",
+          "nivel": 2,
+          "titulo": "Mutações e optimistic update"
+        },
+        {
+          "id": "front-05",
+          "nivel": 2,
+          "titulo": "Roteamento: URL como estado, loaders e rotas protegidas"
+        },
+        {
+          "id": "front-06",
+          "nivel": 2,
+          "titulo": "Zustand e estado global com parcimônia"
+        },
+        {
+          "id": "front-07",
+          "nivel": 2,
+          "titulo": "Cliente HTTP, refresh automático e cliente gerado do OpenAPI"
+        },
+        {
+          "id": "front-08",
+          "nivel": 3,
+          "titulo": "Vite, bundle, code splitting e variáveis de ambiente do front"
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "nome": "UI e acessibilidade",
+      "icone": "🎨",
+      "descricao": "Tela que funciona no teclado, no celular e para todo mundo.",
+      "licoes": [
+        {
+          "id": "ui-01",
+          "nivel": 1,
+          "titulo": "HTML semântico"
+        },
+        {
+          "id": "ui-02",
+          "nivel": 1,
+          "titulo": "CSS que importa: box model, flexbox e grid"
+        },
+        {
+          "id": "ui-03",
+          "nivel": 1,
+          "titulo": "Tailwind CSS"
+        },
+        {
+          "id": "ui-04",
+          "nivel": 2,
+          "titulo": "Biblioteca de componentes: shadcn/ui, Radix e design system"
+        },
+        {
+          "id": "ui-05",
+          "nivel": 2,
+          "titulo": "Acessibilidade: teclado, foco e ARIA"
+        },
+        {
+          "id": "ui-06",
+          "nivel": 2,
+          "titulo": "Responsivo e os estados de toda tela: carregando, vazio, erro"
+        }
+      ]
+    },
+    {
+      "id": "ferr",
+      "nome": "Ferramentas",
+      "icone": "🧰",
+      "descricao": "Git, CI, depurador: o fluxo de trabalho de um time moderno.",
+      "licoes": [
+        {
+          "id": "ferr-01",
+          "nivel": 1,
+          "titulo": "Git para quem vem do CVS"
+        },
+        {
+          "id": "ferr-02",
+          "nivel": 1,
+          "titulo": "Fluxo de Pull Request e Conventional Commits"
+        },
+        {
+          "id": "ferr-03",
+          "nivel": 3,
+          "titulo": "Git avançado: rebase, bisect, cherry-pick e reflog"
+        },
+        {
+          "id": "ferr-04",
+          "nivel": 2,
+          "titulo": "Lint, formatador, checagem de tipos e hooks de commit"
+        },
+        {
+          "id": "ferr-05",
+          "nivel": 2,
+          "titulo": "Integração contínua com GitHub Actions"
+        },
+        {
+          "id": "ferr-06",
+          "nivel": 1,
+          "titulo": "Depurar com instrumento: debugger, aba Network e DevTools"
+        },
+        {
+          "id": "ferr-07",
+          "nivel": 3,
+          "titulo": "Monorepo e workspaces"
+        }
+      ]
+    },
+    {
+      "id": "prod",
+      "nome": "Produção",
+      "icone": "🚀",
+      "descricao": "Pôr no ar e saber o que acontece lá.",
+      "licoes": [
+        {
+          "id": "prod-01",
+          "nivel": 2,
+          "titulo": "Os 12 fatores"
+        },
+        {
+          "id": "prod-02",
+          "nivel": 2,
+          "titulo": "Contêiner e Docker: imagem e Dockerfile multi-estágio"
+        },
+        {
+          "id": "prod-03",
+          "nivel": 2,
+          "titulo": "docker compose e o ambiente local"
+        },
+        {
+          "id": "prod-04",
+          "nivel": 2,
+          "titulo": "Deploy: build, migrations e zero downtime"
+        },
+        {
+          "id": "prod-05",
+          "nivel": 3,
+          "titulo": "Observabilidade: logs, métricas, traces e OpenTelemetry"
+        },
+        {
+          "id": "prod-06",
+          "nivel": 2,
+          "titulo": "Health, readiness e desligamento gracioso"
+        },
+        {
+          "id": "prod-07",
+          "nivel": 3,
+          "titulo": "Performance e carga: medir e os gargalos típicos do Node"
+        },
+        {
+          "id": "prod-08",
+          "nivel": 3,
+          "titulo": "Estratégias de release: feature flag, canary, blue-green e rollback"
+        },
+        {
+          "id": "prod-09",
+          "nivel": 3,
+          "titulo": "Nuvem e Kubernetes: o vocabulário mínimo"
+        }
+      ]
+    },
+    {
+      "id": "arq",
+      "nome": "Arquitetura",
+      "icone": "🏛️",
+      "descricao": "Decidir com critério: o que separa pleno de sênior.",
+      "licoes": [
+        {
+          "id": "arq-01",
+          "nivel": 2,
+          "titulo": "Monólito modular primeiro"
+        },
+        {
+          "id": "arq-02",
+          "nivel": 2,
+          "titulo": "Camadas e a direção da dependência"
+        },
+        {
+          "id": "arq-03",
+          "nivel": 2,
+          "titulo": "SOLID sem dogma"
+        },
+        {
+          "id": "arq-04",
+          "nivel": 3,
+          "titulo": "Arquitetura hexagonal (portas e adaptadores): quando vale"
+        },
+        {
+          "id": "arq-05",
+          "nivel": 3,
+          "titulo": "DDD tático: entidade, objeto de valor e agregado"
+        },
+        {
+          "id": "arq-06",
+          "nivel": 3,
+          "titulo": "CQRS e event sourcing: quando NÃO usar"
+        },
+        {
+          "id": "arq-07",
+          "nivel": 3,
+          "titulo": "Microsserviços × monólito: os custos reais"
+        },
+        {
+          "id": "arq-08",
+          "nivel": 3,
+          "titulo": "Mensageria: fila, pub/sub, outbox e idempotência"
+        },
+        {
+          "id": "arq-09",
+          "nivel": 3,
+          "titulo": "Cache: estratégias e invalidação"
+        },
+        {
+          "id": "arq-10",
+          "nivel": 3,
+          "titulo": "BFF, API gateway e micro-frontends"
+        },
+        {
+          "id": "arq-11",
+          "nivel": 3,
+          "titulo": "System design: o roteiro de 5 passos"
+        },
+        {
+          "id": "arq-12",
+          "nivel": 2,
+          "titulo": "ADR e trade-off: como decidir e registrar"
+        }
+      ]
+    },
+    {
+      "id": "mig",
+      "nome": "Migração Forms → web",
+      "icone": "🔁",
+      "descricao": "Responder com segurança: \"dá para migrar esse módulo?\"",
+      "licoes": [
+        {
+          "id": "mig-01",
+          "nivel": 1,
+          "titulo": "O mapa: anatomia de uma tela Forms no mundo web"
+        },
+        {
+          "id": "mig-02",
+          "nivel": 1,
+          "titulo": "\"Dá para migrar?\" — as 7 perguntas de viabilidade"
+        },
+        {
+          "id": "mig-03",
+          "nivel": 2,
+          "titulo": "Inventário de um módulo: blocos, triggers, program units, LOVs e relatórios"
+        },
+        {
+          "id": "mig-04",
+          "nivel": 2,
+          "titulo": "Onde fica a regra: package no banco × serviço Nest (3 estratégias)"
+        },
+        {
+          "id": "mig-05",
+          "nivel": 2,
+          "titulo": "Estrangulamento (strangler fig) e a convivência Forms + web"
+        },
+        {
+          "id": "mig-06",
+          "nivel": 2,
+          "titulo": "Transação e lock: do bloqueio pessimista do Forms ao otimista da web"
+        },
+        {
+          "id": "mig-07",
+          "nivel": 2,
+          "titulo": "Bloco, master-detail e multi-registro em React"
+        },
+        {
+          "id": "mig-08",
+          "nivel": 2,
+          "titulo": "Triggers de Forms viram o quê: eventos, validação e estado"
+        },
+        {
+          "id": "mig-09",
+          "nivel": 2,
+          "titulo": "LOV, record group, listas e busca"
+        },
+        {
+          "id": "mig-10",
+          "nivel": 3,
+          "titulo": "Identidade: de usuário de banco a SSO e token; auditoria e contexto de sessão"
+        },
+        {
+          "id": "mig-11",
+          "nivel": 3,
+          "titulo": "Relatórios, impressão, integrações e batch"
+        },
+        {
+          "id": "mig-12",
+          "nivel": 3,
+          "titulo": "Estimar e fatiar uma migração: riscos e plano de corte"
+        },
+        {
+          "id": "mig-13",
+          "nivel": 2,
+          "titulo": "\"Dá para implementar X no app moderno?\" — o roteiro de resposta"
+        },
+        {
+          "id": "mig-14",
+          "nivel": 3,
+          "titulo": "Desempenho: do round-trip do Forms à API tagarela"
+        }
+      ]
+    },
+    {
+      "id": "lead",
+      "nome": "Tech lead",
+      "icone": "🧭",
+      "descricao": "Revisar, estimar, decidir e comunicar.",
+      "licoes": [
+        {
+          "id": "lead-01",
+          "nivel": 2,
+          "titulo": "Code review que ajuda"
+        },
+        {
+          "id": "lead-02",
+          "nivel": 2,
+          "titulo": "Quebrar e estimar trabalho"
+        },
+        {
+          "id": "lead-03",
+          "nivel": 3,
+          "titulo": "Incidente e postmortem sem culpados"
+        },
+        {
+          "id": "lead-04",
+          "nivel": 2,
+          "titulo": "IA no fluxo: gerar rápido, revisar com rigor"
+        },
+        {
+          "id": "lead-05",
+          "nivel": 2,
+          "titulo": "Comunicar decisão técnica a quem não é técnico"
+        },
+        {
+          "id": "lead-06",
+          "nivel": 2,
+          "titulo": "Ler um repositório desconhecido"
+        },
+        {
+          "id": "lead-07",
+          "nivel": 3,
+          "titulo": "Entrevista técnica e de system design"
+        },
+        {
+          "id": "lead-08",
+          "nivel": 2,
+          "titulo": "Dívida técnica, qualidade e definição de pronto"
+        }
+      ]
+    }
+  ]
+}

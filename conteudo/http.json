@@ -1,0 +1,854 @@
+{
+  "licoes": [
+    {
+      "id": "http-01",
+      "titulo": "Anatomia de uma requisição: a web não tem sessão",
+      "minutos": 10,
+      "ponte": "No Forms, a sessão **é** a conexão com o banco: você conecta uma vez e o servidor lembra de você (usuário, variáveis de package, transação aberta, registro travado) até desconectar. No HTTP cada requisição é uma carta avulsa: chega, é respondida e o servidor esquece. A analogia mais próxima é um `EXECUTE IMMEDIATE` por um pool de conexões em que cada chamada cai numa sessão diferente. Onde quebra: nem isso sobra, porque entre duas requisições não existe transação aberta nem estado de package.",
+      "texto": "HTTP é um protocolo de **texto**, de pergunta e resposta. O cliente manda uma requisição, o servidor devolve uma resposta e a conversa acaba ali.\n\n### A requisição\n\n```text\nPOST /tarefas?dia=hoje HTTP/1.1\nHost: api.cockpit.test\nContent-Type: application/json\nAuthorization: Bearer eyJhbGciOi...\n\n{\"titulo\":\"estudar HTTP\"}\n```\n\nSão três partes:\n\n1. **Linha de requisição:** o método (`POST`), o caminho com a *query string* (o que vem depois do `?`) e a versão do protocolo.\n2. **Cabeçalhos** (*headers*): pares nome e valor com metadados. O nome não diferencia maiúscula de minúscula.\n3. **Corpo** (*body*): opcional, separado dos cabeçalhos por uma linha em branco. `GET` normalmente não tem.\n\n### A resposta\n\n```text\nHTTP/1.1 201 Created\nContent-Type: application/json\nLocation: /tarefas/42\n\n{\"id\":42,\"titulo\":\"estudar HTTP\"}\n```\n\nLinha de status (código e texto), cabeçalhos e corpo. O cliente decide o que fazer **primeiro pelo código**, depois pelo corpo.\n\n### Stateless: o servidor não lembra\n\n*Stateless* (sem estado) quer dizer que o protocolo não guarda nada entre duas requisições. Cada uma precisa carregar **tudo** o que o servidor precisa para atendê-la: quem é o usuário, o que ele quer, sobre qual registro.\n\nNa prática, a API roda em várias instâncias atrás de um balanceador. A primeira requisição cai na instância A, a segunda na B. Qualquer coisa guardada na memória da A (uma variável, um `Map` com o usuário logado) não existe na B.\n\n### O que substitui a sessão\n\n| No Forms | Na web |\n|---|---|\n| Usuário conectado ao banco | Um **token** ou um **cookie de sessão** enviado em toda requisição |\n| Variável global e de package | Estado na **tela** (React), na **URL** ou no **banco** |\n| Transação aberta entre telas | Transação que abre e fecha **dentro** de uma requisição |\n| Registro travado enquanto edita | Controle otimista: versão do registro conferida ao gravar (http-04) |\n\nO servidor continua sabendo quem você é, mas porque você **prova de novo** a cada chamada, não porque ele lembra.\n\n### A armadilha clássica\n\nGuardar estado do usuário em variável de módulo ou em propriedade de um service do Nest. Funciona na sua máquina, com uma instância e um usuário. Em produção, duas pessoas compartilham a mesma variável e uma vê o dado da outra. A regra: memória do processo serve para cache descartável, nunca para identidade nem para o passo de um fluxo.\n\n### O custo\n\nStateless obriga a reenviar e revalidar a identidade a cada chamada e a redesenhar tudo o que dependia de lock e de transação longa. Em troca, qualquer instância atende qualquer requisição: escalar é subir mais uma, e derrubar uma instância não derruba ninguém.",
+      "naPratica": "No Cockpit, o front manda `Authorization: Bearer <token>` em toda chamada e o guard do Nest reconstrói o usuário a partir dele. Na aba Network do navegador você vê exatamente as três partes de cada requisição: é o primeiro lugar para olhar quando algo falha.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um servidor `node:http` numa porta efêmera e um `fetch` contra ele. O que sai, e em que ordem?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst server = createServer((req, res) => {\n  console.log(req.method, req.url);\n  console.log(req.headers['content-type']);\n  res.writeHead(201, { 'content-type': 'application/json' });\n  res.end(JSON.stringify({ id: 1 }));\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const r = await fetch(`http://127.0.0.1:${port}/tarefas?dia=hoje`, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ titulo: 'estudar' }),\n  });\n  console.log(r.status, r.headers.get('content-type'));\n  console.log(await r.json());\n  server.close();\n});\n",
+          "saida": "POST /tarefas?dia=hoje\napplication/json\n201 application/json\n{ id: 1 }\n",
+          "explicacao": "O servidor imprime primeiro: a linha de requisição (método e caminho com a query string) e um cabeçalho. O cliente mandou `Content-Type` e o servidor leu `content-type`: nome de cabeçalho não diferencia caixa, e o Node entrega tudo em minúsculas. Depois o cliente imprime o status, um cabeçalho da resposta e o corpo já convertido de JSON."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas requisições seguidas ao mesmo servidor. A primeira se identifica, a segunda não. O servidor lembra?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst server = createServer((req, res) => {\n  const quem = req.headers.authorization ?? 'desconhecido';\n  res.end(`quem: ${quem}`);\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const url = `http://127.0.0.1:${port}/eu`;\n  const a = await fetch(url, { headers: { authorization: 'Bearer davi' } });\n  console.log(await a.text());\n  const b = await fetch(url);\n  console.log(await b.text());\n  server.close();\n});\n",
+          "saida": "quem: Bearer davi\nquem: desconhecido\n",
+          "explicacao": "A segunda requisição não levou o cabeçalho `Authorization`, então para o servidor ela vem de um desconhecido. Nada da primeira sobra para a segunda, mesmo saindo do mesmo processo um instante depois. Identidade na web é reenviada a cada chamada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um service do Nest guarda o usuário logado numa propriedade `this.usuarioAtual`, preenchida no login. Em produção, com várias instâncias e vários usuários, o que acontece?",
+          "opcoes": [
+            "Funciona: cada usuário recebe a sua própria cópia do service",
+            "Funciona enquanto o usuário não fechar o navegador",
+            "Quebra: a propriedade é compartilhada por todas as requisições daquela instância e não existe nas outras",
+            "Quebra só se a API usar HTTPS"
+          ],
+          "correta": 2,
+          "explicacao": "Um service padrão do Nest é um objeto único por processo. A propriedade vale para todo mundo que cair naquela instância (um usuário vê o outro) e está vazia nas demais. A tentação vem do Forms, onde uma variável de package é por sessão. Na web a identidade viaja na requisição."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes é o substituto correto para uma variável global do Forms que guardava \"o cliente selecionado na tela anterior\"?",
+          "opcoes": [
+            "O id do cliente na URL da tela seguinte (`/clientes/42/pedidos`)",
+            "Uma variável de módulo no back-end, indexada pelo IP do usuário",
+            "Uma coluna `CLIENTE_ATUAL` na tabela de usuários, atualizada a cada clique",
+            "Nada: o servidor lembra da última requisição do mesmo navegador"
+          ],
+          "correta": 0,
+          "explicacao": "Contexto de navegação mora na URL: sobrevive a F5, pode ser copiado e qualquer instância atende. IP não identifica usuário (vários saem pelo mesmo), e gravar no banco a cada clique transforma navegação em escrita. O servidor não lembra de nada sozinho."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as três partes de uma requisição HTTP?",
+          "verso": "Linha de requisição (método, caminho com query string, versão), cabeçalhos e corpo opcional, separado por uma linha em branco."
+        },
+        {
+          "frente": "O que quer dizer HTTP ser *stateless*?",
+          "verso": "O protocolo não guarda nada entre duas requisições. Cada uma leva tudo o que o servidor precisa, inclusive a identidade."
+        },
+        {
+          "frente": "Por que não guardar o usuário logado em variável de memória do back-end?",
+          "verso": "A memória é compartilhada por todas as requisições daquela instância e não existe nas outras. Um usuário vê o dado do outro, ou não vê nada."
+        },
+        {
+          "frente": "O que substitui a variável global do Forms na web?",
+          "verso": "Depende do dono do dado: estado da tela (React), URL (contexto de navegação) ou banco (o que precisa durar)."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — An overview of HTTP",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview"
+        },
+        {
+          "titulo": "RFC 9110 — HTTP Semantics",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110"
+        }
+      ]
+    },
+    {
+      "id": "http-02",
+      "titulo": "Métodos, segurança e idempotência",
+      "minutos": 9,
+      "ponte": "Você já pensa assim no banco: `SELECT` não altera nada, `UPDATE t SET status = 'X' WHERE id = 1` pode rodar dez vezes com o mesmo resultado, e `INSERT` com sequence cria uma linha nova a cada execução. Os métodos HTTP carregam essa mesma promessa no nome. Onde a analogia quebra: no banco a transação garante que o comando rodou uma vez ou nenhuma. Na rede o cliente pode ficar **sem saber** se rodou, e a única saída segura é repetir.",
+      "texto": "O método diz **a intenção** da requisição. Não é enfeite: proxies, navegadores, bibliotecas de cliente e o seu colega decidem o que fazer com base nele.\n\n| Método | Intenção | Seguro | Idempotente |\n|---|---|---|---|\n| `GET` | Ler um recurso | sim | sim |\n| `POST` | Criar ou disparar uma ação | não | **não** |\n| `PUT` | Substituir o recurso inteiro | não | sim |\n| `PATCH` | Alterar parte do recurso | não | não garantido |\n| `DELETE` | Remover | não | sim |\n\n### Seguro\n\nUm método *safe* (seguro) não muda o estado do servidor do ponto de vista do cliente. `GET` é leitura. Por isso o navegador pode refazer um `GET` sozinho, um buscador pode seguir links e um cache pode responder no lugar do servidor. Um `GET /tarefas/42/excluir` quebra essa promessa: basta um robô ou um pré-carregamento de link para apagar dado.\n\n### Idempotente\n\nUm método *idempotent* (idempotente) pode ser repetido N vezes e o **estado final do servidor** é o mesmo de uma vez só. Atenção ao detalhe: é o estado, não a resposta. O primeiro `DELETE /tarefas/42` devolve 204 e o segundo devolve 404, mas nos dois casos a tarefa 42 não existe. Continua idempotente.\n\n`PUT` manda o recurso inteiro: repetir grava o mesmo conteúdo. `PATCH` depende do que você manda. `{ \"status\": \"feita\" }` é idempotente. `{ \"incrementar\": 1 }` não é.\n\n### Por que isso importa: retry\n\nA rede falha no meio. O cliente manda a requisição e recebe um *timeout*. Há três possibilidades que ele não consegue distinguir:\n\n1. A requisição nem chegou.\n2. Chegou, foi processada e a **resposta** se perdeu.\n3. Ainda está sendo processada.\n\nSe o método é idempotente, repetir é seguro em qualquer dos três casos. Por isso bibliotecas de cliente e balanceadores repetem `GET`, `PUT` e `DELETE` sozinhos e **não** repetem `POST`. Um `POST` repetido às cegas vira pedido em duplicidade, cobrança dupla, e-mail enviado duas vezes.\n\n### Opinião de sênior\n\n- Operação que o usuário pode disparar duas vezes (duplo clique, botão de tentar de novo) precisa ser idempotente **por desenho**, não por sorte. Para `POST` existe a *idempotency key*, que você vê em http-09.\n- Prefira `PATCH` a `PUT` para edição de formulário: `PUT` com um campo esquecido apaga o campo.\n- Ação que não é CRUD (concluir, cancelar, reabrir) vira `POST /tarefas/42/conclusao` ou um `PATCH` de status. O que não vale é `GET` com efeito colateral.\n- O custo de respeitar a semântica é pensar no desenho. O custo de ignorar é descobrir, no primeiro retry automático, que o seu `POST` não podia ser repetido.",
+      "naPratica": "No Cockpit, o TanStack Query repete consultas (`GET`) que falham e, por padrão, não repete mutações. Esse padrão só é correto porque a API respeita a tabela acima. No review, `GET` que grava e `POST` sem proteção contra repetição são dois achados clássicos.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um cliente com retry repete cada chamada uma vez. Quantas tarefas existem depois de cada bloco?",
+          "codigo": "const tarefas = new Map<number, string>();\nlet seq = 0;\n\nconst post = (titulo: string) => {\n  tarefas.set(++seq, titulo);\n};\nconst put = (id: number, titulo: string) => {\n  tarefas.set(id, titulo);\n};\nconst del = (id: number) => (tarefas.delete(id) ? 204 : 404);\n\npost('estudar');\npost('estudar'); // retry depois de um timeout\nconsole.log(tarefas.size);\n\nput(7, 'revisar');\nput(7, 'revisar'); // retry\nconsole.log(tarefas.size);\n\nconsole.log(del(7), del(7), tarefas.size);\n",
+          "saida": "2\n3\n204 404 2\n",
+          "explicacao": "O `POST` repetido criou duas tarefas iguais: não é idempotente. O `PUT` repetido gravou a mesma coisa no mesmo id: uma tarefa a mais, não duas. O `DELETE` repetido devolveu respostas diferentes (204 e 404), mas o estado final é o mesmo. Idempotência é sobre o estado do servidor, não sobre a resposta."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O objeto `Request` é o mesmo que o `fetch` usa por dentro. O que ele faz com o nome do método e com um `GET` que tem corpo?",
+          "codigo": "const url = 'http://api.cockpit.test/tarefas';\n\nconsole.log(new Request(url, { method: 'post', body: '{}' }).method);\nconsole.log(new Request(url, { method: 'patch', body: '{}' }).method);\n\ntry {\n  new Request(url, { method: 'GET', body: '{}' });\n} catch (e) {\n  console.log((e as Error).name);\n}\n",
+          "saida": "POST\npatch\nTypeError\n",
+          "explicacao": "A especificação do `fetch` normaliza para maiúsculas só os métodos antigos (`get`, `post`, `put`, `delete`, `head`, `options`). `patch` em minúsculas passa como está e muitos servidores recusam: escreva método sempre em maiúsculas. `GET` com corpo nem chega a sair: o `fetch` lança `TypeError`, porque filtro de leitura vai na query string."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O front mandou `DELETE /tarefas/42`, deu timeout e a biblioteca repetiu. A primeira tinha funcionado, então a segunda recebeu 404. Como classificar?",
+          "opcoes": [
+            "Bug da API: `DELETE` idempotente deveria devolver 204 nas duas vezes",
+            "Comportamento correto: o estado final é o mesmo, e o cliente trata 404 em `DELETE` como \"já não existe\"",
+            "Bug da biblioteca: `DELETE` nunca pode ser repetido",
+            "Falha de segurança: o 404 revela que o registro existia"
+          ],
+          "correta": 1,
+          "explicacao": "Idempotência garante o mesmo estado, não a mesma resposta. Devolver 404 na repetição é correto e comum. Também é aceitável devolver 204 sempre, mas isso é escolha de desenho, não obrigação. `DELETE` é justamente dos métodos que podem ser repetidos."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual desenho está errado?",
+          "opcoes": [
+            "`PATCH /tarefas/42` com `{ \"status\": \"feita\" }`",
+            "`POST /tarefas/42/conclusao` sem corpo",
+            "`GET /tarefas/42/concluir`",
+            "`PUT /tarefas/42` com a tarefa inteira no corpo"
+          ],
+          "correta": 2,
+          "explicacao": "`GET` promete não alterar nada. Navegador, cache e robô confiam nisso e podem chamar a URL sem o usuário pedir. As outras três são formas legítimas: a diferença entre elas é de gosto e de quanto do recurso viaja."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Diferença entre método *seguro* e *idempotente*?",
+          "verso": "Seguro: não altera o servidor (GET). Idempotente: repetir N vezes deixa o mesmo estado de uma vez (GET, PUT, DELETE)."
+        },
+        {
+          "frente": "Por que `POST` não é repetido automaticamente em caso de timeout?",
+          "verso": "Não é idempotente. O cliente não sabe se a primeira chegou, e repetir pode criar o registro duas vezes."
+        },
+        {
+          "frente": "`DELETE` devolve 204 e, na repetição, 404. Deixou de ser idempotente?",
+          "verso": "Não. Idempotência é sobre o estado final do servidor (o recurso não existe), não sobre a resposta."
+        },
+        {
+          "frente": "`PUT` × `PATCH` numa edição de formulário?",
+          "verso": "`PUT` substitui o recurso inteiro: campo esquecido é apagado. `PATCH` altera só o que foi enviado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — HTTP request methods",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods"
+        },
+        {
+          "titulo": "RFC 9110 — HTTP Semantics (seção 9: Methods)",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110#name-methods"
+        }
+      ]
+    },
+    {
+      "id": "http-03",
+      "titulo": "Códigos de status: 400, 401, 403, 404, 409, 422 e 5xx",
+      "minutos": 10,
+      "ponte": "É a diferença entre `RAISE_APPLICATION_ERROR(-20001, 'pedido já faturado')` e um `ORA-00600`. O primeiro é a regra dizendo não: quem chamou precisa mudar algo. O segundo é defeito seu. O status HTTP faz essa separação com um número que qualquer cliente entende sem ler a mensagem. Onde quebra: no Forms o erro aparece para uma pessoa. Aqui quem lê primeiro é um programa, e ele decide pelo número se tenta de novo, se manda para o login ou se mostra o texto.",
+      "texto": "O primeiro dígito já responde a pergunta mais importante: **de quem é a culpa**.\n\n- **2xx:** deu certo.\n- **4xx:** o cliente errou. Repetir a mesma requisição dá o mesmo erro.\n- **5xx:** o servidor errou. A requisição podia estar perfeita.\n\n### Tabela de decisão\n\nFaça as perguntas nesta ordem. A primeira que der \"sim\" define o código.\n\n| # | Pergunta | Código |\n|---|---|---|\n| 1 | Não consegui nem interpretar (JSON quebrado, tipo errado, campo obrigatório faltando)? | **400** Bad Request |\n| 2 | Não sei quem é você (sem token, token vencido ou inválido)? | **401** Unauthorized |\n| 3 | Sei quem é você, e você não pode fazer isso? | **403** Forbidden |\n| 4 | O recurso não existe (ou você não pode saber que existe)? | **404** Not Found |\n| 5 | O pedido é válido, mas bate com o **estado atual** do recurso? | **409** Conflict |\n| 6 | Entendi tudo, e o conteúdo viola uma regra de validação? | **422** Unprocessable Content |\n| 7 | Estourou algo que eu não previ? | **500** Internal Server Error |\n\n### Os pares que confundem\n\n**400 × 422.** 400 é forma: não deu para ler. 422 é conteúdo: li, e a data final vem antes da inicial. Muitas APIs usam 400 para os dois, inclusive o `ValidationPipe` do Nest por padrão. Os dois caminhos são aceitáveis. O que não é aceitável é misturar sem critério: escolha um e documente.\n\n**401 × 403.** O nome do 401 engana: *Unauthorized* significa **não autenticado**. O cliente reage a 401 renovando o token ou indo para o login. A 403 ele reage mostrando \"sem permissão\", porque logar de novo não resolve.\n\n**404 no lugar de 403.** Se a tarefa 42 é de outro usuário, responder 403 confirma que ela existe. Para recurso de outra pessoa, 404 é a resposta mais segura.\n\n**409.** Conflito com o estado: concluir tarefa já concluída, cadastrar e-mail que já existe, gravar em cima de uma versão que outro usuário já alterou. É o código da regra de negócio que depende de estado e da concorrência. Quando a checagem veio de um `If-Match`, o código específico é 412 (http-04).\n\n### 5xx é defeito\n\n500 significa exceção não tratada: é para acordar alguém, não para o usuário ler. Dois outros valem conhecer. **502/504** vêm do proxy quando a API não respondeu. **503** é indisponibilidade temporária, e o cliente pode tentar depois.\n\nRegra de monitoramento que sai daqui: **alerta em taxa de 5xx**, nunca em 4xx. Um pico de 4xx é cliente mal escrito ou ataque. Um pico de 5xx é você.\n\n### As duas armadilhas\n\n1. **200 com `{ \"sucesso\": false }`.** O cliente, o monitoramento e o cache veem sucesso. Todo consumidor precisa abrir o corpo para saber que falhou.\n2. **500 para erro de regra.** Uma violação de *unique* que sobe sem tratamento vira 500 e dispara alerta por algo que era 409.",
+      "naPratica": "No Cockpit, o filtro de exceção traduz erro conhecido do Prisma em 409 ou 404 e deixa só o inesperado virar 500. No front, o cliente HTTP trata 401 num único lugar (renova o token e repete) e o restante vira mensagem na tela.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O servidor responde 404 e depois 500. O `fetch` lança exceção?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst server = createServer((req, res) => {\n  res.statusCode = req.url === '/tarefas/999' ? 404 : 500;\n  res.end();\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const base = `http://127.0.0.1:${port}`;\n  try {\n    const a = await fetch(base + '/tarefas/999');\n    console.log(a.status, a.ok);\n    const b = await fetch(base + '/explode');\n    console.log(b.status, b.ok);\n    console.log('nenhuma exceção');\n  } catch {\n    console.log('caiu no catch');\n  }\n  server.close();\n});\n",
+          "saida": "404 false\n500 false\nnenhuma exceção\n",
+          "explicacao": "O `fetch` só rejeita quando **não houve resposta** (rede fora, DNS, CORS). Uma resposta 404 ou 500 é uma resposta: a Promise resolve e `ok` vem `false`. Quem esquece de checar `r.ok` trata erro como sucesso e quebra mais adiante, ao ler o corpo. Por isso todo projeto tem um cliente HTTP que converte status de erro em exceção num lugar só."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A usuária está logada, o token é válido, e ela tenta excluir uma tarefa de um projeto em que só tem permissão de leitura. Qual código?",
+          "opcoes": [
+            "401, porque ela não está autorizada",
+            "403, porque a API sabe quem ela é e a ação não é permitida",
+            "400, porque a requisição é inválida para ela",
+            "409, porque há conflito com a permissão"
+          ],
+          "correta": 1,
+          "explicacao": "401 quer dizer não autenticado, apesar do nome *Unauthorized*. Devolver 401 aqui faria o front tentar renovar o token ou mandar para o login, sem resolver nada. Ela está autenticada e sem permissão: 403."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`POST /tarefas/42/conclusao` chega bem formado, de um usuário com permissão, mas a tarefa 42 já está concluída. Qual código?",
+          "opcoes": [
+            "400, porque a requisição não pode ser atendida",
+            "500, porque a regra lançou exceção",
+            "409, porque o pedido é válido e conflita com o estado atual do recurso",
+            "404, porque não existe tarefa aberta com esse id"
+          ],
+          "correta": 2,
+          "explicacao": "Nada está errado na forma nem no conteúdo: o problema é o estado da tarefa neste momento. É o caso típico de 409. 500 diria que a API tem defeito e dispararia alerta. 404 esconderia do cliente o motivo real."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a API antiga devolvia sempre 200 com `{ sucesso: false, mensagem: '...' }` e funcionava. Por que a nova precisa dessa complicação de 400, 409, 422?\"",
+          "pontos": [
+            "O status é lido por programas (cliente HTTP, proxy, cache, monitoramento), não só por gente",
+            "Com 200 sempre, todo consumidor precisa abrir o corpo e conhecer o formato para saber que falhou",
+            "4xx e 5xx separam erro do cliente de defeito do servidor, e isso define alerta e retry",
+            "Códigos como 401 e 409 disparam tratamento automático diferente (renovar token, recarregar o registro)",
+            "O custo é pequeno: uma tabela de decisão e um filtro de exceção central"
+          ],
+          "modelo": "Funcionava porque só o nosso front lia a resposta, e ele conhecia o formato. O status não é para a pessoa, é para os programas no meio do caminho. Com 200 sempre, o monitoramento mostra 100% de sucesso no dia em que tudo está falhando, o cache pode guardar um erro e toda biblioteca de cliente acha que deu certo. Com os códigos, o front trata 401 num lugar só e renova o token, 409 recarrega o registro, e eu alerto só em 5xx, que é defeito nosso. O custo é uma tabela de decisão de sete linhas e um filtro de exceção. A mensagem para o usuário continua indo no corpo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "401 × 403?",
+          "verso": "401: não sei quem é você (autentique-se). 403: sei quem é você e a ação não é permitida (logar de novo não resolve)."
+        },
+        {
+          "frente": "400 × 422?",
+          "verso": "400: não consegui interpretar (forma). 422: interpretei e o conteúdo viola uma validação. Muitas APIs usam 400 para os dois: escolha e documente."
+        },
+        {
+          "frente": "Quando usar 409?",
+          "verso": "Pedido válido que conflita com o estado atual do recurso: duplicidade, transição de status inválida, edição concorrente."
+        },
+        {
+          "frente": "Por que alertar em 5xx e não em 4xx?",
+          "verso": "5xx é defeito do servidor: a requisição podia estar certa. 4xx é o cliente errando, e repetir não muda o resultado."
+        },
+        {
+          "frente": "O `fetch` rejeita a Promise num 404 ou 500?",
+          "verso": "Não. Só rejeita quando não há resposta (rede, CORS). É preciso checar `r.ok` ou `r.status`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — HTTP response status codes",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status"
+        },
+        {
+          "titulo": "RFC 9110 — HTTP Semantics (seção 15: Status Codes)",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110#name-status-codes"
+        }
+      ]
+    },
+    {
+      "id": "http-04",
+      "titulo": "Cabeçalhos, negociação de conteúdo e cache HTTP (ETag)",
+      "minutos": 11,
+      "ponte": "O ETag é o `ORA_ROWSCN` ou a coluna `VERSAO` que você já usa para saber se a linha mudou desde que foi lida. O `If-Match` é o `UPDATE ... WHERE id = :id AND versao = :versao_lida` seguido do teste de `SQL%ROWCOUNT = 0`. A diferença: no Forms o lock é pessimista e o banco segura a linha enquanto o usuário edita. Aqui ninguém segura nada, porque não existe conexão presa. O conflito só aparece na hora de gravar.",
+      "texto": "Cabeçalhos são os metadados da conversa. Quatro grupos resolvem quase tudo.\n\n### 1. Formato: `Content-Type` e `Accept`\n\n- `Content-Type` diz o formato **do corpo que estou mandando**. Vale para requisição e para resposta.\n- `Accept` diz o formato **que eu aceito receber**.\n\nIsso é a *content negotiation* (negociação de conteúdo). Os erros correspondentes: **415** quando o servidor não entende o `Content-Type` enviado, **406** quando não sabe produzir o que o `Accept` pede. Mandar JSON sem `Content-Type: application/json` é causa clássica de corpo que chega vazio no back-end.\n\n### 2. Identidade: `Authorization`\n\n`Authorization: Bearer <token>` leva a credencial. *Bearer* quer dizer portador: quem tem o token entra, sem mais perguntas. Daí o cuidado com onde ele fica guardado (trilha de segurança).\n\n### 3. Validação: `ETag`, `If-None-Match`, `If-Match`\n\n*ETag* é um identificador da **versão** de um recurso: um hash do conteúdo ou o número de versão da linha. Ele serve a dois usos opostos.\n\n**Leitura econômica.** O cliente guarda a resposta e o ETag. Na próxima vez manda `If-None-Match: \"v7\"`. Se nada mudou, o servidor responde **304 Not Modified** sem corpo. O servidor ainda trabalha para descobrir a versão, mas a banda é economizada.\n\n**Escrita segura (lock otimista por HTTP).**\n\n```text\nGET /tarefas/42            -> 200, ETag: \"v7\"\nPATCH /tarefas/42\nIf-Match: \"v7\"             -> 200, ETag: \"v8\"\n\nPATCH /tarefas/42          (outro usuário, ainda com a v7)\nIf-Match: \"v7\"             -> 412 Precondition Failed\n```\n\nO servidor só grava se a versão atual ainda for a que o cliente leu. Se não for, responde **412** e o cliente recarrega. É o mesmo `WHERE versao = :lida`, com o protocolo carregando a versão. Se a API quer obrigar o cabeçalho, responde **428 Precondition Required** quando ele falta.\n\n### 4. Cache: `Cache-Control`\n\n| Diretiva | Significado |\n|---|---|\n| `max-age=60` | Pode reutilizar por 60 segundos sem perguntar |\n| `no-cache` | Pode guardar, mas **revalide sempre** antes de usar |\n| `no-store` | Não guarde em lugar nenhum |\n| `private` | Só o navegador do usuário guarda, nunca um proxy compartilhado |\n\nA pegadinha de nome: `no-cache` não proíbe o cache. Quem proíbe é `no-store`.\n\n### Opinião de sênior\n\n- Arquivo estático com hash no nome (o que o Vite gera) recebe `max-age` de um ano. O nome muda quando o conteúdo muda.\n- Resposta de API com dado do usuário: `private` no mínimo, e `no-store` para dado sensível. Resposta personalizada guardada em proxy compartilhado é vazamento.\n- `If-Match` vale o custo em tela de edição que duas pessoas abrem ao mesmo tempo. Em recurso que só o dono edita, é cerimônia. Muitas APIs fazem o mesmo controle com um campo `versao` no corpo e respondem 409: é equivalente, e o que importa é existir.\n- ETag na leitura só compensa quando o corpo é grande ou o cliente consulta muito. Meça antes.",
+      "naPratica": "No Cockpit, editar a mesma tarefa em duas abas é o cenário real: a segunda gravação tem que receber 412 ou 409 e recarregar, não sobrescrever em silêncio. É exatamente a pergunta 4 das sete de viabilidade da trilha de migração.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O cliente busca o recurso, guarda o ETag e pergunta de novo com `If-None-Match`. O que cada resposta traz?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst etag = '\"v7\"';\nconst server = createServer((req, res) => {\n  if (req.headers['if-none-match'] === etag) {\n    res.writeHead(304).end();\n    return;\n  }\n  res.writeHead(200, { etag, 'cache-control': 'no-cache' });\n  res.end('{\"titulo\":\"estudar\"}');\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const url = `http://127.0.0.1:${port}/tarefas/1`;\n  const a = await fetch(url);\n  const versao = a.headers.get('etag') ?? '';\n  console.log(a.status, versao, (await a.text()).length);\n  const b = await fetch(url, { headers: { 'if-none-match': versao } });\n  console.log(b.status, (await b.text()).length);\n  server.close();\n});\n",
+          "saida": "200 \"v7\" 20\n304 0\n",
+          "explicacao": "A primeira resposta traz os 20 caracteres do corpo e o ETag, que inclui as aspas (elas fazem parte do valor). A segunda mandou a versão que já tinha, o servidor viu que nada mudou e respondeu 304 com corpo vazio. No navegador você nem veria o 304: o cache HTTP dele entrega a cópia guardada como se fosse um 200. O `fetch` do Node não tem esse cache, por isso o 304 aparece aqui."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`Headers` é a classe que o `fetch` usa para cabeçalhos. Como ela trata caixa e valores repetidos?",
+          "codigo": "const h = new Headers({ 'Content-Type': 'application/json' });\nh.append('Accept', 'application/json');\nh.append('accept', 'text/plain');\n\nconsole.log(h.get('content-type'));\nconsole.log(h.get('ACCEPT'));\nconsole.log([...h.keys()]);\n",
+          "saida": "application/json\napplication/json, text/plain\n[ 'accept', 'content-type' ]\n",
+          "explicacao": "Nome de cabeçalho não diferencia caixa: `Accept` e `accept` são o mesmo, e o segundo `append` juntou os valores com vírgula. Ao listar, os nomes saem em minúsculas e em ordem alfabética. Por isso no back-end você lê sempre `req.headers['content-type']`, em minúsculas."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Duas pessoas abrem a tarefa 42 (ETag `\"v7\"`). A primeira grava e a versão vira `\"v8\"`. A segunda manda `PATCH` com `If-Match: \"v7\"`. O que a API deve responder?",
+          "opcoes": [
+            "200, gravando por cima: a última gravação vence",
+            "304 Not Modified, porque a versão dela está desatualizada",
+            "412 Precondition Failed, sem gravar: ela precisa recarregar",
+            "423 Locked, porque a primeira pessoa travou o registro"
+          ],
+          "correta": 2,
+          "explicacao": "A pré-condição `If-Match` falhou: o recurso não está mais na versão que ela leu. 412 sem gravar evita a atualização perdida. 304 é resposta de leitura condicional (`If-None-Match`), não de escrita. Ninguém travou nada: o controle é otimista."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A resposta de `GET /eu` (dados do usuário logado) deve levar qual `Cache-Control`?",
+          "opcoes": [
+            "`public, max-age=3600`, para aliviar a API",
+            "`no-cache`, porque assim nada é guardado",
+            "`private, no-cache` ou `no-store`: nunca em cache compartilhado",
+            "Nenhum: resposta com `Authorization` nunca é guardada por ninguém"
+          ],
+          "correta": 2,
+          "explicacao": "Resposta personalizada não pode ficar num cache compartilhado, onde seria entregue a outra pessoa. `private` restringe ao navegador do usuário e `no-store` proíbe guardar. A tentadora é `no-cache` sozinho, que pelo nome parece proibir e só exige revalidação."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`Content-Type` × `Accept`?",
+          "verso": "`Content-Type`: o formato do corpo que estou mandando. `Accept`: o formato que aceito receber."
+        },
+        {
+          "frente": "`If-None-Match` × `If-Match`?",
+          "verso": "`If-None-Match`: leitura, devolve 304 se nada mudou. `If-Match`: escrita, grava só se a versão ainda é a lida, senão 412."
+        },
+        {
+          "frente": "`no-cache` × `no-store`?",
+          "verso": "`no-cache`: pode guardar, mas revalida sempre antes de usar. `no-store`: não guarda em lugar nenhum."
+        },
+        {
+          "frente": "Por que o lock da web é otimista e não pessimista como no Forms?",
+          "verso": "Não há conexão presa por usuário para segurar a linha entre ler e gravar. A versão é conferida só no momento da gravação."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — HTTP caching",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching"
+        },
+        {
+          "titulo": "MDN — HTTP conditional requests",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Conditional_requests"
+        },
+        {
+          "titulo": "RFC 9110 — HTTP Semantics",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110"
+        }
+      ]
+    },
+    {
+      "id": "http-05",
+      "titulo": "Cookies: httpOnly, secure e sameSite",
+      "minutos": 10,
+      "ponte": "Pense no `ALTER SESSION SET ...` ou no `DBMS_SESSION.SET_IDENTIFIER`: você define uma vez e o valor acompanha todos os comandos seguintes sem você repetir. O cookie faz esse papel entre navegador e servidor. Onde quebra: o contexto de sessão do Oracle fica **no servidor**. O cookie fica **na máquina do usuário**, e o navegador o reenvia sozinho, inclusive quando a requisição foi provocada por outro site.",
+      "texto": "Cookie não é um mecanismo à parte: é **cabeçalho**. O servidor manda `Set-Cookie` na resposta, o navegador guarda e devolve em `Cookie` nas próximas requisições para aquele destino.\n\n```text\nHTTP/1.1 200 OK\nSet-Cookie: rt=abc123; HttpOnly; Secure; SameSite=Strict; Path=/auth; Max-Age=604800\n\nPOST /auth/refresh HTTP/1.1\nCookie: rt=abc123\n```\n\nO ponto central: **o envio é automático**. O seu código não escreve o cabeçalho `Cookie`. Isso é a conveniência e também o risco, e cada atributo existe para limitar um risco.\n\n| Atributo | O que faz | O que evita |\n|---|---|---|\n| `HttpOnly` | JavaScript da página não lê o cookie (`document.cookie` não mostra) | Roubo do valor por script injetado (XSS) |\n| `Secure` | Só viaja em HTTPS | Captura em rede aberta |\n| `SameSite` | Controla o envio em requisição iniciada por **outro site** | Outro site agir em nome do usuário logado (CSRF) |\n| `Domain` | Para quais hosts enviar | Vazar para subdomínio que não devia receber |\n| `Path` | Para quais caminhos enviar | Mandar o cookie em toda requisição sem precisar |\n| `Max-Age` / `Expires` | Validade | Sem eles, o cookie morre ao fechar o navegador |\n\n### SameSite\n\n- **`Strict`:** nunca envia em requisição vinda de outro site, nem ao clicar num link.\n- **`Lax`:** envia quando o usuário navega para o seu site por um link (um `GET` de página inteira). Não envia em `POST`, `fetch` ou imagem disparados por outro site. É o padrão dos navegadores atuais quando o atributo falta.\n- **`None`:** envia sempre. Exige `Secure`. Necessário quando front e API estão em sites realmente diferentes.\n\nUm detalhe que economiza horas: **site não é origem**. *Site* é o domínio registrável (`cockpit.com.br`). `app.cockpit.com.br` e `api.cockpit.com.br` são o mesmo site e origens diferentes. `localhost:5173` e `localhost:3000` também são o mesmo site: a porta não conta.\n\n### Domain e Path\n\nSem `Domain`, o cookie vale só para o host exato que o criou: é o mais restrito e o melhor padrão. Com `Domain=cockpit.com.br`, vai para todos os subdomínios. `Path=/auth` faz o cookie viajar só nas rotas de autenticação.\n\n### Por que o refresh token mora em cookie httpOnly\n\nO *refresh token* (token de longa duração que emite novos tokens de acesso) é a credencial mais valiosa do front. Em `localStorage`, qualquer script que rode na página consegue ler e mandar para fora. Em cookie `HttpOnly`, o script não lê. Com `Path=/auth`, ele só viaja na rota de renovação. Com `SameSite`, outro site não consegue provocar o envio.\n\n### O custo\n\nCookie reintroduz o problema que o `Authorization` não tem: como o envio é automático, você precisa pensar em CSRF. Também exige `credentials: 'include'` no `fetch` entre origens e configuração de CORS específica (http-06). E `HttpOnly` não impede que um script injetado **use** a sessão a partir da própria página: ele impede o roubo do token para uso fora dela. Reduz o dano, não dispensa o cuidado com XSS.",
+      "naPratica": "No Cockpit, o login devolve o token de acesso no corpo (fica só em memória no front) e o refresh token em cookie `HttpOnly; Secure; SameSite=Strict; Path=/auth`. Sintoma clássico em desenvolvimento: cookie `Secure` exige HTTPS, e os navegadores atuais costumam abrir exceção para `localhost`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O servidor manda dois cookies no login. O `fetch` do Node, que não é um navegador, devolve os cookies sozinho na chamada seguinte?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst server = createServer((req, res) => {\n  if (req.url === '/login') {\n    res.setHeader('set-cookie', ['rt=abc; HttpOnly; Path=/auth', 'tema=escuro']);\n    res.end('ok');\n    return;\n  }\n  res.end(req.headers.cookie ?? 'sem cookie');\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const base = `http://127.0.0.1:${port}`;\n  const login = await fetch(base + '/login');\n  console.log(login.headers.getSetCookie());\n  console.log(await (await fetch(base + '/eu')).text());\n  const comCookie = await fetch(base + '/eu', { headers: { cookie: 'tema=escuro' } });\n  console.log(await comCookie.text());\n  server.close();\n});\n",
+          "saida": "[ 'rt=abc; HttpOnly; Path=/auth', 'tema=escuro' ]\nsem cookie\ntema=escuro\n",
+          "explicacao": "Cada cookie chega num cabeçalho `Set-Cookie` próprio, com os atributos junto. Na segunda chamada o servidor não recebeu nada: guardar e reenviar cookie é trabalho do **navegador**, e o `fetch` do Node não tem esse pote. Na terceira, o cabeçalho `Cookie` foi escrito à mão, e note que só vai `nome=valor`: os atributos (`HttpOnly`, `Path`) são instruções para o navegador e nunca voltam ao servidor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O refresh token está num cookie `HttpOnly`. Um script malicioso injetado na página (XSS) consegue fazer o quê?",
+          "opcoes": [
+            "Ler o valor com `document.cookie` e enviar para outro servidor",
+            "Nada: `HttpOnly` neutraliza XSS por completo",
+            "Não consegue ler o valor, mas ainda pode disparar requisições da própria página, que levam o cookie",
+            "Ler o valor apenas se o cookie não tiver `Secure`"
+          ],
+          "correta": 2,
+          "explicacao": "`HttpOnly` tira o cookie do alcance do JavaScript: o valor não pode ser copiado para fora. Mas o script roda dentro da sua página e as requisições dele levam o cookie como as suas. O ganho é impedir o roubo da credencial para uso posterior, em outro lugar. Não substitui a proteção contra XSS."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Front em `https://app.exemplo.com.br` e API em `https://api.exemplo.com.br`. Para o navegador mandar o cookie de sessão nas chamadas `fetch` do front para a API, qual `SameSite` é necessário?",
+          "opcoes": [
+            "`SameSite=None; Secure`, porque são origens diferentes",
+            "`Lax` ou `Strict` já servem: os dois hosts são o mesmo site",
+            "Nenhum funciona: cookie nunca atravessa subdomínio",
+            "`SameSite=Lax`, mas só para requisições `GET`"
+          ],
+          "correta": 1,
+          "explicacao": "`SameSite` olha o **site** (domínio registrável, `exemplo.com.br`), não a origem. Os dois subdomínios são o mesmo site, então até `Strict` deixa passar. A tentadora é `None`: ela só é necessária entre sites diferentes de verdade. O que essa configuração ainda exige é `credentials: 'include'` no `fetch` e CORS com credenciais, porque as **origens** são diferentes."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Ver um cookie nascer no DevTools",
+          "minutos": 10,
+          "passos": [
+            "Abra qualquer site em que você tenha conta, abra o DevTools (F12) e vá em Application > Cookies.",
+            "Identifique o cookie de sessão e anote os atributos: HttpOnly, Secure, SameSite, Domain, Path e validade.",
+            "No Console, digite `document.cookie` e confira quais cookies aparecem e quais não aparecem.",
+            "Na aba Network, clique numa requisição e ache os cabeçalhos `Cookie` (enviado) e `Set-Cookie` (recebido, se houver)."
+          ],
+          "prontoQuando": "Você consegue apontar um cookie que existe na aba Application e não aparece em `document.cookie`, e explicar o motivo em uma frase."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `HttpOnly` impede, e o que não impede?",
+          "verso": "Impede o JavaScript de ler o cookie (roubo do valor por XSS). Não impede o script de fazer requisições da própria página, que levam o cookie."
+        },
+        {
+          "frente": "`SameSite`: Strict × Lax × None?",
+          "verso": "Strict: nunca vindo de outro site. Lax: só em navegação por link (GET de página). None: sempre, e exige `Secure`."
+        },
+        {
+          "frente": "Por que o refresh token fica em cookie `HttpOnly` e não em `localStorage`?",
+          "verso": "`localStorage` é legível por qualquer script da página. O cookie `HttpOnly` não pode ser lido, e `Path` e `SameSite` limitam quando ele viaja."
+        },
+        {
+          "frente": "Site × origem?",
+          "verso": "Origem: esquema + host + porta. Site: o domínio registrável. `app.x.com` e `api.x.com` são origens diferentes e o mesmo site."
+        },
+        {
+          "frente": "Por que cookie de sessão exige pensar em CSRF e `Authorization` não?",
+          "verso": "O navegador envia o cookie sozinho, até em requisição provocada por outro site. O cabeçalho `Authorization` só vai se o seu código puser."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Using HTTP cookies",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies"
+        },
+        {
+          "titulo": "MDN — Set-Cookie",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Session Management",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+        }
+      ]
+    },
+    {
+      "id": "http-06",
+      "titulo": "CORS e preflight: o que o navegador bloqueia e por quê",
+      "minutos": 10,
+      "ponte": "No banco, o `GRANT` protege o **servidor**: sem ele, ninguém lê a tabela, venha de onde vier. CORS parece um grant e não é. Ele não protege a API de ninguém: qualquer `curl` passa direto. Quem aplica a regra é o **navegador**, para proteger o **usuário** de uma página maliciosa que tentaria usar a sessão dele em outro site. É como se o SQL Developer, e não o banco, se recusasse a mostrar o resultado.",
+      "texto": "### A regra de base\n\n*Origem* é o trio **esquema + host + porta**. `http://localhost:5173` e `http://localhost:3000` são origens diferentes.\n\nA *same-origin policy* (política de mesma origem) do navegador diz: o JavaScript de uma página só pode **ler respostas** da própria origem. Sem ela, qualquer site que você abrisse poderia chamar o seu banco ou o seu webmail com os seus cookies e ler o resultado.\n\n### O que é CORS\n\n*CORS* (Cross-Origin Resource Sharing) é a exceção controlada. O **servidor** declara, em cabeçalhos da resposta, quais origens podem ler. O **navegador** confere e libera ou bloqueia.\n\n```text\nOrigin: http://localhost:5173                         (o navegador manda)\nAccess-Control-Allow-Origin: http://localhost:5173    (o servidor responde)\n```\n\nSe o cabeçalho não vier ou não bater, o navegador **esconde a resposta** do seu código e escreve o erro no console. Repare: nesse caso a requisição pode ter chegado e sido executada no servidor.\n\n### Preflight\n\nPara requisições que um formulário HTML antigo não conseguiria fazer, o navegador pergunta antes. É o *preflight* (pré-voo): um `OPTIONS` automático.\n\n```text\nOPTIONS /tarefas\nOrigin: http://localhost:5173\nAccess-Control-Request-Method: POST\nAccess-Control-Request-Headers: authorization, content-type\n\n204 No Content\nAccess-Control-Allow-Origin: http://localhost:5173\nAccess-Control-Allow-Methods: GET, POST, PATCH, DELETE\nAccess-Control-Allow-Headers: authorization, content-type\nAccess-Control-Max-Age: 600\n```\n\nDisparam preflight, entre outros: métodos `PUT`, `PATCH` e `DELETE`, o cabeçalho `Authorization` e `Content-Type: application/json`. Ou seja, **praticamente toda chamada de uma API JSON**. Só depois do 204 a requisição de verdade sai. `Access-Control-Max-Age` deixa o navegador guardar a permissão e pular o preflight por um tempo.\n\n### Credenciais não combinam com `*`\n\nPara o navegador enviar cookies entre origens, o front usa `credentials: 'include'` e o servidor responde `Access-Control-Allow-Credentials: true`. Nesse modo, `Access-Control-Allow-Origin: *` é **recusado**: tem que ser a origem exata. O motivo é direto: `*` com credenciais deixaria qualquer site ler dados do usuário logado.\n\n### Por que funciona no Swagger e no curl e falha no navegador\n\n- **curl, Postman, outro back-end:** não são navegadores. Não existe same-origin policy, ninguém confere cabeçalho CORS.\n- **Swagger UI servido pela própria API:** a página e a API têm a mesma origem. Não é requisição entre origens.\n- **O seu front em outra porta:** origem diferente. O navegador exige a autorização.\n\nA conclusão que evita o erro mais comum: se funciona no curl e falha no navegador, o problema é **configuração de CORS no servidor**. Não é bug do front, e não se resolve no front.\n\n### Opinião de sênior\n\n- Liste as origens permitidas por ambiente, vindas de configuração. `*` só serve para API pública sem credencial.\n- **CORS não é segurança da API.** Autenticação e autorização continuam obrigatórias, porque quem ataca não usa navegador.\n- A alternativa que elimina o assunto: servir front e API pela **mesma origem**, com um proxy reverso (ou o proxy do Vite em desenvolvimento). Sem origem cruzada, sem preflight, cookie mais simples. O custo é ter o proxy.",
+      "naPratica": "No Cockpit, em desenvolvimento o web roda numa porta e a API em outra: ou a API habilita CORS para a origem do web, ou o Vite faz proxy de `/api`. Quando o console mostrar erro de CORS, olhe primeiro a resposta do `OPTIONS` na aba Network.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A API só autoriza a origem do front. Três chamadas saem do Node, que não é navegador: sem origem, de uma origem estranha e da origem permitida. Qual delas recebe os dados?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst PERMITIDA = 'http://localhost:5173';\nconst server = createServer((req, res) => {\n  if (req.headers.origin === PERMITIDA) {\n    res.setHeader('access-control-allow-origin', PERMITIDA);\n  }\n  res.end('dados');\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const url = `http://127.0.0.1:${port}/tarefas`;\n  for (const origin of [undefined, 'http://outro.test', PERMITIDA]) {\n    const r = await fetch(url, { headers: origin ? { origin } : {} });\n    console.log(await r.text(), r.headers.get('access-control-allow-origin'));\n  }\n  server.close();\n});\n",
+          "saida": "dados null\ndados null\ndados http://localhost:5173\n",
+          "explicacao": "As três receberam `dados`. O servidor não recusou ninguém: ele só deixou de incluir o cabeçalho de autorização para as duas primeiras. Quem transformaria a segunda em erro é o navegador, ao ver que `Access-Control-Allow-Origin` não veio. Fora do navegador ninguém confere. Por isso CORS não protege a API, e por isso o curl sempre funciona."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O front em `http://localhost:5173` chama a API em `http://localhost:3000` e o console mostra erro de CORS. A mesma chamada funciona no curl. Onde está a correção?",
+          "opcoes": [
+            "No front: acrescentar o cabeçalho `Access-Control-Allow-Origin` na requisição",
+            "No front: usar `mode: 'no-cors'` no `fetch`",
+            "Na API: responder com `Access-Control-Allow-Origin` para a origem do front, inclusive no `OPTIONS`",
+            "No navegador: é um bug conhecido com `localhost`"
+          ],
+          "correta": 2,
+          "explicacao": "Quem autoriza é o servidor, na resposta. Cabeçalho `Access-Control-*` na requisição não tem efeito. `mode: 'no-cors'` faz o erro sumir e entrega uma resposta opaca: o código não consegue ler status nem corpo. É a falsa solução mais copiada da internet."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A API responde `Access-Control-Allow-Origin: *` e `Access-Control-Allow-Credentials: true`. O front chama com `credentials: 'include'`. O que o navegador faz?",
+          "opcoes": [
+            "Bloqueia: com credenciais, a origem tem que ser explícita",
+            "Aceita: `*` cobre qualquer origem, inclusive com cookie",
+            "Aceita, mas remove os cookies da requisição",
+            "Aceita apenas se o cookie for `SameSite=None`"
+          ],
+          "correta": 0,
+          "explicacao": "Curinga com credenciais é proibido pela especificação, porque permitiria a qualquer site ler dado do usuário logado. O servidor precisa devolver a origem exata. A saída errada é refletir cegamente o `Origin` recebido: tem o mesmo efeito do `*` e a mesma falha. Reflita só se a origem estiver na sua lista."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Provocar e ler um erro de CORS",
+          "minutos": 15,
+          "passos": [
+            "Crie `estudo/cors-api.mjs` com um `node:http` na porta 3999 que responde `ok` a qualquer requisição, sem nenhum cabeçalho CORS. Rode com `node`.",
+            "Abra uma página qualquer no navegador, abra o Console e rode `fetch('http://localhost:3999').then(r => r.text()).then(console.log)`. Leia a mensagem de erro inteira.",
+            "Rode `curl -i http://localhost:3999` no terminal e compare.",
+            "Acrescente `res.setHeader('access-control-allow-origin', '*')` no servidor, reinicie e repita o `fetch`.",
+            "Troque o `fetch` por um `POST` com `content-type: application/json` e observe o `OPTIONS` na aba Network."
+          ],
+          "prontoQuando": "Você viu o mesmo servidor falhar no navegador e funcionar no curl, corrigiu pelo lado do servidor e encontrou a linha do preflight `OPTIONS` na aba Network."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que compõe uma *origem*?",
+          "verso": "Esquema + host + porta. `localhost:5173` e `localhost:3000` são origens diferentes."
+        },
+        {
+          "frente": "Quem aplica o CORS, e para proteger quem?",
+          "verso": "O navegador aplica, com base no que o servidor autoriza. Protege o usuário, não a API: curl e outros back-ends passam direto."
+        },
+        {
+          "frente": "O que é o *preflight*?",
+          "verso": "Um `OPTIONS` automático do navegador perguntando se método e cabeçalhos são permitidos. Sai antes de quase toda chamada JSON entre origens."
+        },
+        {
+          "frente": "Por que `Access-Control-Allow-Origin: *` não funciona com cookies?",
+          "verso": "Com credenciais a especificação exige a origem exata. O curinga deixaria qualquer site ler dado do usuário logado."
+        },
+        {
+          "frente": "Por que funciona no curl e falha no navegador?",
+          "verso": "Só o navegador tem same-origin policy. O conserto é o servidor devolver os cabeçalhos `Access-Control-*`, nunca algo no front."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Cross-Origin Resource Sharing (CORS)",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS"
+        },
+        {
+          "titulo": "MDN — Same-origin policy",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/Security/Same-origin_policy"
+        },
+        {
+          "titulo": "NestJS — CORS",
+          "url": "https://docs.nestjs.com/security/cors"
+        }
+      ]
+    },
+    {
+      "id": "http-07",
+      "titulo": "Desenho REST: recursos, paginação, filtros e ordenação",
+      "minutos": 11,
+      "ponte": "Paginar por offset é o velho `ROWNUM BETWEEN 41 AND 60` (ou `OFFSET 40 ROWS FETCH NEXT 20 ROWS ONLY`): o banco monta e descarta as 40 primeiras linhas para entregar as 20 seguintes. Paginar por cursor é a paginação por chave que você já fez para lote grande: `WHERE id > :ultimo_id ORDER BY id FETCH FIRST 20 ROWS ONLY`, direto pelo índice. A diferença para o Forms: lá o cursor fica **aberto** na sessão e você pede mais linhas. Aqui cada página é uma consulta nova, e a posição precisa viajar na requisição.",
+      "texto": "REST, no uso do dia a dia, é uma convenção: a URL nomeia **coisas** (recursos), o método diz **o que fazer** com elas.\n\n### Recursos e sub-recursos\n\n| Requisição | Significado |\n|---|---|\n| `GET /tarefas` | Listar |\n| `POST /tarefas` | Criar |\n| `GET /tarefas/42` | Ler uma |\n| `PATCH /tarefas/42` | Alterar |\n| `DELETE /tarefas/42` | Remover |\n| `GET /projetos/7/tarefas` | Tarefas do projeto 7 (sub-recurso) |\n\nRegras que evitam discussão: substantivo no **plural**, sem verbo na URL (`/tarefas`, não `/listarTarefas`), um padrão só de escrita. Sub-recurso faz sentido quando o filho não existe sem o pai. Passou de dois níveis, pare: `/projetos/7/tarefas/42/comentarios/3` vira `/comentarios/3`.\n\n### Filtros e ordenação na query string\n\n```text\nGET /tarefas?status=aberta&projetoId=7&ordenar=-prioridade,criadaEm&limite=20\n```\n\nFiltro é parâmetro com o nome do campo. Ordenação costuma ir num parâmetro só, com `-` para decrescente. **Nunca** repasse o nome do campo direto para o `ORDER BY`: valide contra uma lista de campos permitidos. É injeção de SQL e também controle de quais ordenações têm índice.\n\n### Paginação: offset × cursor\n\n**Offset** (`?pagina=3&limite=20`). Simples, permite pular para a página 50 e mostrar \"página 3 de 12\". Dois custos: o banco percorre e descarta tudo o que vem antes, então página funda fica lenta. E a janela **escorrega**: se um item some ou entra enquanto o usuário pagina, um registro é pulado ou repetido.\n\n**Cursor** (`?depoisDe=<cursor>&limite=20`). O servidor devolve um marcador do último item e o cliente o manda de volta. Vira `WHERE (criada_em, id) > (:a, :b)`, que anda pelo índice com custo constante e não escorrega. Custos: não dá para pular para a página N, não tem total barato, e a ordenação precisa de um **desempate único** (por isso o `id` junto). O cursor deve ser opaco para o cliente, normalmente os valores em base64.\n\n| Situação | Escolha |\n|---|---|\n| Tela administrativa, poucos milhares de linhas, usuário quer número de página | offset |\n| Rolagem infinita, feed, lista que muda o tempo todo | cursor |\n| Exportação ou sincronização de tabela grande | cursor |\n\n### Envelope de lista\n\nDevolva a lista dentro de um objeto, nunca um array solto:\n\n```json\n{\n  \"itens\": [{ \"id\": 42, \"titulo\": \"estudar\" }],\n  \"proximoCursor\": \"eyJpZCI6NDJ9\",\n  \"total\": 137\n}\n```\n\nO motivo é evolução: num objeto você acrescenta um campo sem quebrar ninguém. Num array solto, qualquer metadado novo é mudança incompatível. `total` é opcional e caro (um `COUNT(*)` a mais): só inclua se a tela usa.\n\n### Opinião de sênior\n\n- **Limite máximo no servidor**, sempre. `?limite=1000000` não pode derrubar a API.\n- Toda listagem nasce paginada. Acrescentar paginação depois é mudança incompatível.\n- Nem tudo é CRUD. Ação de negócio pode virar sub-recurso (`POST /tarefas/42/conclusao`). Consistência dentro da API vale mais do que pureza REST.",
+      "naPratica": "No Cockpit, `GET /tarefas` já nasce com `limite` com teto, filtros validados no DTO e envelope `{ itens, proximoCursor }`. No front, os filtros moram na URL da página e entram na *query key* do TanStack Query.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Montando a URL de uma listagem com `URL` e `URLSearchParams`. O que sai?",
+          "codigo": "const url = new URL('https://api.cockpit.test/tarefas');\nurl.searchParams.set('status', 'aberta');\nurl.searchParams.set('ordenar', '-prioridade,criadaEm');\nurl.searchParams.set('busca', 'reunião 1:1');\n\nconsole.log(url.pathname);\nconsole.log(url.search);\nconsole.log(url.searchParams.get('busca'));\nconsole.log(url.searchParams.get('limite'), typeof url.searchParams.get('status'));\n",
+          "saida": "/tarefas\n?status=aberta&ordenar=-prioridade%2CcriadaEm&busca=reuni%C3%A3o+1%3A1\nreunião 1:1\nnull string\n",
+          "explicacao": "`URLSearchParams` codifica sozinho o que não pode ir cru na URL: vírgula, acento, dois-pontos e espaço (que vira `+`). Ao ler, devolve o valor original. Parâmetro ausente é `null`, e todo valor presente é **string**: `limite=20` chega como `'20'`. Converter e validar é trabalho do DTO. Nunca monte query string concatenando texto: é a classe que garante a codificação."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O usuário leu a primeira página. Antes de pedir a segunda, a tarefa 2 foi excluída. O que cada estratégia devolve como segunda página?",
+          "codigo": "let ids = [1, 2, 3, 4, 5, 6];\n\nconst porOffset = (offset: number, limite: number) => ids.slice(offset, offset + limite);\nconst porCursor = (depoisDe: number, limite: number) =>\n  ids.filter((id) => id > depoisDe).slice(0, limite);\n\nconst pagina1 = porOffset(0, 3);\nconsole.log(pagina1);\n\nids = ids.filter((id) => id !== 2); // alguém excluiu a tarefa 2\n\nconsole.log(porOffset(3, 3));\nconsole.log(porCursor(pagina1.at(-1) ?? 0, 3));\n",
+          "saida": "[ 1, 2, 3 ]\n[ 5, 6 ]\n[ 4, 5, 6 ]\n",
+          "explicacao": "Com offset, a lista encolheu e a tarefa 4 passou a ocupar a posição 3, que o cliente já tinha lido: ela foi **pulada** e o usuário nunca a vê. Com cursor a pergunta é \"o que vem depois do id 3\", e a resposta não depende de quantas linhas existem antes. Se fosse uma inserção, o offset repetiria um item."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual o problema de `GET /tarefas` devolver um array JSON solto (`[ {...}, {...} ]`)?",
+          "opcoes": [
+            "Array na raiz não é JSON válido",
+            "Não há onde acrescentar cursor, total ou outro metadado sem quebrar os clientes",
+            "O navegador não consegue fazer `JSON.parse` de array grande",
+            "Nenhum: é a forma recomendada por ser a mais enxuta"
+          ],
+          "correta": 1,
+          "explicacao": "Array solto é JSON válido e funciona. O problema aparece no dia em que a lista precisa de paginação: trocar array por objeto quebra todo consumidor. O envelope custa uma chave a mais e deixa espaço para evoluir."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a tela de histórico vai listar umas 300 mil linhas e vai crescendo. Faço página numerada, igual ao resto do sistema, ou esse tal de cursor?\"",
+          "pontos": [
+            "Perguntou como o usuário usa: precisa pular para a página N ou só avançar",
+            "Explicou o custo do offset em página funda (o banco lê e descarta o que vem antes)",
+            "Citou que o offset pula ou repete linha quando a lista muda durante a paginação",
+            "Disse o que o cursor cobra: sem salto de página, sem total barato, ordenação com desempate único",
+            "Deu uma recomendação com condição, não uma regra universal"
+          ],
+          "modelo": "Depende de como a pessoa usa a tela. Se ela precisa ir direto para a página 40, só offset entrega isso. Mas em histórico o uso real quase sempre é filtrar por período e rolar para baixo. Nesse caso eu vou de cursor: com 300 mil linhas crescendo, o offset fica lento nas páginas fundas, porque o banco lê e joga fora tudo o que vem antes, e ainda pula ou repete linha quando entra registro novo no meio. O cursor anda pelo índice com custo constante. O que ele cobra: não tem número de página nem total barato, e a ordenação precisa terminar no id para desempatar. Se o total for requisito, a gente mostra um número aproximado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Offset × cursor: quando cada um?",
+          "verso": "Offset: lista pequena, usuário quer número de página. Cursor: lista grande ou que muda, rolagem infinita, exportação."
+        },
+        {
+          "frente": "Por que a paginação por offset pula ou repete registros?",
+          "verso": "A posição é contada a partir do início. Se uma linha entra ou sai antes da janela, todas as posições seguintes se deslocam."
+        },
+        {
+          "frente": "Por que devolver lista num envelope e não num array solto?",
+          "verso": "Para poder acrescentar cursor, total e outros metadados depois sem quebrar os clientes."
+        },
+        {
+          "frente": "O que a ordenação precisa ter para a paginação por cursor funcionar?",
+          "verso": "Um desempate único no fim (normalmente o id). Sem ele, linhas com o mesmo valor são puladas ou repetidas."
+        },
+        {
+          "frente": "Que cuidado tomar com `?ordenar=campo` e `?limite=N`?",
+          "verso": "Validar o campo contra uma lista permitida (nunca direto no ORDER BY) e impor teto para o limite no servidor."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — URLSearchParams",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams"
+        },
+        {
+          "titulo": "Prisma — Pagination (offset e cursor)",
+          "url": "https://www.prisma.io/docs/orm/prisma-client/queries/pagination"
+        },
+        {
+          "titulo": "Martin Fowler — Richardson Maturity Model",
+          "url": "https://martinfowler.com/articles/richardsonMaturityModel.html"
+        }
+      ]
+    },
+    {
+      "id": "http-08",
+      "titulo": "Erros padronizados (RFC 9457) e contrato OpenAPI",
+      "minutos": 10,
+      "ponte": "A *spec* de um package é um contrato: quem chama conhece nome, parâmetros e tipos sem abrir o *body*, e o compilador invalida quem dependia de uma assinatura que mudou. OpenAPI é a spec da API HTTP. E o problem details é a sua tabela de mensagens com `SQLCODE` e `SQLERRM` padronizados, em vez de cada rotina inventar o próprio texto. Onde quebra: o banco **impõe** a spec sozinho. O OpenAPI é um documento, e só vale se alguém gerar código a partir dele ou conferir no CI.",
+      "texto": "### O problema\n\nSem padrão, cada endpoint devolve erro num formato: `{ \"erro\": \"...\" }`, `{ \"message\": [...] }`, `{ \"msg\": \"...\", \"code\": 12 }`. O front acumula um `if` por formato e, quando aparece um quarto, mostra \"undefined\" para o usuário.\n\n### Problem details (RFC 9457)\n\nA RFC 9457, que substituiu a 7807, define um formato único de corpo de erro, com `Content-Type: application/problem+json`:\n\n```json\n{\n  \"type\": \"https://cockpit.test/erros/tarefa-ja-concluida\",\n  \"title\": \"Tarefa já concluída\",\n  \"status\": 409,\n  \"detail\": \"A tarefa 42 foi concluída em 10/11 às 10:02.\",\n  \"instance\": \"/tarefas/42/conclusao\"\n}\n```\n\n| Campo | O que é | Quem usa |\n|---|---|---|\n| `type` | URI que identifica o **tipo** do problema. Estável | O código do cliente, para decidir |\n| `title` | Resumo curto do tipo, igual para todas as ocorrências | Gente |\n| `status` | O mesmo código HTTP da resposta | Conveniência |\n| `detail` | Explicação **desta** ocorrência | Gente |\n| `instance` | URI que identifica esta ocorrência | Suporte e log |\n\nVocê pode acrescentar campos próprios. Os dois mais úteis: uma lista `erros` com campo e mensagem para validação de formulário, e um `traceId` para achar o log.\n\n### A regra que faz o padrão valer\n\nO cliente decide pelo **`type`** (ou por um código estável), **nunca** pelo texto de `title` ou `detail`. Texto muda: alguém corrige um acento, traduz, melhora a frase. Se o front faz `if (mensagem.includes('já concluída'))`, uma revisão de texto vira bug.\n\nOutra regra: `detail` é para o usuário da API, não para depuração. Nada de *stack trace*, SQL ou nome de tabela. Isso vai para o log, ligado pelo `traceId`.\n\n### OpenAPI: o contrato\n\n*OpenAPI* é um documento (JSON ou YAML) que descreve a API: caminhos, métodos, parâmetros, formato de cada corpo e de cada resposta, inclusive as de erro. O Swagger UI é só uma tela que lê esse documento.\n\nO valor real não é a tela bonita. É **gerar o cliente tipado**: uma ferramenta lê o documento e produz os tipos TypeScript, ou as funções de chamada, que o front usa.\n\n```text\nback muda o DTO -> openapi.json muda -> cliente é gerado de novo -> o front não compila\n```\n\nRenomeou um campo na API? O erro aparece no `tsc` do front, antes de ir para o ar. É o mais perto que a web chega da invalidação de dependentes do Oracle.\n\n### Duas formas de manter\n\n- **Code-first:** o documento sai do código (no Nest, dos decorators dos DTOs e controllers). Barato e sempre sincronizado com o que roda. Risco: o contrato muda sem ninguém perceber, como efeito de um refactor.\n- **Contract-first:** escreve-se o documento antes, e back e front implementam a partir dele. Bom para times separados ou API pública. Custo: mais uma coisa para manter.\n\n### Opinião de sênior\n\nPara um time só com monorepo, code-first com o `openapi.json` **versionado no repositório** e conferido no CI: toda mudança de contrato aparece no diff do PR e alguém precisa olhar. Sem essa conferência, o OpenAPI vira documentação que mente. E documente os erros de cada rota: contrato que só descreve o caminho feliz deixa o front adivinhando a metade difícil.",
+      "naPratica": "O Cockpit tem um `openapi.json` na raiz do app. O filtro de exceção global devolve problem details para qualquer erro, e o front tem um único tratador que lê `type` e `erros`. No review, mudança no `openapi.json` é o sinal para perguntar se é compatível (http-09).",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma resposta de erro em problem details montada com `Response.json`. O que o cliente enxerga?",
+          "codigo": "const problema = {\n  type: 'https://cockpit.test/erros/tarefa-ja-concluida',\n  title: 'Tarefa já concluída',\n  status: 409,\n  detail: 'A tarefa 42 foi concluída às 10:02.',\n  instance: '/tarefas/42/conclusao',\n};\nconst r = Response.json(problema, {\n  status: 409,\n  headers: { 'content-type': 'application/problem+json' },\n});\n\nconsole.log(r.status, r.ok);\nconsole.log(r.headers.get('content-type'));\nconst corpo = await r.json();\nconsole.log(corpo.type.split('/').at(-1));\nconsole.log(corpo.status === r.status);\n",
+          "saida": "409 false\napplication/problem+json\ntarefa-ja-concluida\ntrue\n",
+          "explicacao": "O status da resposta é 409 e `ok` é `false`. O `Content-Type` informado substituiu o `application/json` padrão do `Response.json`, e é por ele que um cliente genérico reconhece o formato. O código decide pelo fim do `type`, um identificador estável, e não pelo texto. O campo `status` do corpo repete o da resposta: está lá por conveniência, para quem só recebeu o corpo."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Estes tipos foram gerados a partir do OpenAPI. O contrato diz que `concluidaEm` pode ser nulo. O código do front compila?",
+          "codigo": "interface Tarefa {\n  id: number;\n  titulo: string;\n  concluidaEm: string | null;\n}\n\nfunction dataDeConclusao(t: Tarefa): string {\n  return t.concluidaEm.slice(0, 10);\n}\n",
+          "compila": false,
+          "erro": "TS18047",
+          "linha": 8,
+          "explicacao": "O contrato declara que o campo pode ser `null`, e o tipo gerado carrega essa informação até o front. O compilador recusa o `.slice` sem teste de nulo (`TS18047: 't.concluidaEm' is possibly 'null'`). Sem cliente tipado, esse erro só apareceria na tela do usuário, na primeira tarefa ainda aberta."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No front, como decidir que o erro recebido é \"tarefa já concluída\" para mostrar um aviso específico?",
+          "opcoes": [
+            "`if (erro.detail.includes('já foi concluída'))`",
+            "`if (erro.status === 409)`",
+            "`if (erro.type.endsWith('/tarefa-ja-concluida'))`",
+            "`if (erro.title === 'Tarefa já concluída')`"
+          ],
+          "correta": 2,
+          "explicacao": "`type` é o identificador estável do tipo de problema. `detail` e `title` são texto para gente e mudam em qualquer revisão de redação. Só o status não basta: várias regras diferentes respondem 409, e cada uma pode pedir um tratamento."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual é o maior valor de manter um OpenAPI fiel à API?",
+          "opcoes": [
+            "A tela do Swagger para testar endpoints à mão",
+            "Gerar o cliente tipado: mudança incompatível no back vira erro de compilação no front",
+            "Deixar a API mais rápida, porque o formato é validado antes",
+            "Dispensar testes de integração entre front e back"
+          ],
+          "correta": 1,
+          "explicacao": "O Swagger UI é útil, mas é consequência. O ganho estrutural é o contrato virar tipo no consumidor, de forma que a quebra apareça no build. O documento não acelera nada em execução e não substitui teste: ele garante forma, não comportamento."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os cinco campos do problem details (RFC 9457)?",
+          "verso": "`type` (URI do tipo), `title` (resumo do tipo), `status`, `detail` (esta ocorrência) e `instance` (URI da ocorrência)."
+        },
+        {
+          "frente": "Por que o cliente decide pelo `type` e nunca pelo texto do erro?",
+          "verso": "Texto é para gente e muda em qualquer revisão ou tradução. `type` é um identificador estável, parte do contrato."
+        },
+        {
+          "frente": "Qual o ganho real do OpenAPI?",
+          "verso": "Gerar cliente tipado. Mudança de contrato no back vira erro de compilação no front, antes do deploy."
+        },
+        {
+          "frente": "Code-first × contract-first?",
+          "verso": "Code-first: documento gerado do código, barato, pode mudar sem ninguém notar. Contract-first: documento escrito antes, bom para times separados, custa manutenção."
+        },
+        {
+          "frente": "O que nunca vai no `detail` de um erro?",
+          "verso": "Stack trace, SQL, nome de tabela ou dado interno. Isso vai para o log, ligado por um `traceId`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "RFC 9457 — Problem Details for HTTP APIs",
+          "url": "https://www.rfc-editor.org/rfc/rfc9457"
+        },
+        {
+          "titulo": "NestJS — OpenAPI (Swagger)",
+          "url": "https://docs.nestjs.com/openapi/introduction"
+        }
+      ]
+    },
+    {
+      "id": "http-09",
+      "titulo": "Evoluir uma API sem quebrar: versão, expand/contract, idempotency key",
+      "minutos": 12,
+      "ponte": "Você já fez isso no banco: para renomear uma coluna usada por vinte telas, ninguém roda `RENAME COLUMN` na sexta à tarde. Cria a coluna nova, mantém as duas preenchidas (trigger ou view), migra os consumidores e só então remove a antiga. *Expand and contract* é esse mesmo roteiro com nome em inglês. Onde quebra: no banco o dicionário mostra quem depende do objeto (`ALL_DEPENDENCIES`). Numa API você não enxerga os consumidores: uma aba aberta desde ontem ainda roda o JavaScript antigo.",
+      "texto": "Uma API publicada é uma promessa. A pergunta de toda mudança é: **um cliente que não foi alterado continua funcionando?**\n\n### Compatível × incompatível\n\n| Mudança | Compatível? |\n|---|---|\n| Acrescentar campo na **resposta** | Sim |\n| Acrescentar campo **opcional** na requisição | Sim |\n| Acrescentar endpoint | Sim |\n| Remover ou renomear campo da resposta | **Não** |\n| Mudar tipo ou formato de um campo (número para string, formato de data) | **Não** |\n| Tornar obrigatório um campo da requisição | **Não** |\n| Acrescentar valor num conjunto fechado (um status novo) | **Depende** do cliente |\n| Apertar uma validação | **Não** |\n\nA linha do \"depende\" é a que pega gente experiente. Um status novo quebra o cliente que tem um `switch` sem caso padrão. Por isso existe a regra do leitor tolerante: **cliente ignora o que não conhece** e trata o valor desconhecido com um padrão.\n\n### Versionar\n\nQuando a quebra é inevitável, as duas versões convivem.\n\n- **Na URL** (`/v1/tarefas`, `/v2/tarefas`): explícito, aparece em log, fácil de rotear e de testar no navegador. É o mais comum.\n- **Em cabeçalho** (`Accept: application/vnd.cockpit.v2+json` ou um cabeçalho próprio): URL limpa, mais difícil de testar à mão e de enxergar.\n\nOpinião: versão na URL, e **o mais raramente possível**. Cada versão viva é código duplicado, teste duplicado e correção de bug em dois lugares. Versão nova é o último recurso, não o primeiro. A maior parte das mudanças se resolve com o próximo padrão.\n\n### Expand and contract em 3 deploys\n\nRenomear `titulo` para `nome`:\n\n1. **Expandir.** A API passa a **aceitar e devolver os dois** campos, com o mesmo valor. Nenhum cliente quebra.\n2. **Migrar.** Os clientes passam a usar `nome`. Você mede o uso do campo antigo (log ou métrica) até chegar a zero.\n3. **Contrair.** A API remove `titulo`.\n\nCada deploy é seguro sozinho e pode ser revertido sem afetar os outros. O custo: três entregas em vez de uma, e um período com duplicidade no código. O que você compra é nunca precisar de deploy sincronizado de front e back, que é onde as janelas de manutenção nascem. Vale para o banco também (trilha de dados, migrations).\n\nUm lembrete: mesmo com front e back no mesmo repositório, eles **não sobem no mesmo instante**. Durante o deploy há instância nova e antiga no ar, e navegador com o bundle antigo em cache.\n\n### Idempotency-Key\n\nSobra o `POST`, que não é idempotente (http-02). O padrão: o cliente gera um identificador único **por intenção** e o repete em toda tentativa.\n\n```text\nPOST /pagamentos\nIdempotency-Key: 5f1c0c1e-8a55-4f0e-9b1a-2f6f0f6f3a11\n```\n\nO servidor grava a chave junto com a resposta, na **mesma transação** do efeito. Se a chave chegar de novo, devolve a resposta guardada sem executar nada. Detalhes que separam a implementação certa da quase certa:\n\n- A chave nasce quando o usuário abre o formulário ou clica, **não** a cada tentativa.\n- Unicidade garantida por *unique constraint*, não por `SELECT` antes do `INSERT`: duas tentativas simultâneas passariam as duas pelo `SELECT`.\n- Chave repetida com corpo diferente é erro do cliente.\n- As chaves expiram (24 horas é comum).\n\nO nome `Idempotency-Key` é uma convenção muito usada e está em processo de padronização na IETF: ainda não é RFC. Use onde a duplicidade custa caro (pagamento, pedido, envio de mensagem). Em criação de rascunho, é cerimônia.",
+      "naPratica": "No Cockpit, o `openapi.json` versionado mostra no diff do PR toda mudança de contrato: é ali que se pergunta \"cliente antigo continua funcionando?\". O botão de criar tarefa que o usuário clica duas vezes é o caso real de chave de idempotência.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um cliente antigo, que só conhece `titulo`, recebe três versões da resposta. Qual delas o quebra?",
+          "codigo": "const v1 = '{\"id\":1,\"titulo\":\"estudar\"}';\nconst v2 = '{\"id\":1,\"titulo\":\"estudar\",\"prioridade\":2}';\nconst v3 = '{\"id\":1,\"nome\":\"estudar\",\"prioridade\":2}';\n\nconst clienteAntigo = (json: string): string => JSON.parse(json).titulo.toUpperCase();\n\nfor (const resposta of [v1, v2, v3]) {\n  try {\n    console.log(clienteAntigo(resposta));\n  } catch (e) {\n    console.log('quebrou:', (e as Error).name);\n  }\n}\n",
+          "saida": "ESTUDAR\nESTUDAR\nquebrou: TypeError\n",
+          "explicacao": "Na v2 entrou um campo novo e o cliente antigo nem percebeu: acrescentar na resposta é compatível. Na v3 o campo foi renomeado, `titulo` virou `undefined` e o `.toUpperCase()` estourou. Renomear é remover um campo e acrescentar outro. O expand and contract existe para a v3 só ir ao ar depois que ninguém mais lê `titulo`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `POST` com chave de idempotência. A primeira chamada é repetida por causa de um timeout. Quantos registros são criados?",
+          "codigo": "const guardadas = new Map<string, { status: number; id: number }>();\nlet criadas = 0;\n\nfunction criarTarefa(chave: string) {\n  const anterior = guardadas.get(chave);\n  if (anterior) return anterior;\n  const resposta = { status: 201, id: ++criadas };\n  guardadas.set(chave, resposta);\n  return resposta;\n}\n\nconsole.log(criarTarefa('clique-A'));\nconsole.log(criarTarefa('clique-A')); // retry\nconsole.log(criarTarefa('clique-B'));\nconsole.log(criadas);\n",
+          "saida": "{ status: 201, id: 1 }\n{ status: 201, id: 1 }\n{ status: 201, id: 2 }\n2\n",
+          "explicacao": "A repetição com a mesma chave recebeu a **mesma resposta** da primeira, sem criar nada: o cliente não distingue a tentativa original do retry, e é isso que se quer. Uma intenção nova (`clique-B`) cria outro registro. No mundo real o `Map` é uma tabela com *unique constraint* na chave, gravada na mesma transação do `INSERT` da tarefa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A API devolvia `status` com os valores `aberta` e `feita`. Você acrescenta `arquivada`. Isso é compatível?",
+          "opcoes": [
+            "Sim, sempre: acrescentar nunca quebra",
+            "Não, nunca: todo valor novo exige `/v2`",
+            "Depende: quebra o cliente que trata o conjunto como fechado e não tem caso padrão",
+            "Sim, desde que o OpenAPI seja atualizado no mesmo commit"
+          ],
+          "correta": 2,
+          "explicacao": "Acrescentar campo é compatível. Acrescentar **valor** num conjunto que o cliente considerava fechado pode cair num `switch` sem `default` ou num mapa de rótulos sem a chave. A defesa é combinar desde o início que o cliente trata valor desconhecido com um padrão, e avisar antes de publicar."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, preciso renomear o campo `titulo` para `nome` na API de tarefas. O front é nosso e está no mesmo repositório. Posso trocar nos dois lados no mesmo PR e subir?\"",
+          "pontos": [
+            "Mesmo no mesmo repositório, front e back não trocam no mesmo instante (instâncias antigas, bundle em cache, aba aberta)",
+            "Perguntou se há outro consumidor além do front (integração, app, script)",
+            "Propôs expand and contract: aceitar e devolver os dois, migrar, remover",
+            "Disse como saber a hora de remover (medir uso do campo antigo)",
+            "Reconheceu o custo (três entregas) e quando dá para simplificar"
+          ],
+          "modelo": "No mesmo PR pode, no mesmo instante não existe. Durante o deploy fica instância antiga e nova no ar, e quem está com a aba aberta roda o JavaScript de ontem: por alguns minutos, ou horas, alguém manda `titulo` para uma API que só entende `nome`. Eu faria em três passos. Primeiro a API aceita e devolve os dois campos. Depois o front passa a usar `nome`. Quando o log mostrar que ninguém mais manda `titulo`, a gente remove. São três entregas pequenas, cada uma reversível. Antes disso, confirma se só o nosso front consome essa rota. Se for uma tela interna com cinco usuários e a gente puder avisar, dá para aceitar o risco e subir junto, sabendo o que pode acontecer."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a pergunta que define se uma mudança de API é compatível?",
+          "verso": "Um cliente que não foi alterado continua funcionando? Acrescentar campo: sim. Remover, renomear, mudar tipo, tornar obrigatório: não."
+        },
+        {
+          "frente": "Quais são os 3 deploys do *expand and contract*?",
+          "verso": "Expandir (API aceita e devolve o antigo e o novo), migrar (clientes passam ao novo, mede-se o uso do antigo) e contrair (remove o antigo)."
+        },
+        {
+          "frente": "Por que front e back no mesmo PR não elimina o problema de compatibilidade?",
+          "verso": "Eles não trocam no mesmo instante: há instâncias antigas durante o deploy e navegadores com o bundle antigo aberto ou em cache."
+        },
+        {
+          "frente": "Como funciona a `Idempotency-Key`?",
+          "verso": "O cliente gera uma chave por intenção e a repete nos retries. O servidor guarda chave e resposta na transação do efeito e devolve a mesma resposta se a chave voltar."
+        },
+        {
+          "frente": "Por que criar `/v2` é o último recurso?",
+          "verso": "Cada versão viva duplica código, teste e correção de bug. A maioria das mudanças cabe em acrescentar e depois remover."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Parallel Change (expand and contract)",
+          "url": "https://martinfowler.com/bliki/ParallelChange.html"
+        },
+        {
+          "titulo": "Martin Fowler — Tolerant Reader",
+          "url": "https://martinfowler.com/bliki/TolerantReader.html"
+        },
+        {
+          "titulo": "NestJS — Versioning",
+          "url": "https://docs.nestjs.com/techniques/versioning"
+        }
+      ]
+    },
+    {
+      "id": "http-10",
+      "titulo": "REST × GraphQL × gRPC × tRPC × SSE × WebSocket: quando cada um",
+      "minutos": 12,
+      "ponte": "Você escolhe entre view, procedure com `REF CURSOR`, fila do Advanced Queuing e `DBMS_ALERT` conforme o formato da conversa: consulta sob demanda, chamada com contrato, mensagem assíncrona ou aviso empurrado. Aqui a pergunta é a mesma. A diferença é que no banco todas as opções já vêm instaladas e o DBA opera uma coisa só. Na web cada estilo traz biblioteca, ferramental e modo próprio de falhar, que o seu time vai operar.",
+      "texto": "São duas perguntas diferentes misturadas no título. Separe antes de escolher.\n\n### Pergunta 1: qual o estilo de pedido e resposta?\n\n**REST sobre JSON.** O padrão. Qualquer linguagem consome, cache HTTP funciona, a aba Network mostra tudo, todo mundo sabe ler. Custos: o front às vezes precisa de várias chamadas para montar uma tela, ou recebe campos que não usa. É a escolha quando não há motivo forte para outra.\n\n**GraphQL.** Um único endpoint e uma linguagem de consulta: o cliente pede exatamente os campos e as relações que quer. Vale quando há **muitos clientes diferentes** (web, app, parceiros) com necessidades distintas sobre o mesmo grafo de dados, e um time dedicado à API. Custos altos e pouco comentados: o cache HTTP deixa de ajudar (tudo costuma ser `POST` no mesmo endpoint), o problema N+1 se muda para os *resolvers*, uma consulta pode ser arbitrariamente cara e exige limite de profundidade e de custo, e a autorização passa a ser por campo. Erros costumam chegar com status 200 e uma lista `errors` no corpo.\n\n**gRPC.** Chamada de procedimento com contrato em arquivo `.proto`, binário (Protocol Buffers) sobre HTTP/2, com *streaming*. Rápido, tipado, com geração de código para várias linguagens. Lugar natural: **serviço falando com serviço** dentro da empresa. Custos: o navegador não fala gRPC direto (precisa de gRPC-Web e proxy), não dá para testar com `curl` simples nem ler a carga a olho.\n\n**tRPC.** Sem linguagem de esquema: o front importa os **tipos TypeScript** do back e chama funções. A tipagem de ponta a ponta sai quase de graça. A condição é dura: **os dois lados em TypeScript, no mesmo repositório, com o mesmo time**. Para qualquer consumidor fora disso, não há contrato. É acoplamento assumido.\n\n### Pergunta 2: o servidor precisa falar sem ser perguntado?\n\nAntes das duas tecnologias, a opção que quase sempre basta: ***polling***, o cliente perguntar de novo a cada N segundos. Atraso de alguns segundos aceitável e poucos usuários: comece por aqui.\n\n**SSE** (*Server-Sent Events*). Uma resposta HTTP comum que não termina: o servidor vai escrevendo eventos em texto. **Só do servidor para o cliente.** No navegador, a API `EventSource` reconecta sozinha e informa o último evento recebido. Passa por proxy e balanceador como qualquer HTTP. Custos: uma conexão aberta por cliente, e o `EventSource` não permite cabeçalho próprio, então a autenticação vai por cookie (ou você lê o stream com `fetch`). Serve para notificação, progresso de tarefa longa, painel ao vivo.\n\n**WebSocket.** Começa como HTTP e troca de protocolo (*upgrade*). Canal **bidirecional** e permanente. Serve para chat, edição colaborativa, jogo. Custos: reconexão, autenticação e reenvio são por sua conta, o estado da conexão mora numa instância (com várias instâncias você precisa de um barramento como o Redis para espalhar a mensagem), e os códigos de status e o cache do HTTP deixam de existir.\n\n### Tabela de decisão\n\n| Situação | Escolha |\n|---|---|\n| API de produto, CRUD, integração com terceiros | REST |\n| Vários clientes com telas muito diferentes sobre o mesmo grafo | GraphQL |\n| Serviço a serviço, alto volume, várias linguagens | gRPC |\n| Front e back TypeScript, mesmo repositório, time pequeno | tRPC, ou REST com cliente gerado |\n| Servidor avisa o cliente | SSE |\n| Os dois lados falam o tempo todo | WebSocket |\n\n### Opinião de sênior\n\nA escolha raramente é técnica pura: é **quem consome** e **quem opera**. REST com OpenAPI e cliente gerado (http-08) entrega a maior parte da tipagem do tRPC e continua aberto a qualquer consumidor. Tecnologia nova entra quando você consegue dizer que problema medido ela resolve e que custo de operação o time aceita em troca. \"É mais moderno\" não é argumento.",
+      "naPratica": "No Cockpit: REST com OpenAPI para tudo, e SSE só onde o servidor precisa avisar (o cronômetro de foco terminou). A pergunta de corredor mais comum é \"por que não GraphQL?\", e a resposta de sênior tem custo e condição, não preferência.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um servidor SSE mínimo escreve dois eventos e encerra. O cliente lê a resposta inteira como texto. O que sai?",
+          "codigo": "import { createServer } from 'node:http';\n\nconst server = createServer((_req, res) => {\n  res.writeHead(200, { 'content-type': 'text/event-stream' });\n  res.write('event: foco\\ndata: {\"minutos\":25}\\n\\n');\n  res.write('data: fim\\n\\n');\n  res.end();\n});\n\nserver.listen(0, '127.0.0.1', async () => {\n  const { port } = server.address() as { port: number };\n  const r = await fetch(`http://127.0.0.1:${port}/eventos`);\n  console.log(r.status, r.headers.get('content-type'));\n  const eventos = (await r.text()).trim().split('\\n\\n');\n  console.log(eventos.length);\n  console.log(eventos[0]?.split('\\n'));\n  server.close();\n});\n",
+          "saida": "200 text/event-stream\n2\n[ 'event: foco', 'data: {\"minutos\":25}' ]\n",
+          "explicacao": "SSE é HTTP comum: status 200, um `Content-Type` específico e um corpo de **texto** escrito aos poucos. Cada evento são linhas `campo: valor` e termina com uma linha em branco. Não há protocolo novo, e é por isso que passa por qualquer proxy. Num servidor real o `res.end()` não é chamado: a resposta fica aberta e o `EventSource` do navegador entrega cada evento assim que chega."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O Cockpit precisa avisar o navegador quando o cronômetro de foco termina no servidor. O navegador não manda nada por esse canal. Qual a escolha mais simples que resolve?",
+          "opcoes": [
+            "WebSocket, porque é o padrão para tempo real",
+            "SSE, porque a comunicação é só do servidor para o cliente e continua sendo HTTP",
+            "GraphQL com *subscriptions*, porque já tipa o evento",
+            "gRPC com *streaming*, porque é o mais rápido"
+          ],
+          "correta": 1,
+          "explicacao": "A conversa é de mão única. SSE cobre isso com reconexão automática e sem infraestrutura nova. WebSocket funcionaria e cobraria reconexão manual, autenticação própria e cuidado com várias instâncias, por um canal de volta que ninguém usa. As outras duas trazem uma pilha inteira para um aviso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em que cenário o tRPC deixa de ser uma boa escolha?",
+          "opcoes": [
+            "Quando o time é pequeno e faz front e back",
+            "Quando front e back estão no mesmo monorepo",
+            "Quando um parceiro externo ou um app em outra linguagem precisa consumir a API",
+            "Quando o projeto usa TypeScript em modo `strict`"
+          ],
+          "correta": 2,
+          "explicacao": "O contrato do tRPC são os tipos TypeScript do servidor, importados pelo cliente. Um consumidor em outra linguagem, ou fora do repositório, não tem o que importar. Os outros três cenários são justamente onde ele brilha."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, por que a gente não usa GraphQL no projeto novo? O front pediria só os campos que precisa e acabaria esse monte de endpoint.\"",
+          "pontos": [
+            "Reconheceu o problema real que GraphQL resolve (muitos clientes diferentes, telas que agregam dados)",
+            "Perguntou quantos consumidores existem e quão diferentes são as necessidades",
+            "Citou custos concretos: cache HTTP, N+1 nos resolvers, limite de custo de consulta, autorização por campo",
+            "Ofereceu alternativa mais barata para a dor citada (endpoint por tela, cliente gerado do OpenAPI)",
+            "Disse em que condição mudaria de opinião"
+          ],
+          "modelo": "GraphQL resolve bem um problema que a gente ainda não tem: vários clientes diferentes, web, app e parceiro, pedindo recortes distintos do mesmo dado. Hoje é um front só, do mesmo time. E ele cobra caro: o cache HTTP para de ajudar, o N+1 vai para dentro dos resolvers, qualquer consulta pode ficar pesada e precisa de limite de custo, e a autorização passa a ser campo a campo. Para a dor que você citou, eu resolveria com um endpoint desenhado para a tela que precisa agregar, e o cliente gerado do OpenAPI já dá a tipagem. Se aparecer um segundo e um terceiro consumidor com necessidades bem diferentes, eu reabro a conversa com os números na mão."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "SSE × WebSocket: qual o critério?",
+          "verso": "SSE: só o servidor fala, é HTTP comum e reconecta sozinho. WebSocket: os dois falam, protocolo próprio, reconexão e escala por sua conta."
+        },
+        {
+          "frente": "Quando GraphQL se paga?",
+          "verso": "Vários clientes com necessidades diferentes sobre o mesmo grafo de dados, e time para operar. Com um front só, o custo supera o ganho."
+        },
+        {
+          "frente": "Qual a condição para usar tRPC?",
+          "verso": "Front e back em TypeScript, mesmo repositório, mesmo time. Qualquer consumidor fora disso fica sem contrato."
+        },
+        {
+          "frente": "Por que REST continua sendo o padrão?",
+          "verso": "Qualquer linguagem consome, cache HTTP e ferramentas funcionam, todos sabem depurar. Com OpenAPI e cliente gerado, ganha tipagem de ponta a ponta."
+        },
+        {
+          "frente": "Qual a primeira opção a considerar antes de SSE ou WebSocket?",
+          "verso": "Polling: perguntar de novo a cada N segundos. Se o atraso é aceitável e há poucos usuários, basta."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Server-sent events",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events"
+        },
+        {
+          "titulo": "MDN — The WebSocket API",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API"
+        },
+        {
+          "titulo": "NestJS — Server-Sent Events",
+          "url": "https://docs.nestjs.com/techniques/server-sent-events"
+        }
+      ]
+    }
+  ]
+}

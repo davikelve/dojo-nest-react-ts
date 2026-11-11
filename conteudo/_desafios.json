@@ -1,0 +1,438 @@
+{
+  "desafios": [
+    {
+      "id": "D01",
+      "titulo": "O `await` que não esperou",
+      "fase": "f2",
+      "sintoma": "A função de importação diz \"3 tarefas importadas\", mas o banco fica vazio por alguns segundos e às vezes uma tarefa falha sem erro no log.",
+      "codigo": {
+        "linguagem": "ts",
+        "texto": "async function importar(titulos: string[]) {\n  titulos.forEach(async (t) => { await repo.criar(t); });\n  console.log(`${titulos.length} tarefas importadas`);\n}\n"
+      },
+      "dicas": [
+        "O que o `forEach` faz com o valor que a função devolve?",
+        "Uma função `async` devolve o quê?",
+        "Compare `for...of` com `Promise.all`."
+      ],
+      "aprende": "Promise, `forEach` × `for...of` × `Promise.all`, erro de Promise não tratado.",
+      "gabarito": {
+        "causa": "`forEach` ignora o valor que a função devolve. Cada volta devolve uma Promise que ninguém espera; o `console.log` roda antes das inserções, e uma Promise rejeitada vira erro não tratado.",
+        "correcao": "Em sequência, `for (const t of titulos) await repo.criar(t);`. Em paralelo, `await Promise.all(titulos.map((t) => repo.criar(t)));`. Para muitas linhas, `createMany` numa chamada só.",
+        "teste": "Um *mock* de `repo.criar` que demora (`setTimeout`) e uma asserção de que, quando `importar` termina, foi chamado N vezes e terminou N vezes."
+      }
+    },
+    {
+      "id": "D02",
+      "titulo": "O objeto que era `undefined`",
+      "fase": "f2",
+      "sintoma": "`TypeError: Cannot read properties of undefined (reading 'nome')` só para alguns usuários. `const primeiro = usuarios[0].nome;` compila sem aviso.",
+      "codigo": null,
+      "dicas": [
+        "Que opção do `tsconfig` faria o compilador reclamar?",
+        "Qual a diferença entre o tipo declarado e o valor em tempo de execução?"
+      ],
+      "aprende": "`noUncheckedIndexedAccess`, estreitamento, o tipo some na execução.",
+      "gabarito": {
+        "causa": "Sem `noUncheckedIndexedAccess`, `usuarios[0]` tem tipo `Usuario`, mas o valor pode ser `undefined` com a lista vazia. O tipo não existe em execução.",
+        "correcao": "Ligar a opção (o Cockpit já liga) e estreitar: `const u = usuarios[0]; if (!u) return ...`. Evite `usuarios[0]!`: o `!` só cala o compilador.",
+        "teste": "O caso da lista vazia."
+      }
+    },
+    {
+      "id": "D03",
+      "titulo": "O pipe esquecido",
+      "fase": "f2",
+      "sintoma": "O teste e2e de \"criar tarefa sem título devolve 400\" passa. Em produção, uma tarefa sem título entra no banco.",
+      "codigo": null,
+      "dicas": [
+        "Onde o `ValidationPipe` é registrado no `main.ts`?",
+        "E no teste?",
+        "Como fazer os dois usarem a mesma configuração?"
+      ],
+      "aprende": "Ciclo de requisição, por que o e2e precisa montar o app igual à produção.",
+      "gabarito": {
+        "causa": "O `ValidationPipe` foi registrado no teste e2e (ou o teste montou o app de outro jeito), mas não no `main.ts` — ou o contrário. O teste testou outro app.",
+        "correcao": "Uma função `configureApp(app: INestApplication)` com pipes, filtros, prefixo e versões, chamada pelo `main.ts` **e** pelo `beforeAll` do e2e.",
+        "teste": "O e2e do 400 passa a usar `configureApp`; apague o pipe dela e veja o teste falhar (controle negativo)."
+      }
+    },
+    {
+      "id": "D04",
+      "titulo": "O refresh token reutilizado",
+      "fase": "f2",
+      "sintoma": "Um atacante que roubou um refresh token antigo consegue gerar access tokens novos mesmo depois de o usuário legítimo ter renovado.",
+      "codigo": null,
+      "dicas": [
+        "O que acontece com o token antigo na rotação?",
+        "O que significa um token já usado ser apresentado de novo?",
+        "Pesquise \"refresh token reuse detection\"."
+      ],
+      "aprende": "Rotação com detecção de reuso, família de tokens, revogação.",
+      "gabarito": {
+        "causa": "A rotação emite um token novo mas não invalida o anterior, ou invalida e não reage quando o antigo aparece de novo.",
+        "correcao": "Guardar o *hash* de cada refresh token com `familyId` e `usedAt`. Ao renovar, marcar o atual como usado. Se chegar um token **já usado**, é sinal de roubo: revogar a família inteira e obrigar novo login.",
+        "teste": "E2e — renovar com o token A (recebe B); renovar de novo com A → 401; depois, renovar com B → 401 também (família revogada)."
+      }
+    },
+    {
+      "id": "D05",
+      "titulo": "O N+1 escondido",
+      "fase": "f2",
+      "sintoma": "A lista de tarefas com tags demora 2 s com 200 tarefas; com 20 era instantânea.",
+      "codigo": null,
+      "dicas": [
+        "Ligue o log de query do Prisma e conte as queries.",
+        "Onde há um laço com `await` dentro?",
+        "`include` ou uma query só."
+      ],
+      "aprende": "N+1, ler o log do ORM, `include` × `select`.",
+      "gabarito": {
+        "causa": "Buscar as tarefas e, num laço, buscar as tags de cada uma: 1 + N queries.",
+        "correcao": "`findMany({ include: { tags: { include: { tag: true } } } })` ou `select` com só os campos usados. Prisma junta em poucas queries.",
+        "teste": "Contar as queries pelo evento de log do Prisma num teste de integração e afirmar um número fixo, que não cresce com N."
+      }
+    },
+    {
+      "id": "D06",
+      "titulo": "A corrida da ordenação",
+      "fase": "f2",
+      "sintoma": "Arrastando duas tarefas ao mesmo tempo em duas abas, elas ficam com a mesma posição e a ordem \"pula\".",
+      "codigo": null,
+      "dicas": [
+        "Duas transações leram a mesma posição vizinha?",
+        "Que restrição do banco impediria o empate?",
+        "E se der empate mesmo assim: como desempatar?"
+      ],
+      "aprende": "Concorrência, restrição única, lock otimista — você já sabe isso no Oracle.",
+      "gabarito": {
+        "causa": "Duas transações leem as mesmas posições vizinhas e gravam a mesma posição fracionária.",
+        "correcao": "Restrição única em `(workspaceId, position)`; ao receber violação (`P2002`), recalcular e tentar de novo uma vez; se a precisão ficar curta, rebalancear as posições do grupo. Alternativa: lock otimista com coluna `version`.",
+        "teste": "Duas chamadas em `Promise.all` para a mesma posição; afirmar posições distintas e ordem estável."
+      }
+    },
+    {
+      "id": "D07",
+      "titulo": "O laço infinito",
+      "fase": "f2",
+      "sintoma": "A tela de Hoje dispara centenas de requisições por segundo.",
+      "codigo": {
+        "linguagem": "tsx",
+        "texto": "const [filtros, setFiltros] = useState({ data: hoje });\nuseEffect(() => { buscar({ ...filtros }).then(setTarefas); }, [{ ...filtros }]);\n"
+      },
+      "dicas": [
+        "Como o React compara as dependências?",
+        "Um objeto novo é igual ao anterior?",
+        "Esse efeito precisava existir, com o TanStack Query no projeto?"
+      ],
+      "aprende": "Igualdade por referência, dependências, \"You Might Not Need an Effect\".",
+      "gabarito": {
+        "causa": "`[{ ...filtros }]` cria um objeto novo a cada renderização; o React compara por referência, vê mudança, roda o efeito, que chama `setTarefas`, que renderiza de novo.",
+        "correcao": "Não usar efeito para buscar dado: `useQuery({ queryKey: taskKeys.list(filtros), queryFn })`. Se precisasse de efeito, a dependência seria `filtros.data` (primitivo).",
+        "teste": "Com MSW, contar as requisições depois da montagem: exatamente 1."
+      }
+    },
+    {
+      "id": "D08",
+      "titulo": "O CORS que só falha no navegador",
+      "fase": "f2",
+      "sintoma": "O login funciona no Swagger e no Insomnia; no front dá erro de CORS, mas só no `POST /auth/refresh`.",
+      "codigo": null,
+      "dicas": [
+        "O que é uma requisição de *preflight*?",
+        "O que muda quando a requisição leva cookie?",
+        "`Access-Control-Allow-Origin: *` funciona com credenciais?"
+      ],
+      "aprende": "CORS de verdade, credenciais, *preflight*.",
+      "gabarito": {
+        "causa": "Com cookie, o navegador exige `Access-Control-Allow-Credentials: true` e uma origem explícita (o `*` é recusado). O `POST` com `Content-Type: application/json` dispara *preflight* (`OPTIONS`).",
+        "correcao": "`app.enableCors({ origin: [config.webOrigin], credentials: true })` e, no front, `credentials: 'include'` no `fetch` do refresh.",
+        "teste": "E2e com cabeçalho `Origin` conferindo os cabeçalhos da resposta do `OPTIONS`."
+      }
+    },
+    {
+      "id": "D09",
+      "titulo": "O carry-over que rodou às 21h",
+      "fase": "f3",
+      "sintoma": "As tarefas não concluídas passam para o dia seguinte às 21h, e não à meia-noite.",
+      "codigo": null,
+      "dicas": [
+        "Em que fuso o servidor roda?",
+        "21h em Fortaleza é que horas em UTC?",
+        "Meia-noite de quem?"
+      ],
+      "aprende": "Fuso do usuário × do servidor, cron por fuso, guardar `date` × `timestamptz`.",
+      "gabarito": {
+        "causa": "O cron roda em UTC no servidor. Meia-noite UTC = 21h em Fortaleza (UTC−3).",
+        "correcao": "O fuso é do **usuário** (`User.timezone`). Um cron de hora em hora seleciona os usuários cuja meia-noite local acabou de passar e processa só esses. A data do plano é `date` calculada no fuso do usuário.",
+        "teste": "Relógio falso em `03:00Z` processa quem está em UTC−3 e não processa quem está em UTC+1."
+      }
+    },
+    {
+      "id": "D10",
+      "titulo": "A lista que não atualiza",
+      "fase": "f3",
+      "sintoma": "Depois de criar uma tarefa, ela só aparece na lista ao recarregar.",
+      "codigo": null,
+      "dicas": [
+        "Qual query key a mutação invalida?",
+        "Qual query key a lista usa?",
+        "Como centralizar as chaves para isso não acontecer de novo?"
+      ],
+      "aprende": "Fábrica de query keys, invalidação por prefixo.",
+      "gabarito": {
+        "causa": "A mutação invalida `['tasks', 'list']` e a tela usa `['task', 'today', data]` — chaves digitadas à mão, divergentes.",
+        "correcao": "Fábrica de chaves (`taskKeys.all`, `taskKeys.list(f)`, `taskKeys.today(d)`) e invalidar pelo prefixo `taskKeys.all`.",
+        "teste": "Componente com MSW: criar e esperar o item novo na lista sem recarregar."
+      }
+    },
+    {
+      "id": "D11",
+      "titulo": "O timer congelado",
+      "fase": "f3",
+      "sintoma": "O timer de foco mostra 00:01 e para, embora o `setInterval` esteja rodando.",
+      "codigo": null,
+      "dicas": [
+        "Que valor de `segundos` a função do `setInterval` enxerga?",
+        "Quando ela foi criada?",
+        "Forma funcional do `setState` ou `useRef`."
+      ],
+      "aprende": "Closure, *stale closure*, `useRef`.",
+      "gabarito": {
+        "causa": "O `setInterval` foi criado na primeira renderização e a função dele \"lembra\" `segundos = 0`. `setSegundos(segundos + 1)` grava sempre 1.",
+        "correcao": "`setSegundos((s) => s + 1)`, ou guardar o instante de início e calcular `agora - inicio` a cada tique (mais correto: aba em segundo plano atrasa o intervalo).",
+        "teste": "`vi.useFakeTimers()`, avançar 3 s, ver 00:03."
+      }
+    },
+    {
+      "id": "D12",
+      "titulo": "As duas sessões de foco",
+      "fase": "f3",
+      "sintoma": "Clicando rápido duas vezes em \"Iniciar foco\", nascem duas sessões ativas.",
+      "codigo": null,
+      "dicas": [
+        "A checagem \"já existe sessão ativa?\" e a inserção são atômicas?",
+        "Quem é o guardião de verdade da regra: o código ou o banco?"
+      ],
+      "aprende": "Índice único parcial, condição de corrida, idempotência no clique.",
+      "gabarito": {
+        "causa": "\"checar se existe\" e \"inserir\" são dois comandos; dois cliques entram entre eles.",
+        "correcao": "O índice único parcial (`WHERE \"endedAt\" IS NULL`, Sprint 6) é o guardião; tratar `P2002` como 409. No front, desabilitar o botão durante a mutação (conforto, não garantia).",
+        "teste": "E2e com duas chamadas simultâneas: uma 201 e uma 409."
+      }
+    },
+    {
+      "id": "D13",
+      "titulo": "A delegação órfã",
+      "fase": "f3",
+      "sintoma": "Ao excluir uma pessoa, as delegações dela somem da tela, mas os relatórios contam errado.",
+      "codigo": null,
+      "dicas": [
+        "O que o `onDelete` está fazendo?",
+        "Exclusão lógica ou física para pessoa?",
+        "Os filtros de \"não excluído\" estão em todas as consultas?"
+      ],
+      "aprende": "Integridade referencial, exclusão lógica e o custo dela.",
+      "gabarito": {
+        "causa": "`onDelete: Cascade` apagou as delegações junto com a pessoa, ou a exclusão lógica não é filtrada nos relatórios.",
+        "correcao": "Pessoa com exclusão lógica (`deletedAt`) e o filtro em todas as consultas (um método de repositório ou uma extensão do Prisma). `onDelete: Restrict` impede apagar fisicamente com delegação viva.",
+        "teste": "Excluir a pessoa e conferir que o relatório conta como antes."
+      }
+    },
+    {
+      "id": "D14",
+      "titulo": "O formulário que perde o digitado",
+      "fase": "f3",
+      "sintoma": "Na pauta do 1:1, ao remover o item 2, o texto do item 3 aparece no lugar errado.",
+      "codigo": null,
+      "dicas": [
+        "Qual `key` os itens usam?",
+        "O que o React faz quando a `key` é o índice e um item sai do meio?"
+      ],
+      "aprende": "`key` estável, `useFieldArray` e o `id` dele.",
+      "gabarito": {
+        "causa": "`key={index}`: ao remover o item 2, o item 3 vira o índice 2 e herda o estado interno do componente antigo.",
+        "correcao": "`key={field.id}` (o `useFieldArray` gera o `id`).",
+        "teste": "Preencher 3 itens, remover o do meio, conferir os textos."
+      }
+    },
+    {
+      "id": "D15",
+      "titulo": "A paleta que rouba o foco",
+      "fase": "f3",
+      "sintoma": "Ao fechar a paleta de comandos com Esc, o foco vai para o topo da página; usuário de teclado se perde.",
+      "codigo": null,
+      "dicas": [
+        "Para onde o foco deveria voltar?",
+        "Quem guarda o elemento que tinha o foco antes?"
+      ],
+      "aprende": "Gestão de foco, diálogos acessíveis.",
+      "gabarito": {
+        "causa": "O diálogo foi aberto sem guardar o elemento que tinha o foco, ou foi desmontado antes de devolver.",
+        "correcao": "Usar o `Dialog` do Radix/shadcn, que guarda e devolve o foco; se for próprio, guardar `document.activeElement` ao abrir e chamar `.focus()` nele ao fechar.",
+        "teste": "Testing Library — focar um botão, abrir com o atalho, `Esc`, afirmar `toHaveFocus()` no botão."
+      }
+    },
+    {
+      "id": "D16",
+      "titulo": "A lista que trava ao digitar",
+      "fase": "f3",
+      "sintoma": "Digitar na busca da Inbox com 3.000 tarefas fica lento: cada letra demora.",
+      "codigo": null,
+      "dicas": [
+        "O que o Profiler mostra renderizando a cada tecla?",
+        "O filtro roda em toda renderização?",
+        "`useDeferredValue`, `memo` ou virtualização: qual resolve **este** caso, medindo?"
+      ],
+      "aprende": "Medir antes de otimizar, `useDeferredValue`, virtualização.",
+      "gabarito": {
+        "causa": "Cada tecla filtra 3.000 itens e renderiza todos.",
+        "correcao": "`useDeferredValue(busca)` para a digitação não esperar a lista; `memo` no item; se ainda pesar, virtualizar (TanStack Virtual).",
+        "teste": "Registre o antes e o depois do Profiler no PR (performance se prova com número)."
+      }
+    },
+    {
+      "id": "D17",
+      "titulo": "O lembrete duplicado",
+      "fase": "f4",
+      "sintoma": "Depois de um *deploy*, alguns usuários receberam o mesmo lembrete duas vezes.",
+      "codigo": null,
+      "dicas": [
+        "O que acontece com um *job* que estava em execução quando o processo morreu?",
+        "O *job* tem um id determinístico?",
+        "O efeito dele é idempotente?"
+      ],
+      "aprende": "Entrega \"pelo menos uma vez\", idempotência, `jobId`.",
+      "gabarito": {
+        "causa": "Filas entregam \"pelo menos uma vez\": o *job* em andamento no *deploy* volta para a fila e roda de novo.",
+        "correcao": "`jobId` determinístico (`reminder:${taskId}:${data}`) para não enfileirar duas vezes, e efeito idempotente: gravar `sentAt` com `UPDATE ... WHERE sentAt IS NULL` e só enviar se uma linha mudou.",
+        "teste": "Processar o mesmo *job* duas vezes e afirmar um único envio."
+      }
+    },
+    {
+      "id": "D18",
+      "titulo": "O cache que mente",
+      "fase": "f4",
+      "sintoma": "A revisão semanal mostra 10 tarefas concluídas, mas você concluiu 12.",
+      "codigo": null,
+      "dicas": [
+        "Quando o cache é invalidado?",
+        "Toda forma de concluir tarefa emite o evento?",
+        "E a conclusão em lote?"
+      ],
+      "aprende": "Invalidação de cache, eventos como contrato.",
+      "gabarito": {
+        "causa": "A conclusão em lote usa `updateMany` e não emite o evento que invalida o cache.",
+        "correcao": "Todo caminho que muda tarefa passa pelo mesmo método de domínio que emite o evento; ou invalidar por versão (chave com o `updatedAt` máximo).",
+        "teste": "Concluir em lote e conferir a revisão semanal."
+      }
+    },
+    {
+      "id": "D19",
+      "titulo": "Funciona na minha máquina",
+      "fase": "f4",
+      "sintoma": "A API sobe localmente e cai no Render na partida, com `PrismaClientInitializationError`.",
+      "codigo": null,
+      "dicas": [
+        "A `DATABASE_URL` de produção usa o *pooler* do Neon?",
+        "As migrations rodaram (`migrate deploy`) antes da partida?",
+        "O binário do Prisma é o da plataforma certa?"
+      ],
+      "aprende": "Paridade de ambientes, migrations no deploy, 12 fatores.",
+      "gabarito": {
+        "causa": "`DATABASE_URL` sem o *pooler*/`sslmode`; migrations não rodadas no deploy; binário do Prisma gerado para Windows.",
+        "correcao": "Comando de partida `prisma migrate deploy && node dist/main.js`, `generate` no build da plataforma, `binaryTargets` corretos se precisar, variáveis conferidas pela validação de config na partida.",
+        "teste": "Subir a imagem Docker localmente com as variáveis de produção (sem os segredos reais)."
+      }
+    },
+    {
+      "id": "D20",
+      "titulo": "O segredo no log",
+      "fase": "f4",
+      "sintoma": "Procurando um erro no Sentry, você encontra o corpo do login com a senha em texto puro.",
+      "codigo": null,
+      "dicas": [
+        "Quem loga o corpo da requisição?",
+        "O pino tem `redact`?",
+        "O Sentry tem `beforeSend`?"
+      ],
+      "aprende": "Dados sensíveis em log, LGPD, `redact`.",
+      "gabarito": {
+        "causa": "Um interceptor ou o pino loga `req.body` inteiro; o Sentry envia o corpo junto.",
+        "correcao": "`redact: ['req.body.password', 'req.headers.authorization', 'req.headers.cookie']` no pino; `beforeSend` no Sentry removendo os mesmos campos. Nunca logar corpo de rota de autenticação.",
+        "teste": "Teste do logger afirmando `[Redacted]` na saída."
+      }
+    },
+    {
+      "id": "D21",
+      "titulo": "O código da IA que passou nos testes",
+      "fase": "f4",
+      "sintoma": "A feature de *tags* populares gerada por IA passa em todos os testes, mas conta tags de artigos excluídos e de outros usuários privados.",
+      "codigo": null,
+      "dicas": [
+        "Os testes cobrem os casos de canto, ou só o caminho feliz?",
+        "Que filtros a consulta deveria ter?",
+        "Quem escreveu os testes?"
+      ],
+      "aprende": "Revisar código gerado, teste que confirma a implementação em vez da regra.",
+      "gabarito": {
+        "causa": "Os testes foram escritos a partir da implementação (confirmam o que o código faz) e não a partir da regra; não há caso com artigo excluído nem com artigo de outro usuário.",
+        "correcao": "Escrever primeiro os casos da regra (excluído, privado, outro usuário), ver falhar, corrigir a consulta com os filtros.",
+        "teste": "Teste de IA revisa-se com mais rigor que o código."
+      }
+    },
+    {
+      "id": "D22",
+      "titulo": "O conflito de três dias",
+      "fase": "f4",
+      "sintoma": "Uma branch aberta há três dias tem 14 conflitos com a `main`.",
+      "codigo": null,
+      "dicas": [
+        "Por que a branch ficou três dias aberta?",
+        "`rebase` ou `merge` aqui?",
+        "Como evitar: PR pequeno e integração diária."
+      ],
+      "aprende": "Git na prática, *trunk-based development*, tamanho de PR.",
+      "gabarito": {
+        "causa": "Branch longa e grande.",
+        "correcao": "`git fetch`, `git rebase origin/main` resolvendo commit a commit (ou `merge` se a branch já é compartilhada), rodar testes, abrir PR.",
+        "teste": "PR de no máximo 1 dia, integrar com a `main` todo dia, *feature flag* para o que não está pronto."
+      }
+    },
+    {
+      "id": "D23",
+      "titulo": "A rota que cai com carga",
+      "fase": "f4",
+      "sintoma": "Com 200 requisições simultâneas no plano do dia, a API começa a responder 500 com \"too many connections\".",
+      "codigo": null,
+      "dicas": [
+        "Quantas conexões o Prisma abre?",
+        "Qual o limite do Neon no plano gratuito?",
+        "*Pooler* e `connection_limit`."
+      ],
+      "aprende": "Pool de conexões — você conhece isso das sessões do Oracle.",
+      "gabarito": {
+        "causa": "Cada instância do Prisma abre um pool; o plano gratuito do Neon limita conexões diretas.",
+        "correcao": "URL com o *pooler* do Neon (PgBouncer) para a aplicação e a URL direta só para migrations; `connection_limit` ajustado; uma única instância de `PrismaService`.",
+        "teste": "`autocannon` antes e depois, números no README."
+      }
+    },
+    {
+      "id": "D24",
+      "titulo": "O deploy que quebrou o cliente",
+      "fase": "f4",
+      "sintoma": "Depois de renomear um campo na API, o front antigo, ainda aberto no navegador dos usuários, quebra.",
+      "codigo": null,
+      "dicas": [
+        "A mudança é compatível com o cliente anterior?",
+        "Como renomear em duas etapas?",
+        "Versionar a API ou expandir e contrair?"
+      ],
+      "aprende": "Compatibilidade de contrato, *expand and contract*, deploy sem quebrar.",
+      "gabarito": {
+        "causa": "Renomear campo é mudança incompatível; o front antigo continua aberto.",
+        "correcao": "*expand and contract*: (1) a API devolve os dois campos; (2) publica o front novo; (3) depois de um tempo, remove o antigo. O contrato OpenAPI com `deprecated: true` documenta.",
+        "teste": "Um teste de contrato que falha se um campo publicado sumir sem passar por `deprecated`."
+      }
+    }
+  ]
+}

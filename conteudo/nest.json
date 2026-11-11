@@ -1,0 +1,1688 @@
+{
+  "licoes": [
+    {
+      "id": "nest-01",
+      "titulo": "O que o Nest é: módulos e a árvore da aplicação",
+      "minutos": 9,
+      "ponte": "Um módulo do Nest é parente do *package* do PL/SQL: a lista `exports` faz o papel da *spec* (o que os outros enxergam) e o resto fica no *body*, privado. Onde a analogia quebra: no banco qualquer schema com *grant* chama o package. No Nest, além de o dono exportar, quem usa precisa declarar o módulo em `imports`. A dependência fica escrita dos dois lados.",
+      "texto": "O Nest é um *framework* (estrutura pronta) de back-end que roda sobre o Node. Para falar HTTP ele usa o Express por baixo. O que ele acrescenta é **organização**: onde fica cada coisa e quem pode usar o quê. A unidade dessa organização é o **módulo**.\n\nUm módulo é uma classe vazia com o decorator `@Module`. O que importa é o objeto passado ao decorator, com quatro listas:\n\n| lista | o que declara |\n|---|---|\n| `providers` | classes que o Nest instancia e entrega a quem pedir (services, repositórios). Privadas do módulo por padrão |\n| `controllers` | classes que recebem requisições HTTP |\n| `imports` | outros módulos cujos `exports` este módulo quer usar |\n| `exports` | a parte dos `providers` que os módulos importadores podem usar |\n\n```ts\n// tarefas.module.ts (ilustrativo)\n@Module({\n  imports: [PrismaModule],\n  controllers: [TarefasController],\n  providers: [TarefasService, CalculoPrazo],\n  exports: [TarefasService],\n})\nexport class TarefasModule {}\n```\n\n### A árvore é montada na partida\n\n`NestFactory.create(AppModule)` começa no módulo raiz, segue os `imports` de cada módulo e monta um grafo. Para cada módulo ele cria os providers e os controllers. Só depois de tudo instanciado a aplicação começa a ouvir a porta. A consequência é boa: erro de montagem (provider faltando, import esquecido) derruba a **partida**, com mensagem clara, e não a primeira requisição de um usuário.\n\n### As regras de visibilidade\n\n- Um provider só é visto dentro do próprio módulo, a não ser que esteja em `exports`.\n- **`exports` não é transitivo.** Se `PlanoModule` importa `TarefasModule`, e `TarefasModule` importa `PrismaModule`, o `PlanoModule` não enxerga o `PrismaService`. Ou ele importa o `PrismaModule`, ou o `TarefasModule` reexporta (um módulo pode aparecer em `exports`).\n- `@Global()` torna os `exports` de um módulo visíveis para todos, sem `imports`. No Cockpit o `PrismaModule` é global. Reserve isso para infraestrutura (banco, configuração, log). Módulo de negócio global esconde dependência, e dependência escondida é o que torna um sistema difícil de mexer.\n- Cada módulo é instanciado **uma vez**. Importar o `PrismaModule` em dez lugares não cria dez `PrismaService`.\n\n### A armadilha clássica\n\nPrecisar do `TarefasService` em outro módulo e, em vez de exportar e importar, colocar a classe de novo em `providers` do segundo módulo. Compila e sobe. Só que agora existem **duas instâncias**, uma por módulo, cada uma com as suas dependências e o seu estado. O certo é um dono só: o módulo dono exporta, os outros importam o módulo.\n\n### Como dividir\n\nDivida por **assunto de negócio** (tarefas, plano do dia, foco, autenticação), não por camada técnica (uma pasta de controllers, outra de services). Um bom teste: lendo só o `exports` de um módulo, você entende o que ele oferece. Se a lista de `exports` tem tudo o que está em `providers`, o módulo não está encapsulando nada.",
+      "naPratica": "No Cockpit, `app.module.ts` é a raiz: importa `ConfigModule`, `LoggerModule` e `PrismaModule`. Cada assunto novo (tarefas, plano) entra como um módulo próprio na lista `imports` da raiz. Quando a API não sobe depois de criar um service, o primeiro lugar a olhar é `providers` e `exports` do módulo dono.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Esta é uma simulação da regra de visibilidade: um módulo enxerga os próprios providers e o que os módulos importados exportam. Preveja as quatro linhas.",
+          "codigo": "type Mod = { providers: string[]; exports: string[]; imports: Mod[] };\n\nconst prisma: Mod = { providers: ['PrismaService'], exports: ['PrismaService'], imports: [] };\nconst tarefas: Mod = {\n  providers: ['TarefasService', 'CalculoPrazo'],\n  exports: ['TarefasService'],\n  imports: [prisma],\n};\nconst plano: Mod = { providers: ['PlanoService'], exports: [], imports: [tarefas] };\n\nfunction enxerga(m: Mod, token: string): boolean {\n  return m.providers.includes(token) || m.imports.some((i) => i.exports.includes(token));\n}\n\nconsole.log(enxerga(plano, 'TarefasService'));\nconsole.log(enxerga(plano, 'CalculoPrazo'));\nconsole.log(enxerga(plano, 'PrismaService'));\nconsole.log(enxerga(tarefas, 'PrismaService'));\n",
+          "saida": "true\nfalse\nfalse\ntrue\n",
+          "explicacao": "`TarefasService` está em `exports` do módulo importado: visível. `CalculoPrazo` é provider privado de `tarefas`: invisível de fora. `PrismaService` é exportado por `prisma`, mas `plano` não importa `prisma` e `tarefas` não o reexporta: `exports` não é transitivo. Já `tarefas` importa `prisma` diretamente e enxerga. No Cockpit real o `PrismaModule` é `@Global()`, o que dispensa o import."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O `PlanoService` precisa do `TarefasService`. O desenvolvedor adicionou `TarefasService` à lista `providers` do `PlanoModule` e funcionou. Qual é o problema?",
+          "opcoes": [
+            "Nenhum: é a forma recomendada de compartilhar um service",
+            "A aplicação passa a ter duas instâncias de `TarefasService`, uma em cada módulo",
+            "O Nest lança erro na partida por provider duplicado",
+            "O `TarefasService` deixa de ser visível dentro do `TarefasModule`"
+          ],
+          "correta": 1,
+          "explicacao": "Cada módulo instancia os providers que declara. Declarar a mesma classe em dois módulos cria duas instâncias independentes, e o Nest não reclama. O caminho certo é `exports: [TarefasService]` no módulo dono e `imports: [TarefasModule]` em quem usa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em que momento o Nest descobre que um módulo esqueceu de importar outro de que um service depende?",
+          "opcoes": [
+            "Na compilação do TypeScript",
+            "Na primeira requisição que usa o service",
+            "Na partida da aplicação, ao montar a árvore de módulos",
+            "Nunca: o service recebe `undefined` em silêncio"
+          ],
+          "correta": 2,
+          "explicacao": "A árvore e todas as instâncias são montadas na partida, antes de ouvir a porta. O TypeScript não sabe nada de módulos do Nest, por isso compila. A vantagem de montar tudo na partida é falhar cedo, no deploy, e não na mão do usuário."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Desenhe a árvore do Cockpit",
+          "minutos": 10,
+          "passos": [
+            "Abra `apps/api/src/app.module.ts` e `core/prisma/prisma.module.ts`.",
+            "Em `estudo/arvore-modulos.md`, desenhe a árvore atual: raiz, módulos importados e, para cada um, o que exporta.",
+            "Acrescente em outra cor (ou com um sinal) os módulos de negócio que você imagina para o Cockpit (tarefas, plano, foco) e escreva, para cada um, um provider que ele exportaria e um que ficaria privado.",
+            "Marque qual módulo é `@Global()` e escreva em uma frase por que ele pode ser e os de negócio não devem."
+          ],
+          "prontoQuando": "O arquivo tem a árvore com raiz, pelo menos quatro módulos, a lista de exports de cada um e a frase sobre `@Global()`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as quatro listas de `@Module` e o que cada uma declara?",
+          "verso": "`providers` (o que o Nest instancia), `controllers` (quem recebe HTTP), `imports` (módulos de que dependo), `exports` (o que ofereço a quem me importa)."
+        },
+        {
+          "frente": "Por que o Nest monta todos os módulos e instâncias na partida?",
+          "verso": "Para falhar cedo: dependência faltando derruba a subida com mensagem clara, em vez de estourar na primeira requisição."
+        },
+        {
+          "frente": "`exports` é transitivo?",
+          "verso": "Não. A importa B, B importa C: A não enxerga os providers de C, a menos que B reexporte C ou C seja `@Global()`."
+        },
+        {
+          "frente": "O que acontece ao listar o mesmo service em `providers` de dois módulos?",
+          "verso": "Duas instâncias independentes, sem erro. O certo é um módulo dono que exporta, e os outros importam o módulo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Modules",
+          "url": "https://docs.nestjs.com/modules"
+        },
+        {
+          "titulo": "NestJS — First steps",
+          "url": "https://docs.nestjs.com/first-steps"
+        }
+      ]
+    },
+    {
+      "id": "nest-02",
+      "titulo": "Providers e injeção de dependência",
+      "minutos": 10,
+      "ponte": "No PL/SQL, quando um package chama outro, a ligação é pelo nome e o banco resolve na compilação: `pk_pedido` sempre fala com o `pk_estoque` que está lá. No Nest o service **não busca** a dependência: ele declara no construtor do que precisa e alguém de fora entrega. Onde a analogia quebra: como a entrega vem de fora, dá para entregar outra coisa (um falso no teste) sem tocar no service. Com package, isso exigiria recompilar outro objeto com o mesmo nome.",
+      "texto": "Um **provider** (provedor) é qualquer coisa que o Nest sabe criar e entregar: um service, um repositório, um valor de configuração. Cada provider é registrado no contêiner do módulo sob um **token** (a chave de busca). Escrever `providers: [TarefasService]` é a forma curta de:\n\n```ts\nproviders: [{ provide: TarefasService, useClass: TarefasService }]\n```\n\nO token é a própria classe, e a receita é instanciar a classe. Existem outras receitas:\n\n| receita | para quê |\n|---|---|\n| `useClass` | instanciar uma classe (pode ser diferente do token) |\n| `useValue` | entregar um valor pronto (constante, objeto falso em teste) |\n| `useFactory` + `inject` | montar o valor com uma função que recebe outros providers |\n| `useExisting` | dar um segundo nome a um provider que já existe |\n\n### Injeção pelo construtor\n\n```ts\n@Injectable()\nexport class TarefasService {\n  constructor(private readonly prisma: PrismaService) {}\n}\n```\n\nVocê nunca escreve `new TarefasService(...)`. O Nest lê o construtor, vê que o primeiro parâmetro é do tipo `PrismaService`, procura esse token no módulo e entrega a instância. Isso é **injeção de dependência** (*dependency injection*, DI): a classe diz do que precisa, e não como obter.\n\nO ganho é triplo. Você **troca a implementação** sem tocar em quem usa (um relógio fixo no teste, um envio de e-mail falso em desenvolvimento). Você **testa** o service entregando dependências falsas. E o **ciclo de vida** fica num lugar só: uma conexão de banco, criada uma vez, fechada no desligamento.\n\n### O erro que você vai ver\n\n```text\nNest can't resolve dependencies of the TarefasService (PrismaService, ?).\nPlease make sure that the argument RelogioService at index [1]\nis available in the TarefasModule module.\n```\n\nLeia assim:\n\n- **`TarefasService`**: quem o Nest não conseguiu construir.\n- **`(PrismaService, ?)`**: a lista de parâmetros do construtor. O `?` marca o que faltou. `index [1]` é o segundo parâmetro (a contagem começa em 0).\n- **`TarefasModule`**: onde o Nest procurou. A correção é quase sempre nesse módulo.\n\nAs causas, da mais comum para a mais rara:\n\n1. O provider não está em `providers` do módulo nem em `exports` de um módulo importado.\n2. O módulo dono existe e foi importado, mas esqueceu o `exports`.\n3. A classe foi importada com `import type`. O tipo some na compilação e o Nest não recebe a classe. A própria mensagem de erro do Nest 12 sugere trocar por `import` normal.\n4. Import circular entre arquivos: no momento em que o decorator roda, a classe ainda é `undefined`.\n\n### Interface não serve de token\n\nInterface não existe em tempo de execução, então não pode ser chave. Para depender de uma abstração, use um token próprio (string ou `Symbol`) e peça com `@Inject(TOKEN)` no parâmetro. Use isso quando existe mais de uma implementação de verdade. Criar interface e token para cada service \"por via das dúvidas\" só acrescenta arquivo.",
+      "naPratica": "No Cockpit, o `PrismaService` recebe o `ConfigService` pelo construtor e o `AppModule` registra o filtro global com `{ provide: APP_FILTER, useClass: ProblemDetailsFilter }`: são as duas formas (curta e longa) de provider. Saber ler o `?` da mensagem de erro resolve em um minuto um problema que costuma custar uma hora.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Injeção feita à mão, sem Nest. O service recebe o relógio de fora. O que sai?",
+          "codigo": "interface Relogio {\n  hoje(): string;\n}\nclass RelogioFixo implements Relogio {\n  hoje() {\n    return '2026-01-05';\n  }\n}\nclass TarefasService {\n  relogio: Relogio;\n  constructor(relogio: Relogio) {\n    this.relogio = relogio;\n  }\n  criar(titulo: string) {\n    return `${titulo} (criada em ${this.relogio.hoje()})`;\n  }\n}\n\nconst service = new TarefasService(new RelogioFixo());\nconsole.log(service.criar('Revisar PR'));\nconsole.log(service.relogio instanceof RelogioFixo);\n",
+          "saida": "Revisar PR (criada em 2026-01-05)\ntrue\n",
+          "explicacao": "O service não sabe qual relógio recebeu: só usa o contrato `hoje()`. Quem monta decide. No teste entra um relógio fixo e a saída fica previsível; em produção entra um que lê a data real. O Nest faz exatamente este `new TarefasService(...)` por você, escolhendo o argumento pelo token."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Sem o contêiner, quem cria o service precisa entregar a dependência. Este código compila?",
+          "codigo": "class PrismaFalso {\n  buscar(id: number) {\n    return { id, titulo: 'Estudar' };\n  }\n}\n\nclass TarefasService {\n  prisma: PrismaFalso;\n  constructor(prisma: PrismaFalso) {\n    this.prisma = prisma;\n  }\n}\n\nconst service = new TarefasService();\n",
+          "compila": false,
+          "erro": "TS2554",
+          "linha": 14,
+          "explicacao": "TS2554: esperava 1 argumento e recebeu 0. O construtor declara a dependência como obrigatória, então é impossível criar o service sem ela. No Nest quem chama o construtor é o contêiner, e a falta do argumento vira o erro `Nest can't resolve dependencies` na partida."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A API não sobe: `Nest can't resolve dependencies of the PlanoService (PrismaService, TarefasService, ?). Please make sure that the argument FocoService at index [2] is available in the PlanoModule module.` Onde você olha primeiro?",
+          "opcoes": [
+            "No construtor do `FocoService`, que deve estar com erro",
+            "No `PlanoModule`: ele não tem `FocoService` em `providers` nem importa um módulo que o exporte",
+            "No `PrismaService`, que é o primeiro da lista",
+            "No `main.ts`, porque o erro acontece na partida"
+          ],
+          "correta": 1,
+          "explicacao": "O `?` está na posição 2 (terceiro parâmetro), que é o `FocoService`, e o módulo citado é onde o Nest procurou e não achou. A correção típica é importar o `FocoModule` no `PlanoModule` e conferir que o `FocoModule` exporta o service. Os itens antes do `?` foram resolvidos sem problema."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que uma `interface` do TypeScript não pode ser usada como token de injeção?",
+          "opcoes": [
+            "Porque o Nest só aceita classes abstratas",
+            "Porque interfaces não podem ter métodos assíncronos",
+            "Porque a interface é apagada na compilação e não existe em tempo de execução",
+            "Pode, desde que a interface seja exportada"
+          ],
+          "correta": 2,
+          "explicacao": "O contêiner trabalha em tempo de execução e precisa de uma chave que exista ali: uma classe, uma string ou um `Symbol`. Interface é só anotação de tipo e some no JavaScript gerado. Para depender de abstração, cria-se um token e usa-se `@Inject(TOKEN)`."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Provoque e leia o erro de dependência",
+          "minutos": 10,
+          "passos": [
+            "No Cockpit, com a API parada, abra `core/prisma/prisma.module.ts` e comente temporariamente o `exports: [PrismaService]`.",
+            "Crie em `apps/api/src` um service de rascunho que receba `PrismaService` no construtor e registre-o em `providers` do `AppModule`.",
+            "Suba com `npm run start:dev` e copie a mensagem de erro para `estudo/erro-di.md`.",
+            "Anote, na mensagem: quem não foi construído, qual o índice do `?` e qual módulo o Nest cita.",
+            "Desfaça as duas alterações e confirme que a API sobe."
+          ],
+          "prontoQuando": "O arquivo tem a mensagem real, as três anotações, e o `git status` do Cockpit não mostra nenhuma alteração sua."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é o token de um provider?",
+          "verso": "A chave sob a qual ele é registrado no contêiner. Por padrão é a própria classe. Pode ser string ou `Symbol`, pedido com `@Inject(TOKEN)`."
+        },
+        {
+          "frente": "Como ler `Nest can't resolve dependencies of the X (A, ?)` ... `in the M module`?",
+          "verso": "X não foi construído. O `?` é o parâmetro do construtor que faltou (índice a partir de 0). M é o módulo onde procurar a correção: `providers` ou `imports`."
+        },
+        {
+          "frente": "Por que injetar pelo construtor em vez de o service criar suas dependências com `new`?",
+          "verso": "Para trocar a implementação sem mexer no service (falso em teste, outro adaptador em produção) e deixar o ciclo de vida num lugar só."
+        },
+        {
+          "frente": "`import type { PrismaService }` no arquivo de um service que o injeta: o que acontece?",
+          "verso": "O import some na compilação, o Nest não recebe a classe e a partida falha com erro de dependência. Use `import` normal para o que é injetado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Providers",
+          "url": "https://docs.nestjs.com/providers"
+        },
+        {
+          "titulo": "NestJS — Custom providers",
+          "url": "https://docs.nestjs.com/fundamentals/custom-providers"
+        },
+        {
+          "titulo": "Martin Fowler — Inversion of Control Containers and the Dependency Injection pattern",
+          "url": "https://martinfowler.com/articles/injection.html"
+        }
+      ]
+    },
+    {
+      "id": "nest-03",
+      "titulo": "DI por dentro: um mini-injetor em 40 linhas",
+      "minutos": 12,
+      "ponte": "Você já sabe que o Oracle guarda quem depende de quem (a visão de dependências do dicionário) e recompila na ordem certa. O contêiner de DI faz o mesmo trabalho com objetos: um registro de quem precisa de quem e uma rotina que constrói na ordem das dependências. Onde a analogia quebra: o banco descobre as dependências lendo o código. O JavaScript não guarda os tipos, então alguém precisa **anotar** a lista. É para isso que servem os decorators.",
+      "texto": "Injeção de dependência parece mágica até você escrever uma. Um contêiner tem três peças:\n\n1. **Registro:** um mapa de token para receita (qual classe e quais dependências).\n2. **Resolução recursiva:** para criar X, resolva primeiro cada dependência de X.\n3. **Cache de singleton:** depois de criada, a instância é guardada e reaproveitada.\n\n```ts\ntype Classe = new (...args: any[]) => object;\n\nclass Container {\n  registro = new Map<string, { classe: Classe; deps: string[] }>();\n  instancias = new Map<string, object>();\n\n  registrar(token: string, classe: Classe, deps: string[] = []) {\n    this.registro.set(token, { classe, deps });\n  }\n\n  resolver(token: string): object {\n    const pronta = this.instancias.get(token);\n    if (pronta) return pronta; // singleton\n    const item = this.registro.get(token);\n    if (!item) throw new Error(`Não sei resolver ${token}`);\n    const args = item.deps.map((d) => this.resolver(d)); // recursão\n    const nova = new item.classe(...args);\n    this.instancias.set(token, nova);\n    return nova;\n  }\n}\n```\n\nIsso é o essencial do Nest. O resto é acabamento: um contêiner por módulo, a regra de `exports`, escopos, receitas `useValue` e `useFactory`.\n\n### De onde o Nest tira a lista de dependências\n\nNo mini-injetor você escreveu `['Repo', 'Banco']` à mão. No Nest você só escreve o construtor. A diferença está no compilador. Com a opção `emitDecoratorMetadata` ligada no `tsconfig.json` (no Cockpit está), o TypeScript, ao compilar uma classe **que tem algum decorator**, grava junto dela a lista dos tipos do construtor, sob a chave `design:paramtypes`. O JavaScript gerado fica mais ou menos assim:\n\n```js\n// saída do compilador (simplificada)\nTarefasService = decorate(\n  [Injectable(), metadata('design:paramtypes', [PrismaService, RelogioService])],\n  TarefasService,\n);\n```\n\nNa partida o Nest lê essa lista e usa cada classe como token. O decorator `@Injectable()` quase não faz nada sozinho: a função principal dele é **estar ali**, para o compilador emitir os metadados.\n\nDisso saem quatro comportamentos que, sem conhecer o mecanismo, parecem arbitrários:\n\n- **Sem decorator na classe, sem metadados.** O Nest não sabe o que injetar.\n- **Parâmetro tipado com interface vira `Object`** na lista, porque interface não existe em tempo de execução. Por isso abstração pede `@Inject(TOKEN)`.\n- **`import type` apaga a classe**, e a posição fica sem token.\n- **Import circular** entre dois arquivos faz um dos tipos valer `undefined` no instante em que o decorator roda. O Nest oferece `forwardRef` para contornar, mas o conserto de verdade costuma ser extrair um terceiro service e desfazer o ciclo.\n\n### E nos testes\n\nO Vitest não usa o compilador `tsc`: quem transforma os arquivos é o Vite. No Vite 8 do projeto, o transformador lê o `tsconfig.json` e também emite `design:paramtypes`, então a injeção por tipo funciona nos testes. Em versões e configurações diferentes isso pode não valer. Se um dia um teste falhar com dependência `undefined` enquanto a aplicação sobe normalmente, suspeite primeiro do transformador.\n\n### O limite\n\nO contêiner resolve a **construção**. Ele não resolve desenho ruim: um service com nove dependências no construtor continua sendo um service que faz coisa demais, agora com um construtor confortável.",
+      "naPratica": "Quando o Nest disser que não resolve uma dependência, pense no mini-injetor: ou o token não está no registro daquele módulo, ou a lista de tipos chegou errada (interface, `import type`, ciclo). Com esse modelo na cabeça, a mensagem de erro deixa de ser um enigma.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mini-injetor, com um `console.log` a cada instância criada. O registro é feito fora de ordem de propósito. Preveja as cinco linhas.",
+          "codigo": "type Classe = new (...args: any[]) => object;\nconst registro = new Map<string, { classe: Classe; deps: string[] }>();\nconst instancias = new Map<string, object>();\n\nfunction resolver(token: string): object {\n  const pronta = instancias.get(token);\n  if (pronta) return pronta;\n  const item = registro.get(token);\n  if (!item) throw new Error(`Não sei resolver ${token}`);\n  const args = item.deps.map((d) => resolver(d));\n  console.log(`criando ${token}`);\n  const nova = new item.classe(...args);\n  instancias.set(token, nova);\n  return nova;\n}\n\nclass Banco {}\nclass Repo { banco: Banco; constructor(b: Banco) { this.banco = b; } }\nclass Servico { repo: Repo; banco: Banco; constructor(r: Repo, b: Banco) { this.repo = r; this.banco = b; } }\n\nregistro.set('Servico', { classe: Servico, deps: ['Repo', 'Banco'] });\nregistro.set('Repo', { classe: Repo, deps: ['Banco'] });\nregistro.set('Banco', { classe: Banco, deps: [] });\n\nconst s = resolver('Servico') as Servico;\nconsole.log(s.repo.banco === s.banco);\nconsole.log(resolver('Servico') === s);\n",
+          "saida": "criando Banco\ncriando Repo\ncriando Servico\ntrue\ntrue\n",
+          "explicacao": "A ordem de registro não importa: a recursão desce até quem não tem dependência (`Banco`), cria, e volta subindo. `Banco` é pedido duas vezes (pelo `Repo` e pelo `Servico`), mas é criado uma vez: o cache devolve a mesma instância, por isso `s.repo.banco === s.banco`. Pedir `Servico` de novo também devolve o mesmo objeto, sem nenhum `criando`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Agora falta registrar uma dependência. O que o injetor responde?",
+          "codigo": "type Classe = new (...args: any[]) => object;\nconst registro = new Map<string, { classe: Classe; deps: string[] }>();\n\nfunction resolver(token: string, pedidoPor = 'raiz'): object {\n  const item = registro.get(token);\n  if (!item) throw new Error(`Não resolvo ${token}, pedido por ${pedidoPor}`);\n  const args = item.deps.map((d) => resolver(d, token));\n  console.log(`criando ${token}`);\n  return new item.classe(...args);\n}\n\nclass Banco {}\nclass Repo {}\nclass Servico {}\n\nregistro.set('Banco', { classe: Banco, deps: [] });\nregistro.set('Servico', { classe: Servico, deps: ['Banco', 'Repo'] });\n\ntry {\n  resolver('Servico');\n} catch (e) {\n  console.log((e as Error).message);\n}\n",
+          "saida": "criando Banco\nNão resolvo Repo, pedido por Servico\n",
+          "explicacao": "As dependências são resolvidas na ordem do construtor. `Banco` está no registro e é criado. `Repo` não está: erro, citando quem pediu. `Servico` nunca chega a ser criado. É a versão caseira do `Nest can't resolve dependencies of the Servico (Banco, ?)`: o `?` é a posição em que a busca no registro falhou."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que uma classe sem `@Injectable()` (nem outro decorator) não consegue receber dependências pelo construtor no Nest?",
+          "opcoes": [
+            "Porque o Nest só instancia classes cujo nome termina em `Service`",
+            "Porque sem decorator o compilador não emite `design:paramtypes`, e o Nest não sabe os tipos do construtor",
+            "Porque `@Injectable()` é quem chama `new` na classe",
+            "Porque classes sem decorator são apagadas na compilação"
+          ],
+          "correta": 1,
+          "explicacao": "O TypeScript só grava os metadados de tipo em classes decoradas. `@Injectable()` existe sobretudo para disparar essa emissão. Quem chama `new` é o contêiner, lendo a lista que o compilador deixou."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`ServicoA` injeta `ServicoB` e `ServicoB` injeta `ServicoA`. Qual a melhor resposta de sênior?",
+          "opcoes": [
+            "Usar `forwardRef` nos dois lados e seguir em frente",
+            "Marcar os dois services como `@Global()`",
+            "Extrair a parte que os dois compartilham para um terceiro service e desfazer o ciclo",
+            "Trocar a injeção por `new ServicoB()` dentro do `ServicoA`"
+          ],
+          "correta": 2,
+          "explicacao": "`forwardRef` faz subir, mas o ciclo continua: os dois services não podem mais ser entendidos nem testados em separado. Dependência circular é sinal de responsabilidade mal dividida. Extrair o que é comum resolve a causa. `new` à mão joga fora o contêiner e piora o teste."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as três peças de um contêiner de DI?",
+          "verso": "Registro (token para receita), resolução recursiva das dependências e cache das instâncias (singleton)."
+        },
+        {
+          "frente": "Por que o Nest precisa de `emitDecoratorMetadata` no `tsconfig.json`?",
+          "verso": "É essa opção que faz o compilador gravar os tipos do construtor (`design:paramtypes`) nas classes decoradas. Sem isso o Nest não sabe o que injetar."
+        },
+        {
+          "frente": "O que `@Injectable()` faz de mais importante?",
+          "verso": "Estar na classe. Com um decorator presente, o compilador emite os metadados de tipo do construtor que o contêiner lê."
+        },
+        {
+          "frente": "Dependência circular entre dois services: qual o conserto de verdade?",
+          "verso": "Extrair o que os dois compartilham para um terceiro service. `forwardRef` contorna a partida, mas mantém o acoplamento."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Providers",
+          "url": "https://docs.nestjs.com/providers"
+        },
+        {
+          "titulo": "TypeScript — Decorators (Metadata)",
+          "url": "https://www.typescriptlang.org/docs/handbook/decorators.html"
+        },
+        {
+          "titulo": "NestJS — Circular dependency",
+          "url": "https://docs.nestjs.com/fundamentals/circular-dependency"
+        }
+      ]
+    },
+    {
+      "id": "nest-04",
+      "titulo": "Controllers, rotas e DTOs",
+      "minutos": 10,
+      "ponte": "No Forms bem feito, o `WHEN-BUTTON-PRESSED` só chama o package e mostra o resultado: a regra não mora no trigger. O controller é esse trigger: recebe a requisição, chama o service, devolve. O DTO lembra o *record* que descreve os parâmetros de uma procedure. Onde a analogia quebra: o banco confere o tipo de cada parâmetro na chamada. No Node, o que chega pela rede é texto, e ninguém confere nada se você não mandar.",
+      "texto": "Um **controller** é a classe que liga uma URL a um método. Os decorators dizem qual rota e de onde tirar cada argumento:\n\n```ts\n// tarefas.controller.ts (ilustrativo)\n@Controller('tarefas')\nexport class TarefasController {\n  constructor(private readonly tarefas: TarefasService) {}\n\n  @Get()\n  listar(@Query() filtro: FiltroTarefasDto) {\n    return this.tarefas.listar(filtro);\n  }\n\n  @Get(':id')\n  buscar(@Param('id') id: string) {\n    return this.tarefas.buscar(id);\n  }\n\n  @Post()\n  criar(@Body() dto: CriarTarefaDto) {\n    return this.tarefas.criar(dto);\n  }\n}\n```\n\n| decorator | de onde vem o valor |\n|---|---|\n| `@Param('id')` | do trecho variável da URL (`/tarefas/42`) |\n| `@Query()` | do que vem depois do `?` (`?feita=true&pagina=2`) |\n| `@Body()` | do corpo da requisição (JSON) |\n\nO que o método devolve vira JSON. O status padrão é 200, e 201 para `@Post`. Se o método devolve uma Promise, o Nest espera. No Cockpit há um prefixo global `api` e versão por URL, então a rota acima responde em `/api/v1/tarefas`.\n\nTudo que vem de `@Param` e `@Query` chega como **string**. O `id` de `/tarefas/42` é `'42'`. Converter e validar é assunto de nest-05.\n\n### DTO: por que classe e não interface\n\nDTO (*data transfer object*, objeto de transferência de dados) é a descrição do que entra ou sai por uma rota. Em TypeScript puro você usaria `interface`. No Nest, DTO de entrada é **classe**, e o motivo é mecânico: a interface é apagada na compilação. A classe continua existindo no JavaScript, e o Nest consegue, em tempo de execução, descobrir que o parâmetro `dto` é um `CriarTarefaDto` e entregá-lo ao pipe de validação, que lê os decorators de regra pendurados nas propriedades.\n\n```ts\nexport class CriarTarefaDto {\n  @IsString()\n  @MaxLength(120)\n  titulo: string;\n}\n```\n\nSó declarar o tipo **não valida nada**. Sem pipe de validação, `dto` é o JSON que chegou, com qualquer campo e qualquer tipo, e o TypeScript acredita na sua anotação.\n\n### Controller fino\n\nA divisão de trabalho que se sustenta:\n\n- **Controller:** traduz HTTP. Tira os dados da requisição, chama **um** método do service, devolve o resultado. Sem `if` de negócio, sem acesso ao banco.\n- **Service:** a regra. Não sabe o que é requisição, cabeçalho nem status. Recebe dados, devolve dados ou lança exceção.\n\nO critério prático: se amanhã a mesma regra precisar rodar a partir de uma fila ou de um agendamento, ela pode ser chamada sem inventar uma requisição falsa. Se não pode, tem regra no controller.\n\n### Armadilhas\n\n- Injetar o `PrismaService` direto no controller \"porque é só um select\". A regra seguinte vai morar ali.\n- Usar `@Res()` para montar a resposta à mão. Ao injetar o objeto de resposta do Express você assume o envio, e interceptors e serialização padrão deixam de agir naquela rota. Devolva o valor e deixe o Nest responder.\n- Devolver a entidade do banco inteira. O que sai pela rota também merece um DTO, ou um dia sai a coluna que não devia.",
+      "naPratica": "No Cockpit, o nome do controller e do método vira o nome da função gerada para o front (`AuthController.login` vira `authLogin`, pela `operationIdFactory` do `app.setup.ts`). Controller fino e nomes bons no back-end resultam em hooks legíveis no React.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um corpo JSON chega pela rede. O que existe em tempo de execução? Preveja as quatro linhas.",
+          "codigo": "class CriarTarefaDto {\n  titulo = '';\n}\n\nconst corpo: unknown = JSON.parse('{\"titulo\":\"Estudar\",\"admin\":true}');\n\nconsole.log(corpo instanceof CriarTarefaDto);\nconsole.log(typeof CriarTarefaDto);\n\nconst dto = Object.assign(new CriarTarefaDto(), corpo);\nconsole.log(dto instanceof CriarTarefaDto);\nconsole.log(Object.keys(dto).join(','));\n",
+          "saida": "false\nfunction\ntrue\ntitulo,admin\n",
+          "explicacao": "O resultado de `JSON.parse` é um objeto comum, não uma instância do DTO. A classe existe em tempo de execução (é uma `function`), e por isso dá para criar uma instância e copiar os dados para dentro. Repare na última linha: o campo `admin`, que ninguém declarou, veio junto. Transformar em instância não limpa nada. Quem limpa é a opção `whitelist` do `ValidationPipe`, em nest-05."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Um DTO declarado como interface, usado como se existisse em tempo de execução. Compila?",
+          "codigo": "interface CriarTarefaDto {\n  titulo: string;\n}\n\nconst corpo: unknown = { titulo: 'Estudar' };\n\nif (corpo instanceof CriarTarefaDto) {\n  console.log(corpo.titulo);\n}\n",
+          "compila": false,
+          "erro": "TS2693",
+          "linha": 7,
+          "explicacao": "TS2693: `CriarTarefaDto` só se refere a um tipo, mas está sendo usado como valor. Interface não gera nada no JavaScript, então não há o que comparar no `instanceof`. É pelo mesmo motivo que o Nest não consegue validar contra uma interface: em tempo de execução ela não existe."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A regra \"uma tarefa concluída não pode ter o título alterado\" deve ficar onde?",
+          "opcoes": [
+            "No controller, antes de chamar o service, para responder mais rápido",
+            "No DTO, com um decorator de validação",
+            "No service, que lança uma exceção quando a regra é violada",
+            "No front, desabilitando o campo"
+          ],
+          "correta": 2,
+          "explicacao": "A regra depende do estado gravado da tarefa, não do formato da requisição: é do service. O DTO valida forma (tipo, tamanho, obrigatório). O controller só traduz HTTP. Desabilitar o campo no front é usabilidade, não regra: qualquer cliente HTTP ignora."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A rota é `@Get(':id')` e o método recebe `@Param('id') id: number`, sem nenhum pipe. Chega `/tarefas/42`. Qual o valor de `typeof id` dentro do método?",
+          "opcoes": [
+            "`number`, porque o parâmetro foi tipado como `number`",
+            "`string`, porque a anotação de tipo não converte nada em tempo de execução",
+            "`undefined`, porque falta o pipe",
+            "O Nest responde 400 antes de entrar no método"
+          ],
+          "correta": 1,
+          "explicacao": "Trecho de URL é texto. A anotação `: number` é apagada na compilação e ninguém converte. Sem `ParseIntPipe` nem `ValidationPipe` com `transform`, o método recebe `'42'`, e o TypeScript, enganado, deixa você somar. O resultado é `'421'`."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Um controller de rascunho",
+          "minutos": 20,
+          "passos": [
+            "Numa branch de rascunho do Cockpit, gere um módulo com `npx nest g resource rascunho --no-spec` (escolha REST e sem CRUD) dentro de `apps/api`.",
+            "Crie um método `@Get(':id')` que devolve `{ id, tipo: typeof id }` e um `@Post()` que devolve o próprio corpo recebido.",
+            "Suba a API e chame as duas rotas (pelo navegador, pelo `/docs` ou com `curl`). Anote o `tipo` devolvido e o que acontece ao mandar um campo extra no POST.",
+            "Anote o caminho completo da rota, com prefixo e versão.",
+            "Descarte a branch."
+          ],
+          "prontoQuando": "Você tem anotado em `estudo/controller-rascunho.md` a URL completa das duas rotas, o `tipo` devolvido pelo GET e o comportamento do campo extra no POST."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que DTO de entrada no Nest é classe e não interface?",
+          "verso": "Interface é apagada na compilação. A classe existe em tempo de execução, e o pipe de validação precisa dela para saber o tipo esperado e ler as regras."
+        },
+        {
+          "frente": "De que tipo chegam os valores de `@Param` e `@Query`?",
+          "verso": "String, sempre. A anotação de tipo do parâmetro não converte nada. Conversão é trabalho de pipe."
+        },
+        {
+          "frente": "Qual o teste para saber se há regra de negócio no controller?",
+          "verso": "A mesma operação consegue ser chamada por uma fila ou por um agendamento sem inventar uma requisição falsa? Se não, a regra está no lugar errado."
+        },
+        {
+          "frente": "O que o controller faz e o que o service faz?",
+          "verso": "Controller traduz HTTP (extrai dados, chama um método, devolve). Service tem a regra e não conhece requisição nem status."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Controllers",
+          "url": "https://docs.nestjs.com/controllers"
+        },
+        {
+          "titulo": "NestJS — Validation",
+          "url": "https://docs.nestjs.com/techniques/validation"
+        }
+      ]
+    },
+    {
+      "id": "nest-05",
+      "titulo": "Pipes e validação (ValidationPipe, whitelist, transform)",
+      "minutos": 11,
+      "ponte": "A validação de entrada é a *constraint* da API: `NOT NULL`, `CHECK` e tamanho de coluna, aplicados na porta, antes de a regra rodar. Você confia nas constraints porque elas valem para qualquer programa que grave na tabela. Onde a analogia quebra: o pipe só protege quem entra por aquela rota. Ele não substitui a constraint do banco. Os dois existem juntos: o pipe dá a mensagem boa cedo, o banco garante o dado.",
+      "texto": "Um **pipe** é uma classe que recebe um argumento do handler antes de o handler rodar e faz uma de duas coisas: **transforma** o valor (texto vira número) ou **valida** e lança exceção se não servir. A exceção vira resposta 400 e o handler nem é chamado.\n\n### O ValidationPipe\n\nO pipe mais importante vem pronto e trabalha com dois pacotes: `class-validator` (os decorators de regra, como `@IsString()`) e `class-transformer` (que converte o JSON em instância da classe). O Cockpit o registra para todas as rotas em `app.setup.ts`:\n\n```ts\napp.useGlobalPipes(\n  new ValidationPipe({\n    whitelist: true,\n    forbidNonWhitelisted: true,\n    transform: true,\n  }),\n);\n```\n\n| opção | efeito |\n|---|---|\n| `whitelist` | remove do objeto toda propriedade que **não tem decorator** de validação no DTO |\n| `forbidNonWhitelisted` | em vez de remover, responde 400 dizendo qual propriedade não devia existir |\n| `transform` | entrega ao handler uma **instância** do DTO e converte tipos primitivos de `@Param` e `@Query` conforme o tipo declarado |\n\n### Por que whitelist não é opcional\n\nSem ela, um cliente manda `{ \"titulo\": \"x\", \"donoId\": \"outro-usuario\" }` e, se o service repassar o DTO para o banco, o campo extra vai junto. O nome do ataque é *mass assignment* (atribuição em massa). Com `whitelist`, só passa o que o DTO declarou com decorator.\n\nA armadilha vem do mesmo mecanismo: uma propriedade declarada no DTO **sem nenhum decorator** também é removida (ou recusada com 400). Campo sem regra de formato leva `@Allow()` ou `@IsOptional()` mais o decorator do tipo.\n\nEscolher entre remover e recusar é decisão de contrato. Recusar (`forbidNonWhitelisted`) avisa o cliente de que ele está mandando algo que não é lido, o que pega erro de digitação no nome do campo. O custo: adicionar campo no front antes do back vira erro 400. Em API com um cliente só, que você controla, recusar é a melhor escolha.\n\n### Pipes de parâmetro\n\n```ts\n@Get(':id')\nbuscar(@Param('id', ParseUUIDPipe) id: string) { ... }\n\n@Get()\nlistar(@Query('pagina', new DefaultValuePipe(1), ParseIntPipe) pagina: number) { ... }\n```\n\n`ParseIntPipe` aceita só dígitos (com sinal opcional): `'42'` vira `42`, e `'42abc'` é recusado com 400. Isso é mais rigoroso que `parseInt`, que devolveria 42. `ParseUUIDPipe` evita que um id malformado chegue ao banco e volte como erro 500.\n\n### O mesmo setup no teste e2e\n\n`useGlobalPipes` é chamado sobre a aplicação, **fora** dos módulos. Um teste que monta a aplicação a partir do `AppModule` e esquece essa chamada roda **sem validação**: o teste manda corpo inválido, a rota aceita, e o teste passa pelo motivo errado. Por isso o Cockpit concentra tudo numa função `setupApp(app)`, chamada pelo `main.ts` e pelos testes. A alternativa é registrar o pipe como provider com o token `APP_PIPE`, que acompanha o módulo.\n\n### O que o pipe não faz\n\nValida **forma**: tipo, tamanho, formato, obrigatoriedade. Não valida regra que depende do banco (título duplicado, tarefa de outro usuário). Isso é do service. O Nest 12 traz também um `StandardSchemaValidationPipe`, para quem prefere validar com esquemas (Zod e similares) em vez de classes. Confira a documentação da sua versão antes de adotar.",
+      "naPratica": "No Cockpit as três opções estão ligadas. Quando uma rota responder 400 com `property X should not exist`, o motivo é um destes: o front mandou um campo que o DTO não declara, ou o DTO declara o campo sem decorator de validação.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Simulação das duas políticas para campo não declarado. O DTO só conhece `titulo` e `prioridade`. Preveja as duas linhas.",
+          "codigo": "const declarados = ['titulo', 'prioridade'];\n\nfunction validar(corpo: Record<string, unknown>, modo: 'whitelist' | 'forbid') {\n  const extras = Object.keys(corpo).filter((k) => !declarados.includes(k));\n  if (modo === 'forbid' && extras.length > 0) {\n    return `400: property ${extras[0]} should not exist`;\n  }\n  const limpo = Object.fromEntries(\n    Object.entries(corpo).filter(([k]) => declarados.includes(k)),\n  );\n  return JSON.stringify(limpo);\n}\n\nconst corpo = { titulo: 'Estudar', prioridade: 2, donoId: 'outro-usuario' };\nconsole.log(validar(corpo, 'whitelist'));\nconsole.log(validar(corpo, 'forbid'));\n",
+          "saida": "{\"titulo\":\"Estudar\",\"prioridade\":2}\n400: property donoId should not exist\n",
+          "explicacao": "Só com `whitelist`, o campo estranho é removido em silêncio e o handler recebe o objeto limpo. Com `forbidNonWhitelisted`, a requisição é recusada e o cliente fica sabendo. Nos dois casos `donoId` não chega ao service, que é o que importa para a segurança."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Parâmetro de rota é texto. O que cada linha imprime?",
+          "codigo": "const id = '42';\n\nconsole.log(id + 1);\nconsole.log(Number(id) + 1);\nconsole.log(Number.parseInt('42abc', 10));\nconsole.log(/^-?\\d+$/.test('42abc'));\nconsole.log(Number('abc'));\n",
+          "saida": "421\n43\n42\nfalse\nNaN\n",
+          "explicacao": "`'42' + 1` concatena: `'421'`. Convertendo antes, soma. `parseInt` é tolerante e para no primeiro caractere inválido, devolvendo 42 para `'42abc'`. O `ParseIntPipe` testa o texto inteiro com uma expressão como a da quarta linha e recusa. `Number('abc')` dá `NaN`, que passa em silêncio por contas e comparações: mais um motivo para validar na porta."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Com `whitelist: true`, o DTO tem `descricao?: string;` sem nenhum decorator. O cliente manda `descricao`. O que o handler recebe?",
+          "opcoes": [
+            "A `descricao`, porque a propriedade está declarada na classe",
+            "O DTO sem `descricao`: propriedade sem decorator de validação não entra na whitelist",
+            "Um erro de compilação",
+            "A `descricao` convertida para `undefined` e depois gravada como nula"
+          ],
+          "correta": 1,
+          "explicacao": "A whitelist é montada a partir dos decorators do `class-validator`, não da declaração da propriedade (que nem existe em tempo de execução). Sem decorator, o campo é tratado como desconhecido: removido, ou recusado com 400 se `forbidNonWhitelisted` estiver ligado. A correção é `@IsOptional() @IsString()`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O teste e2e cria a aplicação com `moduleRef.createNestApplication()` e chama `app.init()`, mas não chama `setupApp(app)`. Qual o risco?",
+          "opcoes": [
+            "O teste não sobe, porque falta a porta",
+            "Nenhum: pipes globais vêm junto com o `AppModule`",
+            "A aplicação testada não tem o `ValidationPipe` (nem prefixo, nem cookies): o teste exercita um sistema diferente do de produção",
+            "Os providers deixam de ser injetados"
+          ],
+          "correta": 2,
+          "explicacao": "`useGlobalPipes`, `setGlobalPrefix` e `app.use(...)` são configurações da aplicação, feitas fora dos módulos. Sem repetir no teste, as rotas aceitam corpo inválido e respondem em outra URL. Um teste verde sobre a configuração errada não prova nada. Só o que é registrado como provider (`APP_PIPE`, `APP_FILTER`) vem com o módulo."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Veja a validação recusar",
+          "minutos": 15,
+          "passos": [
+            "Numa branch de rascunho do Cockpit, crie um DTO com `@IsString() @MaxLength(10) titulo` e uma propriedade `obs?: string` sem decorator, e uma rota `@Post()` que devolve o DTO recebido.",
+            "Chame a rota com um título de 20 caracteres e copie a resposta 400.",
+            "Chame com `{ \"titulo\": \"ok\", \"obs\": \"x\" }` e copie a resposta.",
+            "Corrija o DTO com `@IsOptional() @IsString()` em `obs` e repita a segunda chamada.",
+            "Descarte a branch."
+          ],
+          "prontoQuando": "Você tem em `estudo/validacao.md` as três respostas reais e uma frase explicando por que a segunda chamada falhou antes da correção."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `whitelist: true` faz no `ValidationPipe`?",
+          "verso": "Remove do objeto recebido toda propriedade que não tem decorator de validação no DTO. Protege contra campos injetados (mass assignment)."
+        },
+        {
+          "frente": "Por que uma propriedade declarada no DTO pode ser removida pela whitelist?",
+          "verso": "Porque a whitelist olha os decorators, não a declaração. Propriedade sem decorator é tratada como desconhecida. Use `@IsOptional()` e o decorator do tipo."
+        },
+        {
+          "frente": "Por que o e2e precisa do mesmo setup do `main.ts`?",
+          "verso": "Pipes globais, prefixo e middlewares são registrados na aplicação, fora dos módulos. Sem repetir, o teste roda contra uma API sem validação."
+        },
+        {
+          "frente": "`ParseIntPipe` com `'42abc'`: o que acontece?",
+          "verso": "Responde 400. Ele exige que o texto inteiro seja um número inteiro, ao contrário de `parseInt`, que devolveria 42."
+        },
+        {
+          "frente": "O que o pipe de validação NÃO valida?",
+          "verso": "Regra que depende de dado gravado (duplicidade, dono do registro, estado). Isso é do service. O pipe valida forma."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Pipes",
+          "url": "https://docs.nestjs.com/pipes"
+        },
+        {
+          "titulo": "NestJS — Validation",
+          "url": "https://docs.nestjs.com/techniques/validation"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Mass Assignment",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
+        }
+      ]
+    },
+    {
+      "id": "nest-06",
+      "titulo": "Guards: autenticação e autorização",
+      "minutos": 11,
+      "ponte": "No banco, quem conecta já está identificado (o `USER` da sessão) e o que ele pode fazer vem de *grants* e *roles*: o próprio Oracle barra. Numa API web, a aplicação conecta no banco com **um** usuário de serviço para todo mundo. O banco não sabe mais quem é a pessoa. Identificar e autorizar passa a ser trabalho do seu código, a cada requisição, e o lugar desse trabalho no Nest é o guard.",
+      "texto": "Um **guard** (guarda) responde a uma pergunta só: **esta requisição entra?** É uma classe com o método `canActivate(context)`, que devolve `true` ou `false` (ou uma Promise disso). Ele roda depois dos middlewares e **antes** de interceptors, pipes e handler.\n\n- `true`: segue.\n- `false`: o Nest responde **403**.\n- Exceção lançada: vira a resposta correspondente. Para 401, lance `UnauthorizedException`.\n\n### 401 e 403 não são sinônimos\n\n| status | significa | o cliente deve |\n|---|---|---|\n| **401** Unauthorized | não sei quem você é (sem credencial, token inválido ou vencido) | autenticar de novo |\n| **403** Forbidden | sei quem você é, e você não pode fazer isto | desistir: repetir não adianta |\n\nO front depende dessa diferença: no 401 ele tenta renovar o token ou manda para o login. No 403 ele mostra \"sem permissão\". Trocar um pelo outro produz tela de login em laço ou usuário preso numa página de erro.\n\n### Fechado por padrão\n\nO desenho frágil é pôr `@UseGuards(AuthGuard)` em cada controller: a rota nova que esquecer o decorator nasce aberta. O desenho robusto é o inverso. O guard de autenticação é **global**, e a rota pública é que se declara:\n\n```ts\n// ilustrativo\nexport const IS_PUBLIC = 'isPublic';\nexport const Public = () => SetMetadata(IS_PUBLIC, true);\n\n@Injectable()\nexport class AuthGuard implements CanActivate {\n  constructor(private readonly reflector: Reflector) {}\n\n  canActivate(context: ExecutionContext): boolean {\n    const publica = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [\n      context.getHandler(),\n      context.getClass(),\n    ]);\n    if (publica) return true;\n\n    const req = context.switchToHttp().getRequest();\n    const usuario = lerEValidarToken(req); // detalhe na trilha de segurança\n    if (!usuario) throw new UnauthorizedException();\n    req.user = usuario;\n    return true;\n  }\n}\n```\n\nO registro vai no módulo, como provider: `{ provide: APP_GUARD, useClass: AuthGuard }`. Assim o guard entra na injeção de dependência e pode receber o `Reflector` e outros services. O mecanismo de `SetMetadata` e `Reflector` é o assunto de nest-11.\n\n### Papéis\n\nAutorização por papel é um **segundo** guard, registrado depois do primeiro: um decorator `@Roles('admin')` marca a rota, e o guard compara com os papéis de `req.user`. Guards globais rodam na ordem em que foram registrados, por isso o de autenticação vem antes: o de papéis precisa do usuário já identificado.\n\n### O que o guard não resolve\n\nPapel responde \"este tipo de usuário pode chamar esta rota?\". Não responde \"**esta tarefa** é deste usuário?\". Essa é autorização por dono do dado, e mora no service, na própria consulta: buscar a tarefa por `id` **e** por `userId`. Deixar isso de fora é a falha mais comum de API: o usuário autenticado troca o id na URL e lê o registro de outro. Um guard genérico não enxerga isso, porque para saber de quem é a tarefa é preciso ir ao banco.\n\n### Custo\n\nO guard global roda em **toda** requisição. Se ele consulta o banco a cada chamada para carregar o usuário, você dobrou as consultas da API. Token assinado com os dados necessários dentro evita a ida ao banco, ao custo de não conseguir revogar na hora. É uma decisão de desenho, tratada na trilha de segurança.",
+      "naPratica": "Quando o módulo de autenticação do Cockpit existir, o guard entra como `APP_GUARD` e as rotas de login e de saúde levam `@Public()`. Em toda revisão de PR com rota nova, a pergunta é a mesma: de quem é o dado que esta rota devolve, e onde está o filtro por dono.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Simulação da decisão de dois guards em sequência (autenticação e papéis). Preveja as cinco linhas.",
+          "codigo": "type Rota = { publica?: boolean; papeis?: string[] };\ntype Usuario = { nome: string; papeis: string[] };\n\nfunction guard(rota: Rota, usuario?: Usuario): string {\n  if (rota.publica) return 'entra';\n  if (!usuario) return '401';\n  const exigidos = rota.papeis;\n  if (exigidos && !exigidos.some((p) => usuario.papeis.includes(p))) return '403';\n  return 'entra';\n}\n\nconst ana: Usuario = { nome: 'Ana', papeis: ['user'] };\n\nconsole.log(guard({ publica: true }));\nconsole.log(guard({}));\nconsole.log(guard({}, ana));\nconsole.log(guard({ papeis: ['admin'] }, ana));\nconsole.log(guard({ papeis: ['admin'] }));\n",
+          "saida": "entra\n401\nentra\n403\n401\n",
+          "explicacao": "Rota pública entra sem usuário. Rota comum sem usuário: 401 (não sei quem é). Com usuário e sem exigência de papel: entra. Rota de admin com usuário comum: 403 (sei quem é, não pode). A última linha é a que mais confunde: rota de admin **sem** usuário é 401, não 403. A autenticação é conferida primeiro, e sem identidade não há como avaliar papel."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um usuário autenticado chama `GET /tarefas/123`, e a tarefa 123 é de outro usuário. O guard de autenticação deixou passar. Onde essa requisição deve ser barrada?",
+          "opcoes": [
+            "No `ValidationPipe`, validando o id",
+            "No service, buscando a tarefa pelo id e pelo usuário dono na mesma consulta",
+            "No front, que não deve mostrar o link",
+            "Num guard de papéis com `@Roles('user')`"
+          ],
+          "correta": 1,
+          "explicacao": "A pergunta é sobre o dono do dado, e só a consulta ao banco sabe a resposta. O service filtra por `id` e `userId`: se não achar, responde 404. O guard de papéis só sabe o tipo do usuário, e os dois usuários têm o mesmo papel. Esconder o link no front não protege nada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O token do usuário venceu. Que status a API deve devolver, e por quê?",
+          "opcoes": [
+            "403, porque o acesso foi negado",
+            "400, porque a requisição está errada",
+            "401, porque a API não consegue mais afirmar quem é o cliente e ele precisa autenticar de novo",
+            "404, para não revelar que a rota existe"
+          ],
+          "correta": 2,
+          "explicacao": "Credencial ausente, inválida ou vencida é 401: o remédio é autenticar de novo, e o front usa esse status para renovar o token. O 403 diz que a identidade é conhecida e a permissão falta. Responder 403 a token vencido faz o front mostrar \"sem permissão\" a quem só precisava renovar a sessão."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, por que a gente não põe o `@UseGuards` só nos controllers que precisam? Guard global em tudo parece exagero, e ainda tem que ficar marcando rota pública.\"",
+          "pontos": [
+            "Fechado por padrão: esquecer um decorator deixa a rota protegida, não aberta",
+            "O erro de esquecer em rota nova é silencioso e só aparece como incidente",
+            "Rotas públicas são poucas e ficam visíveis numa busca por `@Public()`",
+            "Registrar com `APP_GUARD` põe o guard na injeção de dependência",
+            "O guard global não dispensa o filtro por dono do dado no service"
+          ],
+          "modelo": "É uma questão de qual erro a gente prefere cometer. Com guard por controller, quem esquece o decorator numa rota nova publica uma rota aberta, e ninguém percebe até virar incidente. Com guard global, quem esquece o `@Public()` recebe um 401 no primeiro teste e conserta em um minuto. As rotas públicas são meia dúzia (login, renovação, saúde) e uma busca por `@Public()` lista todas, o que facilita a revisão. Eu registro com `APP_GUARD` no módulo para o guard receber dependências. E isso cobre só a identidade: saber se o registro é do usuário continua sendo filtro na consulta do service."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Tabela de acesso das rotas",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/acesso-rotas.md`, liste as rotas que o Cockpit tem ou terá (login, renovar token, sair, saúde, listar tarefas, concluir tarefa, plano do dia).",
+            "Para cada uma, preencha três colunas: pública ou autenticada; papel exigido (se houver); de quem é o dado e como o service filtra por dono.",
+            "Marque as rotas em que um id vem na URL e escreva o que a API responde quando o id é de outro usuário (404 ou 403) e por quê."
+          ],
+          "prontoQuando": "A tabela tem pelo menos sete rotas com as três colunas preenchidas e a decisão 404 ou 403 justificada em uma frase."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a diferença entre 401 e 403?",
+          "verso": "401: não sei quem você é (autentique de novo). 403: sei quem você é e você não pode (repetir não adianta)."
+        },
+        {
+          "frente": "Por que guard global com `@Public()` em vez de `@UseGuards` por controller?",
+          "verso": "Fechado por padrão: o esquecimento gera um 401 visível no primeiro teste, e não uma rota aberta em produção."
+        },
+        {
+          "frente": "O que acontece quando `canActivate` devolve `false`?",
+          "verso": "O Nest responde 403. Para responder 401, o guard precisa lançar `UnauthorizedException`."
+        },
+        {
+          "frente": "O guard de papéis garante que o usuário só vê os próprios dados?",
+          "verso": "Não. Papel é o tipo de usuário. O dono do registro é conferido no service, filtrando a consulta por id e por usuário."
+        },
+        {
+          "frente": "Em que ponto do ciclo o guard roda?",
+          "verso": "Depois dos middlewares e antes de interceptors, pipes e handler. O corpo ainda não foi validado quando o guard decide."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Guards",
+          "url": "https://docs.nestjs.com/guards"
+        },
+        {
+          "titulo": "NestJS — Authentication",
+          "url": "https://docs.nestjs.com/security/authentication"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Authorization",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+        }
+      ]
+    },
+    {
+      "id": "nest-07",
+      "titulo": "Interceptors",
+      "minutos": 10,
+      "ponte": "Pense numa procedure \"casca\" que grava o horário, chama a procedure de verdade, e na volta grava a duração e ajusta o retorno. O interceptor é essa casca, aplicada a qualquer rota sem alterar a rota. O par `PRE-` e `POST-` do Forms lembra a ideia, mas é onde a analogia quebra: são dois triggers separados, sem variável local em comum. O interceptor é **uma** função em volta da chamada, então o que você anotou antes ainda está na mão depois.",
+      "texto": "Um **interceptor** embrulha a execução do handler. Ele tem um método, `intercept(context, next)`, e dentro dele existe um antes e um depois:\n\n```ts\n// ilustrativo\n@Injectable()\nexport class TempoInterceptor implements NestInterceptor {\n  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {\n    const inicio = performance.now(); // antes do handler\n    return next.handle().pipe(\n      tap(() => {\n        const ms = Math.round(performance.now() - inicio); // depois\n        console.log(`${context.getHandler().name}: ${ms} ms`);\n      }),\n    );\n  }\n}\n```\n\n`next.handle()` é o que dispara o resto do caminho (pipes e handler). Se o interceptor **não chamar** `next.handle()`, o handler não roda: é assim que um interceptor de cache responde sozinho.\n\n### O mínimo de RxJS\n\n`next.handle()` devolve um `Observable`: um objeto que representa valores que vão chegar com o tempo. Numa rota HTTP comum chega um valor só, o retorno do handler. Você não precisa dominar RxJS para usar interceptors. Precisa de quatro operadores, encadeados em `.pipe(...)`:\n\n| operador | uso |\n|---|---|\n| `tap(fn)` | efeito colateral sem mudar o valor (log, métrica) |\n| `map(fn)` | transformar a resposta |\n| `timeout(ms)` | falhar se o handler demorar demais |\n| `catchError(fn)` | reagir a erro ou trocá-lo por outro |\n\n### Para que serve\n\n- **Medir e registrar:** duração por rota, com o nome do controller e do método (o `context` sabe quem vai rodar, coisa que um middleware não sabe).\n- **Transformar a resposta:** embrulhar em `{ data: ... }`, remover campos, serializar.\n- **Limite de tempo:** responder erro em vez de deixar o cliente esperando.\n- **Cache:** devolver a resposta guardada sem chamar o handler.\n\n### Para que não serve\n\nDecidir se a requisição entra é do guard. Validar entrada é do pipe. Regra de negócio é do service. Interceptor é para o que é **transversal**: vale igual para muitas rotas e não depende do assunto delas.\n\n### Ordem\n\nCom vários interceptors, a entrada é global, depois controller, depois rota. A volta é na ordem inversa, como camadas de uma cebola: o primeiro a entrar é o último a sair.\n\n### Armadilhas\n\n- **`tap(fn)` só vê sucesso.** Se o handler lançar exceção, a função não roda e o seu log de duração some justamente nas requisições que falharam. Para registrar os dois casos, use `tap({ next: ..., error: ... })` ou `finalize`.\n- **Timeout não cancela o trabalho.** O cliente recebe o erro, mas a consulta que o handler disparou continua rodando no banco até terminar. Limite de tempo no interceptor protege o cliente, não o servidor. Para proteger o banco, o limite tem que estar na consulta.\n- **Envelope global muda o contrato de todas as rotas.** O documento OpenAPI não fica sabendo, e o front gerado a partir dele passa a tipar errado. Se quiser envelope, decida no primeiro dia.\n- **Guard que barra, interceptor que não vê.** O guard roda antes. Uma requisição recusada com 401 nunca chega ao interceptor de log.\n\nEste último ponto tem consequência de desenho: log de acesso completo (toda requisição, com status final) funciona melhor na camada de middleware. Interceptor é o lugar para o que precisa saber **qual handler** rodou.",
+      "naPratica": "No Cockpit, o log de cada requisição já é feito pelo `nestjs-pino` na camada de middleware. Criar um interceptor de log por cima duplicaria linhas. Guarde o interceptor para o que o middleware não consegue: medir por handler, serializar a resposta ou aplicar limite de tempo numa rota específica.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Dois interceptors simulados com funções: cada um recebe o `proximo` e decide o que fazer antes e depois. Preveja as quatro linhas.",
+          "codigo": "type Handler = () => Promise<unknown>;\ntype Interceptor = (proximo: Handler) => Promise<unknown>;\n\nconst log: Interceptor = async (proximo) => {\n  console.log('log: antes');\n  const resposta = await proximo();\n  console.log('log: depois');\n  return resposta;\n};\nconst envelope: Interceptor = async (proximo) => ({ data: await proximo() });\n\nconst handler: Handler = async () => {\n  console.log('handler');\n  return [1, 2];\n};\n\nconst cadeia = [log, envelope].reduceRight<Handler>(\n  (proximo, interceptor) => () => interceptor(proximo),\n  handler,\n);\nconsole.log(JSON.stringify(await cadeia()));\n",
+          "saida": "log: antes\nhandler\nlog: depois\n{\"data\":[1,2]}\n",
+          "explicacao": "A cadeia é montada de dentro para fora: `log` embrulha `envelope`, que embrulha o `handler`. Na ida roda o antes do `log`, depois o handler. Na volta, o `envelope` transforma `[1,2]` em `{ data: [1,2] }` e só então o `log` imprime o depois. O primeiro a entrar é o último a sair. No Nest, `await proximo()` é `next.handle()` e a transformação é o operador `map`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um limite de tempo de 100 ms em volta de dois handlers. Repare na linha que o handler lento imprime. Preveja as três linhas.",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\n\nasync function comLimite(handler: () => Promise<string>, ms: number) {\n  const limite = espera(ms).then(() => {\n    throw new Error('408 Request Timeout');\n  });\n  try {\n    return await Promise.race([handler(), limite]);\n  } catch (e) {\n    return (e as Error).message;\n  }\n}\n\nconst rapido = async () => { await espera(20); return 'rápido: ok'; };\nconst lento = async () => {\n  await espera(250);\n  console.log('lento: gravou no banco mesmo assim');\n  return 'lento: ok';\n};\n\nconsole.log(await comLimite(rapido, 100));\nconsole.log(await comLimite(lento, 100));\n",
+          "saida": "rápido: ok\n408 Request Timeout\nlento: gravou no banco mesmo assim\n",
+          "explicacao": "O handler rápido vence a corrida. O lento perde: aos 100 ms quem chamou recebe o erro de tempo esgotado. Só que o handler **continua rodando**, e aos 250 ms ele grava. A terceira linha aparece depois da resposta de erro. Limite de tempo no interceptor devolve o cliente, mas não desfaz nem interrompe o trabalho. Quem repete a chamada depois de um timeout pode gravar duas vezes."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você quer registrar a duração de todas as requisições, inclusive as que terminam em erro. O interceptor usa `next.handle().pipe(tap(() => registra()))`. O que acontece com as requisições que lançam exceção no handler?",
+          "opcoes": [
+            "São registradas normalmente: `tap` roda sempre",
+            "Não são registradas: `tap` com uma função só observa o caminho de sucesso",
+            "São registradas duas vezes",
+            "O interceptor engole a exceção e responde 200"
+          ],
+          "correta": 1,
+          "explicacao": "`tap(fn)` só é chamado quando chega um valor. No erro, o fluxo pula direto para o tratamento de erro. O log perde exatamente as requisições mais interessantes. Use `tap({ next, error })` ou `finalize`. O interceptor não engole nada: a exceção segue para o filtro."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas tarefas é a mais adequada para um interceptor?",
+          "opcoes": [
+            "Verificar se o usuário tem o papel `admin`",
+            "Converter o `id` da URL para número",
+            "Remover o campo `senhaHash` de toda resposta que devolve um usuário",
+            "Impedir que uma tarefa concluída seja editada"
+          ],
+          "correta": 2,
+          "explicacao": "Transformar a resposta de várias rotas do mesmo jeito é trabalho transversal de saída: interceptor (o Nest traz o `ClassSerializerInterceptor` para isso). Papel é guard, conversão de parâmetro é pipe, e a regra da tarefa concluída é do service."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Um interceptor de duração por handler",
+          "minutos": 20,
+          "passos": [
+            "Numa branch de rascunho do Cockpit, crie um `TempoInterceptor` como o do texto e registre com `{ provide: APP_INTERCEPTOR, useClass: TempoInterceptor }` no `AppModule`.",
+            "Crie uma rota de rascunho que espera 200 ms e devolve um objeto, e outra que lança `NotFoundException`.",
+            "Chame as duas e confirme que só a primeira aparece no log.",
+            "Troque `tap(fn)` por `tap({ next: fn, error: fn })` e confirme que as duas aparecem.",
+            "Descarte a branch."
+          ],
+          "prontoQuando": "Você viu no terminal o log da rota com erro aparecer só depois da troca e anotou o motivo em uma frase em `estudo/interceptor.md`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `next.handle()` faz dentro de um interceptor?",
+          "verso": "Dispara o resto do caminho (pipes e handler) e devolve um Observable com a resposta. Se não for chamado, o handler não roda."
+        },
+        {
+          "frente": "Por que `tap(fn)` não serve para logar requisições com erro?",
+          "verso": "Com uma função só, `tap` observa apenas o sucesso. Use `tap({ next, error })` ou `finalize` para cobrir os dois caminhos."
+        },
+        {
+          "frente": "Um interceptor de timeout cancela a consulta lenta no banco?",
+          "verso": "Não. Ele só devolve erro ao cliente. O handler segue rodando até o fim. Limite que protege o banco fica na consulta."
+        },
+        {
+          "frente": "Em que ordem vários interceptors executam?",
+          "verso": "Na entrada: global, controller, rota. Na saída: o inverso. O primeiro a entrar é o último a sair."
+        },
+        {
+          "frente": "Por que um interceptor de log não vê as respostas 401?",
+          "verso": "O guard roda antes dos interceptors. A requisição barrada nunca chega a eles."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Interceptors",
+          "url": "https://docs.nestjs.com/interceptors"
+        },
+        {
+          "titulo": "NestJS — Serialization",
+          "url": "https://docs.nestjs.com/techniques/serialization"
+        }
+      ]
+    },
+    {
+      "id": "nest-08",
+      "titulo": "Filtros de exceção",
+      "minutos": 10,
+      "ponte": "O `HttpException` é o `RAISE_APPLICATION_ERROR` da API: um erro previsto, com código (o status) e mensagem para quem chamou. O filtro de exceção é o bloco `EXCEPTION` mais externo, o último ponto antes de o erro sair do sistema. Onde a analogia quebra: no PL/SQL, um `WHEN OTHERS` que engole o erro é um defeito. Aqui o filtro existe para pegar tudo de propósito. A obrigação dele é outra: **registrar** o erro completo e **traduzir** para uma resposta segura.",
+      "texto": "Quando qualquer camada lança uma exceção (guard, pipe, interceptor, handler, service) e ninguém trata, ela chega à camada de **filtros de exceção** (*exception filters*). O filtro transforma a exceção numa resposta HTTP.\n\n### O filtro padrão\n\nSem nada configurado, o Nest já tem um:\n\n- Se a exceção é um `HttpException`, a resposta usa o status e o corpo dela.\n- Qualquer outra coisa (um `TypeError`, um erro do driver do banco) vira **500** com mensagem genérica.\n\n`HttpException` tem filhas prontas, uma por status: `BadRequestException` (400), `UnauthorizedException` (401), `ForbiddenException` (403), `NotFoundException` (404), `ConflictException` (409), `UnprocessableEntityException` (422), entre outras. No service:\n\n```ts\nconst tarefa = await this.prisma.tarefa.findFirst({ where: { id, userId } });\nif (!tarefa) throw new NotFoundException(`Tarefa ${id} não encontrada`);\n```\n\n### Um formato só: RFC 9457\n\nO corpo padrão do Nest é `{ statusCode, message, error }`. Funciona, mas é um formato do Nest. A RFC 9457 (*Problem Details*) define um formato de erro para qualquer API HTTP, com o tipo de conteúdo `application/problem+json`:\n\n```json\n{\n  \"type\": \"about:blank\",\n  \"title\": \"NOT_FOUND\",\n  \"status\": 404,\n  \"detail\": \"Tarefa 7 não encontrada\",\n  \"instance\": \"/api/v1/tarefas/7\",\n  \"requestId\": \"b3f1c2\"\n}\n```\n\nO ganho é o front ter **um** tratamento de erro para todas as rotas. O Cockpit faz isso com um filtro próprio, `ProblemDetailsFilter`, marcado com `@Catch()` sem argumentos (pega tudo):\n\n```ts\n@Catch()\nexport class ProblemDetailsFilter implements ExceptionFilter {\n  catch(exception: unknown, host: ArgumentsHost) {\n    const res = host.switchToHttp().getResponse<Response>();\n    const status = exception instanceof HttpException ? exception.getStatus() : 500;\n    // monta o corpo e responde com res.status(status).json(...)\n  }\n}\n```\n\n### Por que `APP_FILTER` e não `useGlobalFilters`\n\nHá duas formas de tornar um filtro global:\n\n```ts\napp.useGlobalFilters(new ProblemDetailsFilter()); // no main.ts\n{ provide: APP_FILTER, useClass: ProblemDetailsFilter } // no módulo\n```\n\nNa primeira, **você** dá o `new`, fora do contêiner. O filtro não recebe dependências: se amanhã ele precisar do logger ou da configuração, não tem de onde tirar. Na segunda, o Nest cria o filtro como qualquer provider, com injeção. E há um segundo ganho: o filtro acompanha o módulo. O teste e2e que importa o `AppModule` já recebe o mesmo tratamento de erro, sem repetir linha de setup.\n\n### Regras de sênior\n\n- **Erro 500 não explica nada ao cliente.** Nome de tabela, SQL e *stack trace* na resposta são um presente para quem ataca. O detalhe vai para o log.\n- **Quem assume o tratamento assume o log.** O filtro padrão do Nest registra o erro inesperado. Um filtro `@Catch()` seu substitui esse comportamento: se ele não chamar o logger, o 500 acontece e não fica rastro. Registre a exceção completa, com o identificador da requisição, e devolva o mesmo identificador no corpo para ligar a reclamação do usuário à linha do log.\n- **Erro previsto não é 500.** Violação de unicidade no banco é 409, registro inexistente é 404. Traduza no service ou num filtro específico. 500 fica para o que ninguém previu.\n- **Service lançando `HttpException` é acoplamento, e costuma valer o preço.** Numa API pequena, é direto e legível. Quando a mesma regra passa a rodar fora de HTTP (fila, agendamento), vale criar erros de domínio e traduzir no filtro. Depende de quantas entradas a regra tem.\n\nCom mais de um filtro, vale o mais específico: rota, depois controller, depois global.",
+      "naPratica": "No Cockpit, `ProblemDetailsFilter` está registrado com `APP_FILTER` no `AppModule`. Vale abrir o arquivo e conferir os dois pontos desta lição: o que ele devolve em `detail` quando a exceção não é `HttpException`, e se o erro inesperado está sendo registrado em algum lugar.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um filtro simulado: erro previsto mantém status e mensagem, erro inesperado vira 500 genérico. Preveja as duas linhas.",
+          "codigo": "class HttpErro extends Error {\n  status: number;\n  constructor(status: number, mensagem: string) {\n    super(mensagem);\n    this.status = status;\n  }\n}\nclass NaoEncontrado extends HttpErro {\n  constructor(mensagem: string) {\n    super(404, mensagem);\n  }\n}\n\nfunction filtro(e: unknown): string {\n  const previsto = e instanceof HttpErro;\n  const status = previsto ? e.status : 500;\n  const detail = previsto ? e.message : 'Unexpected error';\n  return JSON.stringify({ status, detail });\n}\n\nconst casos = [\n  () => { throw new NaoEncontrado('Tarefa 7 não encontrada'); },\n  () => { const t = undefined as unknown as { id: number }; return t.id; },\n];\nfor (const caso of casos) {\n  try { caso(); } catch (e) { console.log(filtro(e)); }\n}\n",
+          "saida": "{\"status\":404,\"detail\":\"Tarefa 7 não encontrada\"}\n{\"status\":500,\"detail\":\"Unexpected error\"}\n",
+          "explicacao": "`NaoEncontrado` herda de `HttpErro`, então `instanceof` reconhece e o filtro usa o status e a mensagem dela. O segundo caso é um `TypeError` comum (leitura de propriedade em `undefined`): não é um erro previsto, vira 500 e a mensagem interna **não** vai para o cliente. Ela deveria ir para o log, que este filtro simulado não tem."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual a vantagem de registrar o filtro com `{ provide: APP_FILTER, useClass: ProblemDetailsFilter }` em vez de `app.useGlobalFilters(new ProblemDetailsFilter())`?",
+          "opcoes": [
+            "O filtro roda mais rápido",
+            "O filtro passa a pegar também erros de compilação",
+            "O filtro é criado pelo contêiner (pode receber dependências) e acompanha o módulo, inclusive nos testes",
+            "Nenhuma: são exatamente equivalentes"
+          ],
+          "correta": 2,
+          "explicacao": "Com `useGlobalFilters` a instância é criada à mão, fora da injeção de dependência, e o registro fica no `main.ts`, que o teste não executa. Com `APP_FILTER` o filtro é um provider: recebe logger e configuração pelo construtor e vale em qualquer aplicação montada a partir do módulo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O banco recusa um `INSERT` por violação de chave única (e-mail já cadastrado). O erro do driver sobe sem tratamento. O que o cliente recebe, e o que deveria receber?",
+          "opcoes": [
+            "Recebe 400 e está correto",
+            "Recebe 500 genérico, e deveria receber 409 com uma mensagem que ele possa mostrar",
+            "Recebe 409 automaticamente, porque o Nest conhece os erros do banco",
+            "Recebe 500 com o SQL no corpo, o que ajuda o front a depurar"
+          ],
+          "correta": 1,
+          "explicacao": "Erro do driver não é `HttpException`, então vira 500. Só que duplicidade é um caso previsto do negócio: o status certo é 409 (conflito), com mensagem útil. A tradução é sua, no service ou num filtro específico. O Nest não conhece os códigos do banco, e SQL na resposta é vazamento de informação."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Dentro de um `catch`, a exceção tem tipo `unknown`. Este filtro simplificado compila?",
+          "codigo": "class HttpErro extends Error {\n  status = 500;\n}\n\nfunction statusDe(e: unknown): number {\n  return e.status;\n}\n\nconsole.log(statusDe(new HttpErro('x')));\n",
+          "compila": false,
+          "erro": "TS18046",
+          "linha": 6,
+          "explicacao": "TS18046: `e` é do tipo `unknown`. Em JavaScript qualquer coisa pode ser lançada (um texto, um número, `undefined`), então o compilador não deixa acessar `status` sem antes provar o que `e` é. É por isso que o filtro real escreve `exception instanceof HttpException ? exception.getStatus() : 500`."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Revise o filtro do Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Abra `apps/api/src/common/filters/problem-details.filter.ts` e leia o método `catch` inteiro.",
+            "Suba a API e chame uma rota que não existe. Copie o corpo e o cabeçalho `content-type` da resposta para `estudo/filtro.md`.",
+            "Responda no arquivo: o que aparece em `detail` quando a exceção é um erro inesperado? O erro original é registrado em algum log?",
+            "Escreva em três linhas o que você mudaria no filtro e por quê (não precisa implementar agora)."
+          ],
+          "prontoQuando": "O arquivo tem a resposta real de um 404, as duas respostas e a proposta de mudança justificada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que o filtro padrão do Nest faz com uma exceção que não é `HttpException`?",
+          "verso": "Responde 500 com mensagem genérica e registra o erro. O detalhe não vai para o cliente."
+        },
+        {
+          "frente": "Por que registrar um filtro global com `APP_FILTER`?",
+          "verso": "O contêiner cria o filtro (com injeção de dependência) e ele acompanha o módulo, valendo também nos testes e2e."
+        },
+        {
+          "frente": "Quais são os campos básicos do Problem Details (RFC 9457)?",
+          "verso": "`type`, `title`, `status`, `detail` e `instance`, com tipo de conteúdo `application/problem+json`. Campos extras são permitidos."
+        },
+        {
+          "frente": "Você escreveu um filtro `@Catch()` que pega tudo. Que obrigação veio junto?",
+          "verso": "Registrar o erro inesperado completo no log (com id da requisição). O filtro padrão fazia isso. O seu só faz se você escrever."
+        },
+        {
+          "frente": "Por que a resposta de um erro 500 não deve trazer a mensagem original?",
+          "verso": "Mensagem interna revela tabela, SQL e estrutura do código a quem ataca. O cliente recebe texto genérico e um id para correlacionar com o log."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Exception filters",
+          "url": "https://docs.nestjs.com/exception-filters"
+        },
+        {
+          "titulo": "RFC 9457 — Problem Details for HTTP APIs",
+          "url": "https://www.rfc-editor.org/rfc/rfc9457"
+        }
+      ]
+    },
+    {
+      "id": "nest-09",
+      "titulo": "O ciclo de vida da requisição: a ordem completa",
+      "minutos": 12,
+      "ponte": "No Forms você depura sabendo a ordem de disparo: `WHEN-VALIDATE-ITEM`, depois `WHEN-VALIDATE-RECORD`, depois `PRE-INSERT`, o insert, `POST-INSERT`. Quem não sabe a ordem põe a regra no trigger errado e passa a tarde procurando. No Nest é igual: cada peça tem uma posição fixa. Onde a analogia quebra: no Forms são eventos em fila. Aqui são **camadas**: o que entra primeiro sai por último, e uma exceção em qualquer ponto pula direto para o fim.",
+      "texto": "Você já viu as peças uma a uma. Esta é a ordem em que uma requisição passa por elas:\n\n| # | etapa | pergunta que responde | lição |\n|---|---|---|---|\n| 1 | **Middleware** | preparar a requisição crua | esta |\n| 2 | **Guards** | entra ou não entra? | nest-06 |\n| 3 | **Interceptors (antes)** | o que fazer em volta? | nest-07 |\n| 4 | **Pipes** | os argumentos servem? | nest-05 |\n| 5 | **Handler** (e o service) | o trabalho | nest-04 |\n| 6 | **Interceptors (depois)** | ajustar a resposta | nest-07 |\n| 7 | **Filtros de exceção** | só se alguém lançou erro | nest-08 |\n\nDentro de guards, interceptors e pipes, a ordem é global, depois controller, depois rota. Na volta dos interceptors e nos filtros, é o inverso.\n\n### O que é um middleware\n\n*Middleware* é uma **função** com a assinatura `(req, res, next)`. Ela recebe o objeto da requisição e o da resposta, pode ler e alterar os dois, e termina de uma de duas formas: responde ela mesma, ou chama `next()` para passar a vez à próxima função. É um conceito do Express, anterior ao Nest e independente dele. O middleware não sabe qual controller vai atender: ele só vê a requisição passando.\n\n`app.use(fn)` significa \"coloque esta função na fila por onde **toda** requisição passa, nesta posição\". Não embrulha nada e não cria nada: registra. A ordem das chamadas de `app.use` é a ordem de execução.\n\nNo `app.setup.ts` do Cockpit há duas:\n\n```ts\napp.use(helmet());\napp.use(cookieParser());\n```\n\nRepare nos parênteses: `cookieParser()` é uma função que **devolve** o middleware. O que esse middleware faz é pequeno e específico: lê o cabeçalho `Cookie` da requisição, que é um texto como `refresh=abc123; tema=escuro`, separa os pares e coloca o resultado, já como objeto, em `req.cookies`. Só isso. Ele não grava cookie, não mexe na resposta e não controla sessão. Sem ele, `req.cookies` é `undefined` e você teria de interpretar o texto do cabeçalho à mão. Gravar um cookie é outra operação, feita na resposta (`res.cookie(...)`), que não depende do `cookie-parser`.\n\nO `helmet()` segue o mesmo molde pelo outro lado: acrescenta cabeçalhos de segurança à resposta e chama `next()`.\n\n### O que a ordem explica\n\n- **O guard vê a requisição crua.** O corpo ainda não passou pelo `ValidationPipe`. Guard que lê o corpo está lendo dado não validado.\n- **Guard barrou: nada depois roda.** Nem interceptor, nem pipe, nem handler. A exceção vai direto ao filtro.\n- **Pipe recusou: o handler não roda**, mas os interceptors já tinham entrado. O \"depois\" deles só vê a falha se tratar o caminho de erro.\n- **O filtro é a rede de tudo que é do Nest:** guard, interceptor, pipe e handler.\n- **O middleware roda antes de tudo isso**, inclusive para rotas que não existem. É por isso que log de acesso e cabeçalhos de segurança ficam nele.\n\n### Onde eu ponho isto\n\n| preciso de | peça |\n|---|---|\n| algo que vale para toda requisição e não depende da rota (cabeçalhos, cookies, log de acesso) | middleware |\n| decidir quem entra | guard |\n| converter e validar a entrada | pipe |\n| medir, embrulhar ou transformar em volta do handler | interceptor |\n| regra de negócio | service |\n| formato único de erro | filtro |\n\nSe uma lógica parece caber em duas peças, a pergunta de desempate é: ela precisa saber **qual handler** vai rodar? Se sim, não é middleware.",
+      "naPratica": "Quando algo \"não roda\" no Cockpit (o log não aparece, a validação não acontece, o usuário chega `undefined`), percorra a tabela de cima para baixo e pergunte qual etapa anterior interrompeu o caminho. Na maioria das vezes foi um guard ou um pipe lançando exceção antes do ponto que você estava olhando.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O pipeline simulado com funções puras. Três requisições: uma válida, uma com corpo inválido e uma sem autenticação. Preveja as três linhas.",
+          "codigo": "function requisicao(autenticado: boolean, corpoValido: boolean): string {\n  const passos: string[] = [];\n  try {\n    passos.push('middleware');\n    passos.push('guard');\n    if (!autenticado) throw new Error('401');\n    passos.push('interceptor(antes)');\n    passos.push('pipe');\n    if (!corpoValido) throw new Error('400');\n    passos.push('handler');\n    passos.push('interceptor(depois)');\n  } catch (e) {\n    passos.push(`filtro(${(e as Error).message})`);\n  }\n  return passos.join(' > ');\n}\n\nconsole.log(requisicao(true, true));\nconsole.log(requisicao(true, false));\nconsole.log(requisicao(false, true));\n",
+          "saida": "middleware > guard > interceptor(antes) > pipe > handler > interceptor(depois)\nmiddleware > guard > interceptor(antes) > pipe > filtro(400)\nmiddleware > guard > filtro(401)\n",
+          "explicacao": "No caminho feliz, o filtro nem aparece: ele só age quando há exceção. Com corpo inválido, o pipe lança: o handler e o \"depois\" do interceptor são pulados, e o filtro monta o 400. Sem autenticação, o guard lança antes de qualquer interceptor entrar: por isso um interceptor de log nunca vê um 401. O middleware roda nos três casos."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `cookie-parser` de brinquedo, para ver o que esse middleware faz e o que ele não faz. Preveja as quatro linhas.",
+          "codigo": "type Req = { headers: Record<string, string>; cookies?: Record<string, string> };\ntype Middleware = (req: Req, next: () => void) => void;\n\nfunction cookieParser(): Middleware {\n  return (req, next) => {\n    const texto = req.headers['cookie'] ?? '';\n    const pares = texto.split('; ').filter(Boolean).map((p) => p.split('='));\n    req.cookies = Object.fromEntries(pares);\n    next();\n  };\n}\n\nconst req: Req = { headers: { cookie: 'refresh=abc123; tema=escuro' } };\nconsole.log(req.cookies);\n\nconst middleware = cookieParser();\nmiddleware(req, () => console.log('next: passa a vez'));\n\nconsole.log(req.cookies?.['refresh']);\nconsole.log(Object.keys(req.headers).join(','));\n",
+          "saida": "undefined\nnext: passa a vez\nabc123\ncookie\n",
+          "explicacao": "Antes do middleware, `req.cookies` não existe: só há o cabeçalho em texto. `cookieParser()` devolve a função, e é ela que roda por requisição: interpreta o texto, preenche `req.cookies` e chama `next()`. Depois disso o handler lê `req.cookies.refresh` direto. A última linha mostra que o cabeçalho original continua lá, intacto: o middleware só **leu** a requisição. Nada foi gravado e a resposta não foi tocada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um guard precisa decidir com base em um campo do corpo da requisição. Qual o cuidado?",
+          "opcoes": [
+            "Nenhum: o `ValidationPipe` global já validou o corpo antes do guard",
+            "O guard roda antes dos pipes, então o corpo ainda não foi validado nem limpo pela whitelist",
+            "O corpo ainda não foi lido da rede quando o guard roda",
+            "Guards não têm acesso à requisição"
+          ],
+          "correta": 1,
+          "explicacao": "A ordem é guard, depois interceptor, depois pipe. No guard o corpo já foi interpretado como JSON (isso é trabalho de middleware), mas não passou pela validação: pode ter qualquer tipo e qualquer campo extra. Decisão que depende do corpo validado pertence ao service."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que `app.use(cookieParser())` faz?",
+          "opcoes": [
+            "Embrulha a aplicação inteira numa função que gerencia requisição e resposta",
+            "Registra na fila de middlewares uma função que lê o cabeçalho `Cookie` e preenche `req.cookies`",
+            "Grava os cookies de sessão na resposta de toda requisição",
+            "Cria um guard global que exige cookie de autenticação"
+          ],
+          "correta": 1,
+          "explicacao": "`app.use` só registra uma função na fila por onde as requisições passam. A função devolvida por `cookieParser()` interpreta o texto do cabeçalho `Cookie` e põe o objeto em `req.cookies`. Ela não grava cookie (isso é `res.cookie`), não gerencia a resposta e não decide acesso."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Veja a ordem com os próprios olhos",
+          "minutos": 25,
+          "passos": [
+            "Numa branch de rascunho do Cockpit, crie um middleware de função, um guard, um interceptor e um pipe que só fazem `console.log` com o próprio nome (o interceptor loga antes e depois).",
+            "Registre o middleware com `app.use`, e o guard, o interceptor e o pipe numa rota de rascunho `@Post()` com `@UseGuards`, `@UseInterceptors` e `@UsePipes`.",
+            "Chame a rota e copie a ordem dos logs para `estudo/ordem.md`.",
+            "Faça o pipe lançar `BadRequestException` e chame de novo. Depois faça o guard devolver `false`. Copie as duas saídas.",
+            "Descarte a branch."
+          ],
+          "prontoQuando": "O arquivo tem as três sequências reais de log e elas batem com a tabela da lição."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a ordem completa de uma requisição no Nest?",
+          "verso": "Middleware, guards, interceptors (antes), pipes, handler, interceptors (depois). Filtros de exceção entram se alguém lançar erro."
+        },
+        {
+          "frente": "O que é um middleware?",
+          "verso": "Uma função `(req, res, next)` do Express: lê ou altera requisição e resposta e chama `next()` para passar a vez. Não sabe qual handler vai rodar."
+        },
+        {
+          "frente": "O que o `cookie-parser` faz?",
+          "verso": "Lê o cabeçalho `Cookie` (texto), separa os pares e preenche `req.cookies`. Não grava cookie nem toca na resposta."
+        },
+        {
+          "frente": "Por que um guard não deve confiar no corpo da requisição?",
+          "verso": "Ele roda antes dos pipes: o corpo ainda não foi validado nem limpo pela whitelist."
+        },
+        {
+          "frente": "Como decidir entre middleware e interceptor?",
+          "verso": "Precisa saber qual handler vai rodar, ou mexer no retorno dele? Interceptor. Vale para toda requisição, sem depender da rota? Middleware."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Request lifecycle",
+          "url": "https://docs.nestjs.com/faq/request-lifecycle"
+        },
+        {
+          "titulo": "NestJS — Middleware",
+          "url": "https://docs.nestjs.com/middleware"
+        },
+        {
+          "titulo": "MDN — Cookie request header",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cookie"
+        }
+      ]
+    },
+    {
+      "id": "nest-10",
+      "titulo": "Configuração validada e ciclo de vida da aplicação (hooks, shutdown)",
+      "minutos": 11,
+      "ponte": "A seção de inicialização de um *package body* roda uma vez e deixa tudo pronto antes da primeira chamada. Os *hooks* de inicialização do Nest fazem o mesmo papel. A configuração lembra a tabela de parâmetros que todo sistema tem. A analogia quebra em dois pontos: a inicialização do package acontece por sessão e só na primeira chamada, enquanto o Nest inicializa **uma vez por processo, na partida**. E o package não tem hora de morrer, enquanto um processo Node é derrubado a cada deploy e precisa sair com educação.",
+      "texto": "### Configuração: falhar cedo\n\nConfiguração que muda entre ambientes (URL do banco, segredos, origem do front) vem de **variáveis de ambiente**, não do código. O perigo é descobrir tarde que faltou uma: a API sobe, parece saudável, e quebra no primeiro login porque o segredo do token veio `undefined`.\n\nA defesa é validar tudo **na partida**. No Cockpit:\n\n```ts\nConfigModule.forRoot({ isGlobal: true, validationSchema: envValidation })\n```\n\n`envValidation` é um esquema Joi que diz, para cada variável, o tipo, se é obrigatória e o valor padrão. Se `DATABASE_URL` faltar ou `JWT_ACCESS_SECRET` tiver menos de 32 caracteres, a aplicação **não sobe** e a mensagem diz qual variável está errada. Um deploy que falha na partida é barato: a versão anterior continua no ar. No `@nestjs/config` 12, `validationSchema` aceita qualquer esquema no padrão *Standard Schema* (o Joi do projeto atende). Há também a opção `validate`, que recebe uma função sua.\n\nTrês regras práticas:\n\n- **Variável de ambiente é sempre texto.** `PORT` chega como `'3000'` e `DEBUG=false` chega como a string `'false'`, que é verdadeira num `if`. O esquema converte e aplica padrão. Leia sempre pelo `ConfigService`.\n- **`process.env` só em um lugar.** Service que lê `process.env` direto não passa pela validação e é chato de testar. Injete o `ConfigService` e use `getOrThrow`, que lança erro em vez de devolver `undefined`.\n- **Arquivo `.env` é conveniência de desenvolvimento.** Não vai para o repositório. Em produção as variáveis vêm da plataforma.\n\n### Ciclo de vida: os hooks\n\nUm provider pode implementar métodos que o Nest chama em momentos fixos:\n\n| momento | hook | uso típico |\n|---|---|---|\n| partida, módulo pronto | `onModuleInit` | conectar no banco, aquecer um cache |\n| partida, tudo pronto | `onApplicationBootstrap` | iniciar algo que depende de todos os módulos |\n| desligamento | `onModuleDestroy` | fechar conexões |\n| desligamento | `beforeApplicationShutdown` | parar de aceitar trabalho novo |\n| desligamento, no fim | `onApplicationShutdown` | última limpeza, recebe o nome do sinal |\n\nSe o hook devolve uma Promise, o Nest espera. O `PrismaService` do Cockpit usa dois: `onModuleInit` chama `$connect()` e `onModuleDestroy` chama `$disconnect()`. Conectar na partida é a mesma ideia de falhar cedo: banco fora do ar derruba a subida, não a primeira requisição.\n\n### Desligar direito\n\nA cada deploy, a plataforma manda um sinal `SIGTERM` ao processo antigo e espera alguns segundos antes de matar. O que o processo faz nesse intervalo decide se o usuário vê erro ou não. Os hooks de desligamento só reagem a sinais do sistema se você pedir, com `app.enableShutdownHooks()` (o Cockpit chama no `setupApp`). Sem isso, o processo morre na hora: requisições em andamento são cortadas e as conexões com o banco ficam abertas até o banco desistir delas.\n\n`app.close()` dispara os mesmos hooks, com ou sem sinal. É o que os testes chamam no final.\n\n### Armadilhas\n\n- **Trabalho pesado em `onModuleInit`** atrasa a partida inteira. Se a plataforma tem limite de tempo para a aplicação ficar saudável, ela mata o processo antes de ele subir.\n- **Teste que não chama `app.close()`** deixa o pool de conexões aberto e o processo de teste não termina.\n- **Segredo com valor padrão no esquema.** Padrão é para porta e prazo. Segredo é `required()`: melhor não subir do que subir com a senha de exemplo.",
+      "naPratica": "No Cockpit, `config/env.validation.ts` é o contrato do ambiente: toda variável nova entra ali antes de ser lida em qualquer service. E `app.setup.ts` chama `enableShutdownHooks()`, o que faz o `$disconnect()` do Prisma rodar quando o processo recebe `SIGTERM`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Variável de ambiente é texto. O que cada linha imprime?",
+          "codigo": "const env: Record<string, string | undefined> = { PORT: '3000', DEBUG: 'false' };\n\nconsole.log(typeof env['PORT']);\nconsole.log(env['PORT'] + 1);\nconsole.log(env['DEBUG'] ? 'debug ligado' : 'debug desligado');\nconsole.log(env['DEBUG'] === 'true' ? 'debug ligado' : 'debug desligado');\nconsole.log(Number(env['TIMEOUT_MS'] ?? 5000));\n",
+          "saida": "string\n30001\ndebug ligado\ndebug desligado\n5000\n",
+          "explicacao": "`PORT` é a string `'3000'`, e somar 1 concatena. A terceira linha é a armadilha clássica: a string `'false'` não é vazia, logo é verdadeira, e o debug liga. A comparação explícita com `'true'` resolve. Na última, a variável não existe e entra o padrão. Um esquema de validação faz essas conversões uma vez, na partida, e entrega os valores já com o tipo certo."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma validação de ambiente caseira, chamada na partida. Preveja as duas linhas.",
+          "codigo": "function validarEnv(env: Record<string, string | undefined>) {\n  const obrigatorias = ['DATABASE_URL', 'JWT_ACCESS_SECRET', 'WEB_ORIGIN'];\n  const faltando = obrigatorias.filter((nome) => !env[nome]);\n  if (faltando.length > 0) {\n    throw new Error(`Config inválida, falta: ${faltando.join(', ')}`);\n  }\n  return { porta: Number(env['PORT'] ?? 3000) };\n}\n\nconst completo = {\n  DATABASE_URL: 'postgres://local/cockpit',\n  JWT_ACCESS_SECRET: 'x'.repeat(32),\n  WEB_ORIGIN: 'http://localhost:5173',\n};\nconsole.log(validarEnv(completo).porta);\n\ntry {\n  validarEnv({ DATABASE_URL: 'postgres://local/cockpit', PORT: '8080' });\n} catch (e) {\n  console.log((e as Error).message);\n}\n",
+          "saida": "3000\nConfig inválida, falta: JWT_ACCESS_SECRET, WEB_ORIGIN\n",
+          "explicacao": "No primeiro caso tudo que é obrigatório está presente e `PORT` usa o padrão. No segundo, a função lança antes de devolver qualquer coisa e lista **todas** as variáveis que faltam de uma vez (e não só a primeira), que é o comportamento que economiza tentativas de deploy. No Nest esse erro acontece dentro de `ConfigModule.forRoot`, e a aplicação não chega a ouvir a porta."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A aplicação recebe `SIGTERM` num deploy e `enableShutdownHooks()` **não** foi chamado. O que acontece com o `onModuleDestroy` do `PrismaService`?",
+          "opcoes": [
+            "Roda normalmente: hooks de desligamento são sempre chamados",
+            "Não roda: sem `enableShutdownHooks()` o Nest não escuta os sinais do sistema, e o processo termina sem fechar as conexões",
+            "Roda, mas só depois de 30 segundos",
+            "O Nest ignora o sinal e o processo continua no ar"
+          ],
+          "correta": 1,
+          "explicacao": "Os hooks de desligamento ligados a sinais são opcionais, porque escutar sinais tem custo. Sem a chamada, o Node aplica o comportamento padrão do `SIGTERM`: encerra o processo. As conexões ficam penduradas do lado do banco até expirarem. Em teste, `app.close()` chama os hooks de qualquer forma."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual o principal ganho de validar a configuração na partida, em vez de ler cada variável quando ela for usada?",
+          "opcoes": [
+            "A aplicação fica mais rápida, porque não lê `process.env` a cada requisição",
+            "O deploy com configuração errada falha na subida, com a versão anterior ainda no ar, e não na primeira requisição que usa a variável",
+            "As variáveis ficam criptografadas na memória",
+            "Dispensa o arquivo `.env` em desenvolvimento"
+          ],
+          "correta": 1,
+          "explicacao": "É o princípio de falhar cedo. Uma variável faltando descoberta na partida custa um deploy recusado. Descoberta em uso custa um erro para o usuário, possivelmente dias depois, numa rota pouco usada. Velocidade não é o motivo, e a validação não criptografa nada."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Derrube a partida de propósito",
+          "minutos": 10,
+          "passos": [
+            "No Cockpit, renomeie temporariamente a variável `WEB_ORIGIN` no seu `.env` local (por exemplo para `WEB_ORIGIN_X`).",
+            "Suba a API e copie a mensagem de erro para `estudo/config.md`.",
+            "Restaure a variável, suba de novo e encerre com Ctrl+C. Observe se há alguma linha de log do desligamento.",
+            "Anote no arquivo: em que arquivo do projeto cada variável obrigatória é declarada e qual hook fecha a conexão com o banco."
+          ],
+          "prontoQuando": "O arquivo tem a mensagem real de configuração inválida, o `.env` está restaurado e as duas anotações estão escritas."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que validar as variáveis de ambiente na partida?",
+          "verso": "Para falhar cedo: configuração errada recusa o deploy, com a versão anterior no ar, em vez de quebrar a primeira requisição que usa a variável."
+        },
+        {
+          "frente": "`DEBUG=false` no ambiente. O que `if (process.env.DEBUG)` faz?",
+          "verso": "Entra no `if`: o valor é a string `'false'`, que é verdadeira. Variável de ambiente é sempre texto. Converta no esquema de validação."
+        },
+        {
+          "frente": "O que `app.enableShutdownHooks()` liga?",
+          "verso": "A escuta de sinais como `SIGTERM`. Com ela, os hooks de desligamento rodam no deploy e as conexões são fechadas com ordem."
+        },
+        {
+          "frente": "Quais hooks o `PrismaService` do Cockpit usa, e para quê?",
+          "verso": "`onModuleInit` conecta no banco (banco fora do ar derruba a partida). `onModuleDestroy` desconecta no desligamento."
+        },
+        {
+          "frente": "`config.get('X')` ou `config.getOrThrow('X')`?",
+          "verso": "`getOrThrow` para o que é obrigatório: lança erro em vez de devolver `undefined` e deixar o problema aparecer longe da causa."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Configuration",
+          "url": "https://docs.nestjs.com/techniques/configuration"
+        },
+        {
+          "titulo": "NestJS — Lifecycle events",
+          "url": "https://docs.nestjs.com/fundamentals/lifecycle-events"
+        },
+        {
+          "titulo": "The Twelve-Factor App — Config",
+          "url": "https://12factor.net/config"
+        }
+      ]
+    },
+    {
+      "id": "nest-11",
+      "titulo": "Decorators próprios e metadados (Reflector)",
+      "minutos": 10,
+      "ponte": "No Forms você marca um item como `Required = Yes` na paleta de propriedades e não escreve código: o *runtime* lê a propriedade e age. Um decorator de metadado é isso: uma propriedade pendurada num método, que outra peça (um guard, um interceptor) lê e obedece. Onde a analogia quebra: no Forms a lista de propriedades é fixa e o runtime já sabe ler todas. Aqui você inventa a propriedade, e ela **não faz nada** enquanto você não escrever quem a lê.",
+      "texto": "Você já usou decorators do Nest. Escrever os seus é o que permite que uma rota diga `@Roles('admin')` ou `@Public()` em vez de repetir lógica. São três ferramentas.\n\n### 1. Gravar um metadado\n\n`SetMetadata(chave, valor)` devolve um decorator que pendura o par no método ou na classe. Embrulhe numa função com nome, para ninguém digitar a chave:\n\n```ts\nexport const ROLES_KEY = 'roles';\nexport const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);\n```\n\nO Nest também oferece `Reflector.createDecorator`, que cria o decorator já tipado e dispensa a chave em texto:\n\n```ts\nexport const Roles = Reflector.createDecorator<string[]>();\n// uso: @Roles(['admin'])\n```\n\n### 2. Ler o metadado\n\nQuem lê é o `Reflector`, um provider injetável. O `ExecutionContext` diz qual método e qual classe vão atender a requisição:\n\n```ts\n@Injectable()\nexport class RolesGuard implements CanActivate {\n  constructor(private readonly reflector: Reflector) {}\n\n  canActivate(context: ExecutionContext): boolean {\n    const exigidos = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [\n      context.getHandler(),\n      context.getClass(),\n    ]);\n    if (!exigidos) return true;\n    const { user } = context.switchToHttp().getRequest();\n    return exigidos.some((papel) => user.roles.includes(papel));\n  }\n}\n```\n\n| método | comportamento |\n|---|---|\n| `get(chave, alvo)` | lê de um alvo só |\n| `getAllAndOverride(chave, [metodo, classe])` | devolve o **primeiro** definido: o método sobrepõe a classe |\n| `getAllAndMerge(chave, [metodo, classe])` | junta os valores dos dois |\n\nA escolha é uma decisão de regra. Com *override*, `@Roles('admin')` no método substitui o `@Roles('user')` da classe. Com *merge*, a rota passa a aceitar os dois papéis. Para permissão, *override* costuma ser o que as pessoas esperam ao ler o código.\n\n### 3. Decorator de parâmetro\n\n`createParamDecorator` cria um decorator que extrai algo da requisição e entrega como argumento do handler:\n\n```ts\nexport const CurrentUser = createParamDecorator(\n  (_data: unknown, context: ExecutionContext) =>\n    context.switchToHttp().getRequest().user,\n);\n\n// no controller\n@Get()\nlistar(@CurrentUser() usuario: UsuarioLogado) {\n  return this.tarefas.listarDe(usuario.id);\n}\n```\n\nO controller deixa de conhecer o objeto de requisição, e o teste do método vira uma chamada de função comum.\n\n### Compor\n\n`applyDecorators(...)` junta vários decorators em um. Serve para dar nome a uma combinação que se repete: por exemplo, um `@AdminOnly()` que aplica o papel e a anotação do OpenAPI de uma vez.\n\n### Armadilhas\n\n- **Decorator sem leitor é enfeite.** `@Roles('admin')` numa rota não protege nada se o `RolesGuard` não estiver registrado. Não há erro nem aviso. Todo decorator de segurança merece um teste que prove a recusa.\n- **`@CurrentUser()` depende do guard.** Ele só devolve o que o guard gravou em `req.user`. Numa rota `@Public()` o valor é `undefined`, e o tipo declarado no parâmetro não avisa.\n- **Valor de decorator de parâmetro próprio não passa pelo `ValidationPipe`** por padrão. Existe a opção `validateCustomDecorators` para mudar isso.\n- **Regra de negócio escondida em decorator.** Quem lê o método não vê a regra, e quem depura não acha. Decorator é para o que é transversal e declarativo: marcar, não decidir.\n\nCritério para criar um: a mesma marcação aparece em três ou mais lugares, e o nome dela diz tudo o que faz.",
+      "naPratica": "No Cockpit, `@Public()` e `@CurrentUser()` são os dois primeiros decorators próprios que o módulo de autenticação pede. Ao revisar uma rota, a leitura fica direta: o que está marcado, e qual guard lê essa marca.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Metadados simulados com um `WeakMap`: `marcar` faz o papel do `SetMetadata` e `getAllAndOverride` o do `Reflector`. Preveja as três linhas.",
+          "codigo": "const meta = new WeakMap<object, Map<string, unknown>>();\n\nfunction marcar(alvo: object, chave: string, valor: unknown) {\n  if (!meta.has(alvo)) meta.set(alvo, new Map());\n  meta.get(alvo)?.set(chave, valor);\n}\nfunction getAllAndOverride(chave: string, alvos: object[]) {\n  return alvos.map((a) => meta.get(a)?.get(chave)).find((v) => v !== undefined);\n}\n\nclass TarefasController {\n  listar() {}\n  remover() {}\n}\nconst metodos = TarefasController.prototype;\n\nmarcar(TarefasController, 'roles', ['user']);\nmarcar(metodos.remover, 'roles', ['admin']);\n\nconsole.log(getAllAndOverride('roles', [metodos.listar, TarefasController]));\nconsole.log(getAllAndOverride('roles', [metodos.remover, TarefasController]));\nconsole.log(getAllAndOverride('publica', [metodos.listar, TarefasController]));\n",
+          "saida": "[ 'user' ]\n[ 'admin' ]\nundefined\n",
+          "explicacao": "`listar` não tem marca própria, então vale a da classe: `['user']`. `remover` tem marca própria e ela **sobrepõe** a da classe: `['admin']`, e não a união dos dois. A chave `publica` não foi gravada em lugar nenhum: `undefined`. É por isso que o guard trata a ausência (`if (!exigidos) return true`). Um metadado é só um dado guardado ao lado da função. Quem dá sentido a ele é quem lê."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um desenvolvedor colocou `@Roles('admin')` na rota de exclusão. O `RolesGuard` existe no projeto, mas não foi registrado em nenhum módulo nem em `@UseGuards`. Um usuário comum chama a rota. O que acontece?",
+          "opcoes": [
+            "403: o decorator barra sozinho",
+            "A rota executa normalmente: o metadado foi gravado, mas ninguém o lê",
+            "A aplicação não sobe, por decorator sem guard",
+            "401: a falta do guard invalida a autenticação"
+          ],
+          "correta": 1,
+          "explicacao": "`@Roles` só pendura um dado no método. A decisão de barrar é do guard, que precisa estar no caminho da requisição. Sem ele, nada lê o metadado e a rota fica aberta a qualquer usuário autenticado, sem erro e sem aviso. É o tipo de falha que só um teste de recusa pega."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A classe do controller tem `@Roles('user')` e um método tem `@Roles('admin')`. O guard usa `getAllAndMerge`. Quem pode chamar o método?",
+          "opcoes": [
+            "Só quem tem o papel `admin`",
+            "Quem tem `user` ou `admin`, porque os dois valores são unidos",
+            "Só quem tem os dois papéis ao mesmo tempo",
+            "Ninguém: os valores entram em conflito"
+          ],
+          "correta": 1,
+          "explicacao": "`getAllAndMerge` junta os valores do método e da classe: `['admin', 'user']`. Com um guard que aceita qualquer um dos papéis da lista, o usuário comum passa, o que provavelmente é o contrário do que o autor quis. Com `getAllAndOverride` valeria só `['admin']`. A escolha do método do `Reflector` é uma regra de segurança."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "`@Public()` e `@CurrentUser()` de rascunho",
+          "minutos": 25,
+          "passos": [
+            "Numa branch de rascunho do Cockpit, crie `Public` com `SetMetadata` e um guard global (registrado com `APP_GUARD`) que lê a marca com `getAllAndOverride` e, se a rota não for pública, exige o cabeçalho `x-user` e grava `req.user = { id: <valor> }`.",
+            "Crie `CurrentUser` com `createParamDecorator`.",
+            "Crie duas rotas de rascunho: uma `@Public()` e uma que devolve `@CurrentUser()`.",
+            "Chame a segunda sem o cabeçalho (espera-se 401) e com o cabeçalho. Chame a pública e veja o que `@CurrentUser()` devolveria nela.",
+            "Descarte a branch."
+          ],
+          "prontoQuando": "Você anotou em `estudo/decorators.md` as três respostas reais e o valor de `@CurrentUser()` numa rota pública."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `SetMetadata(chave, valor)` faz?",
+          "verso": "Devolve um decorator que pendura o par chave e valor no método ou na classe. Não executa nada: alguém precisa ler com o `Reflector`."
+        },
+        {
+          "frente": "Diferença entre `getAllAndOverride` e `getAllAndMerge`?",
+          "verso": "Override devolve o primeiro valor definido (o método sobrepõe a classe). Merge junta os valores dos dois alvos."
+        },
+        {
+          "frente": "Por que um decorator de segurança sem guard registrado é perigoso?",
+          "verso": "Porque não há erro: o metadado é gravado, ninguém lê e a rota fica aberta parecendo protegida. Só um teste de recusa denuncia."
+        },
+        {
+          "frente": "Para que serve `createParamDecorator`?",
+          "verso": "Criar um decorator de parâmetro, como `@CurrentUser()`, que extrai um valor do contexto da requisição e entrega como argumento do handler."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Custom decorators",
+          "url": "https://docs.nestjs.com/custom-decorators"
+        },
+        {
+          "titulo": "NestJS — Execution context (Reflection and metadata)",
+          "url": "https://docs.nestjs.com/fundamentals/execution-context"
+        }
+      ]
+    },
+    {
+      "id": "nest-12",
+      "titulo": "Escopos de provider e o perigo do estado em singleton",
+      "minutos": 11,
+      "ponte": "Variável global de package guarda estado **por sessão**: cada usuário conectado tem a sua cópia, e por isso ela parece segura. Quem já pôs um *pool* de conexões na frente do banco conhece o outro lado: a sessão passa a ser reaproveitada por usuários diferentes e o valor deixado por um aparece para o outro. Um service do Nest vive permanentemente nessa segunda situação: **uma** instância atende todos os usuários do processo. Onde a analogia quebra: no pool a troca acontece entre chamadas. No Node ela acontece no meio do método, a cada `await`.",
+      "texto": "Por padrão, todo provider do Nest é **singleton**: uma instância por aplicação, criada na partida, compartilhada por todas as requisições. É o que torna a injeção barata e o que permite ter um único pool de conexões.\n\nA consequência é uma regra: **campo de instância de service não guarda dado de requisição.**\n\n### O bug clássico\n\n```ts\n@Injectable()\nexport class RelatorioService {\n  private usuarioAtual: string; // estado compartilhado\n\n  async gerar(usuario: string) {\n    this.usuarioAtual = usuario;\n    const dados = await this.buscar(); // aqui o Node atende outra requisição\n    return this.montar(dados, this.usuarioAtual); // de quem é este valor agora?\n  }\n}\n```\n\nO Node tem uma thread só, mas a cada `await` ele larga a requisição atual e pega outra. Se a requisição de Bruno entrar enquanto a de Ana espera o banco, `usuarioAtual` passa a valer `bruno`. Quando a de Ana retoma, monta o relatório **com o usuário errado**.\n\nO que torna esse defeito caro:\n\n- **Não aparece em desenvolvimento.** Você testa uma requisição por vez.\n- **Não aparece em teste unitário**, que também chama em sequência.\n- **Aparece em produção, sob carga**, de forma intermitente, e o sintoma é um usuário vendo dado de outro.\n\n### O que pode ser campo\n\n| pode | não pode |\n|---|---|\n| dependências injetadas | usuário, id ou filtro da requisição atual |\n| configuração lida na partida | resultado parcial de um cálculo em andamento |\n| cache **deliberadamente** compartilhado | \"variável de trabalho\" para não passar parâmetro |\n\n### As saídas\n\n**1. Passar por parâmetro.** É a solução na quase totalidade dos casos. O dado da requisição entra pelo método e vive em variáveis locais, que são da chamada e não da instância. Verboso, explícito e impossível de vazar.\n\n**2. Escopo `REQUEST`.** O Nest cria uma instância nova do provider a cada requisição:\n\n```ts\n@Injectable({ scope: Scope.REQUEST })\nexport class ContextoService {}\n```\n\nResolve o vazamento, com três custos:\n\n- **Contágio.** Quem injeta um provider de escopo `REQUEST` também passa a ser criado por requisição, e assim por diante até o controller. Um provider marcado no fundo da árvore muda o escopo de tudo que depende dele.\n- **Desempenho.** Em vez de reaproveitar objetos, a aplicação monta um pedaço da árvore a cada chamada.\n- **Só existe dentro de requisição HTTP.** Código de agendamento ou de fila não tem requisição, e quem depende do provider não pode ser usado ali do mesmo jeito.\n\n**3. Contexto assíncrono.** O Node tem o `AsyncLocalStorage`, que guarda um valor ligado à **cadeia de chamadas assíncronas** e não à instância. Um middleware abre o contexto com o usuário e o id da requisição, e qualquer service singleton lê o valor certo, mesmo com requisições intercaladas. É a ferramenta indicada para dado transversal que você não quer passar por dez camadas (id de correlação para log, por exemplo). O custo é ser um parâmetro invisível: quem lê o método não vê de onde o dado vem.\n\nExiste ainda o escopo `TRANSIENT`: cada classe que injeta recebe a sua instância própria. Serve para objetos que guardam contexto de quem os usa, como um logger com o nome da classe.\n\n### O critério\n\nComece por parâmetro. Use contexto assíncrono para o que é transversal de verdade. Deixe o escopo `REQUEST` para quando uma biblioteca exigir, sabendo o que ele arrasta.",
+      "naPratica": "Em revisão de código do Cockpit, todo campo de service que não é `readonly` merece uma pergunta: de quem é este valor quando duas requisições se cruzam? Se a resposta for \"da última que gravou\", é defeito, mesmo com todos os testes verdes.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas requisições intercaladas no mesmo service com estado. A de Ana demora 60 ms no banco, a de Bruno 20 ms. Preveja as duas linhas.",
+          "codigo": "const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\n\nclass RelatorioService {\n  usuarioAtual = '';\n\n  async gerar(usuario: string, demoraDoBanco: number) {\n    this.usuarioAtual = usuario;\n    await espera(demoraDoBanco);\n    return `pedido de ${usuario} -> relatório de ${this.usuarioAtual}`;\n  }\n}\n\nconst service = new RelatorioService(); // singleton\n\nconst [ana, bruno] = await Promise.all([\n  service.gerar('ana', 60),\n  service.gerar('bruno', 20),\n]);\nconsole.log(ana);\nconsole.log(bruno);\n",
+          "saida": "pedido de ana -> relatório de bruno\npedido de bruno -> relatório de bruno\n",
+          "explicacao": "A chamada de Ana grava `usuarioAtual = 'ana'` e para no `await`. A de Bruno entra, grava `'bruno'` por cima e também para. Quando a de Ana retoma, 60 ms depois, o campo vale `bruno`: ela recebe o relatório de outro usuário. O parâmetro `usuario` continua certo nas duas, porque é variável local de cada chamada. Rodando uma de cada vez, o defeito não aparece."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mesmo cenário com `AsyncLocalStorage`: o service continua singleton e sem parâmetro de usuário. Preveja a linha.",
+          "codigo": "import { AsyncLocalStorage } from 'node:async_hooks';\n\nconst contexto = new AsyncLocalStorage<{ usuario: string }>();\nconst espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\n\nclass RelatorioService {\n  async gerar(demoraDoBanco: number) {\n    await espera(demoraDoBanco);\n    return `relatório de ${contexto.getStore()?.usuario}`;\n  }\n}\nconst service = new RelatorioService();\n\nfunction requisicao(usuario: string, demora: number) {\n  return contexto.run({ usuario }, () => service.gerar(demora));\n}\n\nconst respostas = await Promise.all([requisicao('ana', 60), requisicao('bruno', 20)]);\nconsole.log(respostas.join(' | '));\n",
+          "saida": "relatório de ana | relatório de bruno\n",
+          "explicacao": "`contexto.run` liga o valor à cadeia assíncrona iniciada dentro dele. Mesmo depois do `await`, `getStore()` devolve o valor da requisição que está retomando, e não o da última que entrou. O service segue sendo uma instância só e sem campo de estado. É o mecanismo que bibliotecas de log usam para carimbar o id da requisição em toda linha."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um `ContextoService` no fundo da árvore é marcado com `Scope.REQUEST`. O `TarefasService` o injeta e o `TarefasController` injeta o `TarefasService`. O que muda?",
+          "opcoes": [
+            "Só o `ContextoService` passa a ser criado por requisição",
+            "O `ContextoService`, o `TarefasService` e o `TarefasController` passam a ser criados a cada requisição",
+            "Nada: o Nest converte de volta para singleton quando é injetado em singleton",
+            "A aplicação não sobe, por mistura de escopos"
+          ],
+          "correta": 1,
+          "explicacao": "O escopo de requisição sobe pela cadeia de injeção: quem depende de algo criado por requisição não pode ser singleton, senão guardaria a instância da primeira requisição para sempre. Uma marcação no fundo da árvore faz a aplicação recriar tudo que está acima, a cada chamada. Esse é o custo que costuma passar despercebido."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, estou cansado de passar o `userId` por cinco métodos. Posso guardar o usuário logado num campo do service, preenchido no começo da requisição? Fica bem mais limpo.\"",
+          "pontos": [
+            "O service é singleton: o campo é compartilhado por todas as requisições",
+            "O valor é trocado no meio do método, a cada `await`, quando outra requisição entra",
+            "O defeito não aparece em teste nem em desenvolvimento, só sob carga, como dado de um usuário para outro",
+            "Parâmetro explícito é a saída padrão, e contexto assíncrono a saída para dado transversal",
+            "Escopo `REQUEST` resolve, mas contamina a cadeia de dependências e custa desempenho"
+          ],
+          "modelo": "Não pode, e o motivo é traiçoeiro. O service é uma instância só para todos os usuários. Entre a hora em que você grava o campo e a hora em que lê, existe um `await`, e nesse intervalo o Node atende outra requisição, que grava o usuário dela por cima. Em teste funciona, porque as chamadas vão uma de cada vez. Em produção, sob carga, um usuário recebe dado de outro. Eu manteria o parâmetro: é verboso, mas não vaza. Se o incômodo for grande, a alternativa certa é contexto assíncrono, o `AsyncLocalStorage`, aberto num middleware. Escopo `REQUEST` também resolve, só que recria o controller e os services a cada chamada."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Caça a estado em service",
+          "minutos": 10,
+          "passos": [
+            "No Cockpit, procure nos arquivos `*.service.ts` de `apps/api/src` todo campo de classe que não seja dependência injetada (busque por `private` e `this.` com atribuição fora do construtor).",
+            "Para cada campo encontrado, classifique em `estudo/estado-service.md`: dependência, configuração, cache deliberado ou dado de requisição.",
+            "Escreva, com suas palavras, a regra que você vai cobrar em revisão de código."
+          ],
+          "prontoQuando": "O arquivo lista os campos encontrados (ou registra que não há nenhum) com a classificação, e a regra está escrita em uma ou duas frases."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o escopo padrão de um provider no Nest?",
+          "verso": "Singleton: uma instância por aplicação, compartilhada por todas as requisições."
+        },
+        {
+          "frente": "Por que um campo de service com dado de requisição é um defeito?",
+          "verso": "A instância é compartilhada. A cada `await` outra requisição pode entrar e sobrescrever o campo: um usuário recebe o dado de outro."
+        },
+        {
+          "frente": "Por que esse defeito não aparece nos testes?",
+          "verso": "Testes e uso manual chamam uma requisição por vez. O defeito exige duas requisições intercaladas no mesmo `await`, o que só acontece sob carga."
+        },
+        {
+          "frente": "Quais os custos de `Scope.REQUEST`?",
+          "verso": "Contagia toda a cadeia que injeta o provider (até o controller), recria objetos a cada chamada e só existe dentro de uma requisição."
+        },
+        {
+          "frente": "Qual a primeira saída para dado de requisição dentro de um service?",
+          "verso": "Passar por parâmetro. Variável local pertence à chamada, não à instância. Para dado transversal, `AsyncLocalStorage`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Injection scopes",
+          "url": "https://docs.nestjs.com/fundamentals/injection-scopes"
+        },
+        {
+          "titulo": "Node.js — Asynchronous context tracking",
+          "url": "https://nodejs.org/api/async_context.html"
+        }
+      ]
+    },
+    {
+      "id": "nest-13",
+      "titulo": "Módulos dinâmicos: forRoot e forFeature",
+      "minutos": 10,
+      "ponte": "Pense num package de envio de e-mail que exige uma chamada a `pk_mail.configura(servidor, remetente)` antes do primeiro uso. O `forRoot` é essa chamada de configuração. Onde a analogia quebra: no package a configuração é estado, e qualquer um pode chamar `configura` de novo no meio do dia. No Nest, `forRoot` **devolve a definição de um módulo**, avaliada uma vez na partida. Depois disso não muda.",
+      "texto": "Até aqui os módulos eram estáticos: `imports: [PrismaModule]` e pronto. Mas você já escreveu isto no `AppModule`:\n\n```ts\nConfigModule.forRoot({ isGlobal: true, validationSchema: envValidation })\n```\n\nIsso é um **módulo dinâmico**: um método estático que recebe opções e **devolve** um objeto com a definição do módulo.\n\n```ts\n// ilustrativo\nexport const MAIL_OPTIONS = Symbol('MAIL_OPTIONS');\n\n@Module({})\nexport class MailModule {\n  static forRoot(options: MailOptions): DynamicModule {\n    return {\n      module: MailModule,\n      global: true,\n      providers: [{ provide: MAIL_OPTIONS, useValue: options }, MailService],\n      exports: [MailService],\n    };\n  }\n}\n```\n\nNão há mágica: é uma função comum que monta as mesmas listas de `@Module`, com um provider a mais carregando as opções. O `MailService` pede as opções com `@Inject(MAIL_OPTIONS)`.\n\n### As convenções de nome\n\n| método | significado |\n|---|---|\n| `forRoot(opcoes)` | configura o módulo **uma vez**, na raiz. Em geral global |\n| `forRootAsync({ inject, useFactory })` | o mesmo, com as opções calculadas por uma função que recebe outros providers |\n| `forFeature(algo)` | chamado em cada módulo de negócio, para registrar a parte dele usando a configuração da raiz |\n| `register(opcoes)` | configura uma instância própria para cada módulo que importa |\n\nSão convenções, não palavras reservadas. Seguir os nomes faz quem lê entender a intenção sem abrir o código.\n\n### Por que existe a versão assíncrona\n\nO argumento de `forRoot(...)` é avaliado no instante em que o arquivo do módulo é carregado, antes de o contêiner existir. Se as opções dependem de configuração, sobra ler `process.env` direto:\n\n```ts\nLoggerModule.forRoot({\n  pinoHttp: { autoLogging: process.env.NODE_ENV !== 'test' },\n})\n```\n\nEsse trecho está no `AppModule` do Cockpit e funciona quando `NODE_ENV` vem do ambiente real. O limite dele: a leitura acontece **antes** de o `ConfigModule` terminar de carregar e validar o arquivo `.env`. Um valor que só exista no `.env`, ou o padrão definido no esquema de validação, pode não ser visto ali. A forma que não depende dessa ordem é adiar o cálculo:\n\n```ts\n// ilustrativo: confira a assinatura na biblioteca\nLoggerModule.forRootAsync({\n  inject: [ConfigService],\n  useFactory: (config: ConfigService) => ({\n    pinoHttp: { autoLogging: config.get('NODE_ENV') !== 'test' },\n  }),\n})\n```\n\nAgora as opções são um provider com `useFactory`: o Nest só chama a função depois de o `ConfigService` estar pronto e validado.\n\n### Escrever o seu: quando vale\n\nO Nest oferece o `ConfigurableModuleBuilder`, que gera `forRoot`, `forRootAsync` e o token de opções a partir do tipo das opções, e poupa o código repetitivo. Antes de usar, a pergunta de sênior é se você precisa de um módulo dinâmico.\n\n- **Vale** quando o módulo é reaproveitado com configurações diferentes: uma biblioteca interna usada por vários projetos, ou um cliente HTTP que cada módulo registra com outra URL base.\n- **Não vale** quando há uma configuração só, dentro da sua própria aplicação. Um módulo estático cujo service injeta o `ConfigService` faz o mesmo com metade do código e nenhum conceito novo.\n\nMódulo dinâmico é ferramenta de **quem publica** módulo. Dentro de uma aplicação, você quase sempre só consome.\n\n### Armadilhas\n\n- **Chamar `forRoot` duas vezes** em módulos diferentes cria duas configurações e, com frequência, duas instâncias do recurso (dois pools, dois clientes). `forRoot` é da raiz. Nos módulos de negócio, `forFeature`.\n- **Esquecer que `forFeature` depende do `forRoot`.** O erro aparece como dependência não resolvida do token de opções.\n- **Opções com segredo em `forRoot` síncrono** incentivam `process.env` espalhado, fora da validação de nest-10.",
+      "naPratica": "No Cockpit você consome dois módulos dinâmicos na raiz: `ConfigModule.forRoot` e `LoggerModule.forRoot`. Saber que o argumento do `forRoot` é avaliado na carga do arquivo explica por que o trecho do logger lê `process.env` direto, e quando trocar por `forRootAsync`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um módulo dinâmico de brinquedo. `forRoot` guarda o valor pronto e `forRootAsync` guarda a função para depois. Preveja as três linhas.",
+          "codigo": "type Opcoes = { remetente: string };\ntype Provider = {\n  provide: string;\n  useValue?: Opcoes;\n  useFactory?: (config: Map<string, string>) => Opcoes;\n};\n\nclass MailModule {\n  static forRoot(opcoes: Opcoes) {\n    return { module: MailModule, providers: [{ provide: 'MAIL_OPTIONS', useValue: opcoes }] as Provider[] };\n  }\n  static forRootAsync(useFactory: (config: Map<string, string>) => Opcoes) {\n    return { module: MailModule, providers: [{ provide: 'MAIL_OPTIONS', useFactory }] as Provider[] };\n  }\n}\n\nconst fixo = MailModule.forRoot({ remetente: 'fixo@cockpit.test' });\nconsole.log(fixo.module === MailModule, fixo.providers[0]?.useValue?.remetente);\n\nconst tardio = MailModule.forRootAsync((config) => ({ remetente: config.get('MAIL_FROM') ?? '?' }));\nconsole.log(typeof tardio.providers[0]?.useFactory, tardio.providers[0]?.useValue);\n\nconst config = new Map([['MAIL_FROM', 'config@cockpit.test']]);\nconsole.log(tardio.providers[0]?.useFactory?.(config).remetente);\n",
+          "saida": "true fixo@cockpit.test\nfunction undefined\nconfig@cockpit.test\n",
+          "explicacao": "`forRoot` devolve um objeto comum, com a classe do módulo e um provider cujo valor já está calculado. `forRootAsync` não calcula nada na hora: guarda a função (`useValue` fica `undefined`). O valor só existe quando alguém chama a função entregando a configuração, que é o que o contêiner do Nest faz depois de resolver o que está em `inject`. Essa diferença de momento é o motivo de a versão assíncrona existir."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "As opções de um módulo dependem de um valor que só o `ConfigService` validado conhece. Qual forma usar?",
+          "opcoes": [
+            "`forRoot({ chave: process.env.CHAVE })`, que é mais simples",
+            "`forRootAsync({ inject: [ConfigService], useFactory: (config) => ({ ... }) })`",
+            "`forFeature()`, porque depende de outro módulo",
+            "Criar o módulo com `new` dentro do `main.ts`"
+          ],
+          "correta": 1,
+          "explicacao": "O argumento de `forRoot` é avaliado na carga do arquivo, antes do contêiner. `forRootAsync` transforma as opções num provider com `useFactory`, chamado só depois que o `ConfigService` está pronto. Ler `process.env` direto funciona em parte dos casos, mas escapa da validação e dos valores padrão do esquema."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Sua aplicação precisa de um `EmailService` com uma única configuração, lida do ambiente. Qual o desenho mais adequado?",
+          "opcoes": [
+            "Um módulo dinâmico com `forRoot`, `forRootAsync` e `forFeature`, para ficar igual às bibliotecas",
+            "Um módulo estático cujo `EmailService` injeta o `ConfigService`",
+            "Uma variável global exportada de um arquivo de configuração",
+            "Um provider de escopo `REQUEST` que lê `process.env` a cada chamada"
+          ],
+          "correta": 1,
+          "explicacao": "Com uma configuração só, dentro da própria aplicação, o módulo dinâmico não entrega nada além de código a mais. Ele se paga quando o mesmo módulo é reaproveitado com opções diferentes. Variável global foge da injeção e do teste. Escopo `REQUEST` para ler configuração é custo sem motivo."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Leia um `forRoot` de verdade",
+          "minutos": 15,
+          "passos": [
+            "No Cockpit, abra `apps/api/src/app.module.ts` e liste em `estudo/modulos-dinamicos.md` os módulos dinâmicos importados e as opções passadas a cada um.",
+            "Abra o arquivo de tipos do `ConfigModule` em `node_modules/@nestjs/config/dist/config.module.d.ts` e anote a assinatura de `forRoot` e de `forFeature`.",
+            "Escreva (sem aplicar) como ficaria a importação do `LoggerModule` com `forRootAsync` e `ConfigService`.",
+            "Anote uma vantagem e um custo da troca."
+          ],
+          "prontoQuando": "O arquivo tem a lista de módulos dinâmicos, as duas assinaturas copiadas, o trecho reescrito e a vantagem e o custo em uma frase cada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que um método `forRoot` devolve?",
+          "verso": "Um objeto `DynamicModule`: a classe do módulo mais as listas de providers, imports e exports, montadas a partir das opções recebidas."
+        },
+        {
+          "frente": "Por que existe `forRootAsync`?",
+          "verso": "O argumento de `forRoot` é avaliado na carga do arquivo. A versão assíncrona adia o cálculo das opções para depois que os providers em `inject` estão prontos."
+        },
+        {
+          "frente": "Diferença de papel entre `forRoot` e `forFeature`?",
+          "verso": "`forRoot` configura o módulo uma vez, na raiz. `forFeature` é chamado em cada módulo de negócio para registrar a parte dele."
+        },
+        {
+          "frente": "Quando NÃO escrever um módulo dinâmico?",
+          "verso": "Quando há uma configuração só, na sua própria aplicação. Módulo estático com `ConfigService` injetado resolve com menos código."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Dynamic modules",
+          "url": "https://docs.nestjs.com/fundamentals/dynamic-modules"
+        },
+        {
+          "titulo": "NestJS — Configuration",
+          "url": "https://docs.nestjs.com/techniques/configuration"
+        }
+      ]
+    },
+    {
+      "id": "nest-14",
+      "titulo": "Eventos e agendamento — e o problema das várias instâncias",
+      "minutos": 12,
+      "ponte": "Evento interno lembra uma trigger de tabela: quem grava não sabe quem reage. Agendamento lembra um job do `DBMS_SCHEDULER`. As duas analogias quebram em pontos que importam. A trigger roda **dentro da transação** e desfaz junto no rollback, enquanto um evento em memória não tem transação nem durabilidade. E o job do banco roda uma vez porque o banco é um só. A API roda em várias cópias, e cada cópia tem o seu relógio.",
+      "texto": "### Eventos: desacoplar quem faz de quem reage\n\nQuando uma tarefa é concluída, o plano do dia precisa ser recalculado e uma notificação pode ser gerada. Se o `TarefasService` chamar o `PlanoService` e o `NotificacaoService` direto, o módulo de tarefas passa a conhecer todos os outros, e cada reação nova exige mexer nele. Com evento, ele só anuncia o que aconteceu:\n\n```ts\n// ilustrativo: @nestjs/event-emitter não está instalado no Cockpit\nthis.eventos.emit('tarefa.concluida', { tarefaId, userId });\n\n// em outro módulo\n@OnEvent('tarefa.concluida')\naoConcluir(evento: TarefaConcluida) {\n  return this.plano.recalcular(evento.userId);\n}\n```\n\nO pacote usa por baixo um emissor de eventos em memória. Confira os decorators e as opções na documentação da versão que você instalar. O que não muda de versão para versão são as propriedades do mecanismo:\n\n- **`emit` é síncrono.** Os ouvintes são chamados na hora, em ordem, antes de o `emit` devolver.\n- **Ouvinte `async` não é esperado.** A parte depois do primeiro `await` roda mais tarde, e se ela falhar o emissor não fica sabendo.\n- **Não é durável.** O evento existe só na memória. Se o processo cair entre o `emit` e o fim do ouvinte, a reação se perde, sem registro.\n- **Não sai do processo.** Outra instância da API não recebe.\n- **Não participa da transação.** Emitir antes do commit avisa o mundo de algo que pode ser desfeito. Emita depois de gravar.\n\nA regra de uso sai daí: evento em memória serve para reação que **pode se perder** ou pode ser refeita (invalidar um cache, recalcular algo que é recalculado de qualquer jeito). Se a reação não pode se perder (enviar cobrança, avisar outro sistema), o caminho é fila (nest-15).\n\n### Agendamento\n\n```ts\n// ilustrativo: @nestjs/schedule não está instalado no Cockpit\n@Cron('0 7 * * 1-5')\nenviarResumoDoDia() { ... }\n```\n\nO pacote registra um temporizador **dentro do processo** da API. É simples e não precisa de infraestrutura. E traz o problema que dá nome à lição.\n\n### Com duas instâncias, o cron roda duas vezes\n\nNo dia em que a API passar a rodar em duas ou mais instâncias (por carga, ou só porque a plataforma sobe a nova antes de derrubar a velha num deploy), **cada uma** dispara o cron às 7h. O usuário recebe dois resumos. Se o job cobra, cobra duas vezes.\n\n| saída | como funciona | custo |\n|---|---|---|\n| **Trava no banco** | cada instância tenta pegar uma trava. Só quem consegue executa | cuidado com a conexão que segura a trava |\n| **Job idempotente** | o job pode rodar duas vezes sem efeito duplicado: uma *constraint* única por usuário e dia barra o segundo registro | pensar a chave de unicidade |\n| **Agendador único** | o disparo sai da API: agendador da plataforma, ou job repetível numa fila | uma peça a mais para operar |\n\nNo Postgres, a trava natural é a *advisory lock* (trava consultiva): `pg_try_advisory_lock(chave)` devolve verdadeiro para quem chegou primeiro e falso para os demais, sem esperar. Você, que conhece banco, vai notar o detalhe: essa trava pertence à **sessão**, e a API usa um pool. Pegar a trava numa conexão e soltar em outra não funciona. A variante `pg_try_advisory_xact_lock`, presa à transação, resolve isso: a trava é liberada no commit ou no rollback.\n\n### Posição de sênior\n\n- **Assuma duas instâncias desde o primeiro dia**, mesmo rodando uma. O deploy sem parada já cria duas por alguns segundos.\n- **Idempotência é a rede de segurança de verdade.** Trava pode falhar ou vencer no meio do trabalho. Um job que tolera rodar duas vezes continua certo.\n- **Cron na API é para tarefa leve.** Trabalho pesado disputa a única thread com as requisições (js-06).\n- **Evento não substitui chamada direta quando você precisa do resultado.** Se quem emite depende da resposta, é uma chamada de método e pronto.",
+      "naPratica": "No Cockpit, o resumo diário e a limpeza de tokens vencidos são os candidatos a cron. Desenhe os dois já com chave de unicidade (usuário e dia) ou trava, mesmo com uma instância só: o custo hoje é uma constraint, e o custo depois é explicar a mensagem duplicada.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O emissor de eventos nativo do Node, com um ouvinte síncrono e um `async`. Preveja a ordem das quatro linhas.",
+          "codigo": "import { EventEmitter } from 'node:events';\n\nconst eventos = new EventEmitter();\n\neventos.on('tarefa.concluida', (e: { id: number }) => {\n  console.log(`plano: recalcula por causa da tarefa ${e.id}`);\n});\neventos.on('tarefa.concluida', async (e: { id: number }) => {\n  await null;\n  console.log(`notificação: tarefa ${e.id}`);\n});\n\nconsole.log('service: gravou no banco');\nconst teveOuvinte = eventos.emit('tarefa.concluida', { id: 7 });\nconsole.log('service: responde', teveOuvinte);\n",
+          "saida": "service: gravou no banco\nplano: recalcula por causa da tarefa 7\nservice: responde true\nnotificação: tarefa 7\n",
+          "explicacao": "`emit` chama os ouvintes na hora: o ouvinte síncrono termina **antes** de o service continuar. O ouvinte `async` também é chamado na hora, mas para no `await` e devolve o controle. O `emit` não espera a Promise dele, o service responde, e só depois a notificação roda. Se essa parte final falhasse, o service já teria respondido com sucesso. `emit` devolve `true` porque havia ouvintes."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Três instâncias da API disparam o mesmo cron. Primeiro sem trava, depois com uma trava do tipo \"tenta pegar, não espera\". Preveja as duas linhas.",
+          "codigo": "const enviados: string[] = [];\nlet donoDaTrava: string | null = null;\n\nfunction tentaTrava(instancia: string): boolean {\n  if (donoDaTrava !== null) return false;\n  donoDaTrava = instancia;\n  return true;\n}\n\nfunction cron(instancia: string, usarTrava: boolean) {\n  if (usarTrava && !tentaTrava(instancia)) return;\n  enviados.push(`resumo enviado por ${instancia}`);\n}\n\nconst instancias = ['api-1', 'api-2', 'api-3'];\n\ninstancias.forEach((i) => cron(i, false));\nconsole.log(enviados.length);\n\nenviados.length = 0;\ninstancias.forEach((i) => cron(i, true));\nconsole.log(enviados.length, enviados[0]);\n",
+          "saida": "3\n1 resumo enviado por api-1\n",
+          "explicacao": "Sem coordenação, cada instância faz o trabalho: três envios. Com a trava, só a primeira que chega executa, e as outras desistem sem esperar. Aqui a trava é uma variável, o que só funciona porque a simulação roda num processo. Entre processos de verdade, a trava precisa estar num lugar que todos enxergam: o banco ou o Redis."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Ao concluir um pedido, o sistema precisa avisar o sistema de faturamento. A perda desse aviso causa prejuízo. Evento em memória serve?",
+          "opcoes": [
+            "Sim, desde que o ouvinte seja `async`",
+            "Sim, eventos em memória são gravados em disco pelo Node",
+            "Não: o evento se perde se o processo cair antes de o ouvinte terminar. Isso pede fila ou registro gravado na mesma transação",
+            "Não, porque eventos em memória são lentos demais"
+          ],
+          "correta": 2,
+          "explicacao": "Evento em memória não tem durabilidade nem nova tentativa. Um deploy ou uma queda no momento errado apaga o aviso sem deixar rastro. O que não pode se perder precisa ser gravado em algum lugar durável antes de ser processado: uma fila, ou uma tabela de pendências escrita na mesma transação do pedido. Velocidade não é o problema."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a API está no limite. Vamos subir uma segunda instância atrás do balanceador amanhã. Tem algum problema?\"",
+          "pontos": [
+            "Todo cron dentro da API passa a rodar em dobro",
+            "Estado em memória (cache, eventos internos, contadores) deixa de ser compartilhado",
+            "Conexões longas (SSE, WebSocket) ficam presas a uma instância",
+            "O total de conexões com o banco dobra: conferir o tamanho do pool contra o limite do banco",
+            "Propôs conferir esses pontos antes, com uma lista objetiva"
+          ],
+          "modelo": "Dá para subir, mas não amanhã sem olhar quatro coisas. Primeira: todo cron que roda dentro da API vai disparar nas duas instâncias, então preciso de trava no banco ou de job idempotente em cada um. Segunda: tudo que está em memória deixa de valer para o conjunto. Cache local, eventos internos e qualquer contador passam a existir em duas cópias diferentes. Terceira: se houver conexão longa com o navegador, ela fica presa numa instância e o evento pode nascer na outra. Quarta: o pool de conexões dobra, e preciso conferir o limite do banco. Me dá meio dia para levantar a lista e eu digo o que falta ajustar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Inventário de trabalho em segundo plano",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/segundo-plano.md`, liste o que o Cockpit vai fazer fora de uma requisição (resumo do dia, limpeza de tokens vencidos, recálculo do plano).",
+            "Para cada item, responde: o que acontece se rodar duas vezes? E se não rodar?",
+            "Classifique cada um: evento em memória, cron com trava, cron idempotente ou fila.",
+            "Para os de cron, escreva qual seria a chave de unicidade ou a chave da trava."
+          ],
+          "prontoQuando": "Cada item tem as duas respostas, a classificação e, quando for cron, a chave escrita."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que um cron dentro da API é um problema com duas instâncias?",
+          "verso": "Cada instância tem o seu temporizador e dispara o job. O trabalho roda em dobro, a menos que haja trava compartilhada ou o job seja idempotente."
+        },
+        {
+          "frente": "Quais as quatro limitações de um evento em memória?",
+          "verso": "Não é durável, não sai do processo, não participa da transação e não espera ouvinte `async` (o erro dele não volta ao emissor)."
+        },
+        {
+          "frente": "Quando usar evento em memória e quando usar fila?",
+          "verso": "Evento: reação que pode se perder ou ser refeita. Fila: reação que não pode se perder e precisa de nova tentativa."
+        },
+        {
+          "frente": "Por que `pg_try_advisory_lock` exige cuidado numa API com pool de conexões?",
+          "verso": "A trava pertence à sessão. Pegar numa conexão e soltar em outra não funciona. A variante presa à transação (`pg_try_advisory_xact_lock`) evita isso."
+        },
+        {
+          "frente": "Qual a rede de segurança mais confiável para job agendado?",
+          "verso": "Idempotência: uma chave única (por exemplo usuário e dia) faz a segunda execução não produzir efeito, mesmo que a trava falhe."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Events",
+          "url": "https://docs.nestjs.com/techniques/events"
+        },
+        {
+          "titulo": "NestJS — Task scheduling",
+          "url": "https://docs.nestjs.com/techniques/task-scheduling"
+        },
+        {
+          "titulo": "PostgreSQL — Explicit Locking (Advisory Locks)",
+          "url": "https://www.postgresql.org/docs/current/explicit-locking.html"
+        }
+      ]
+    },
+    {
+      "id": "nest-15",
+      "titulo": "Filas com BullMQ: retry, idempotência e fila de mortos",
+      "minutos": 12,
+      "ponte": "Você já construiu fila: uma tabela de pendências com coluna de status, um job que lê com `FOR UPDATE SKIP LOCKED`, processa e marca como concluído. Ou usou Oracle AQ. O conceito é o mesmo. A diferença que muda o desenho: na tabela, enfileirar acontece **na mesma transação** do dado de negócio e os dois são confirmados juntos. Uma fila no Redis é outro sistema. Dá para gravar no banco e falhar ao enfileirar, ou o contrário.",
+      "texto": "### Quando fila\n\nUma fila separa **pedir** o trabalho de **fazer** o trabalho. Vale quando o trabalho:\n\n- é lento demais para o usuário esperar (gerar relatório, processar arquivo);\n- depende de terceiro que falha (envio de e-mail, API externa) e precisa de nova tentativa;\n- precisa de controle de ritmo (no máximo 10 chamadas por segundo ao fornecedor);\n- não pode se perder se o processo cair.\n\nAs peças: o **produtor** (a API) adiciona um *job* (tarefa com dados). A **fila** guarda (o BullMQ usa o Redis). O **worker** (processo consumidor) retira e executa.\n\n```ts\n// ilustrativo: bullmq e @nestjs/bullmq não estão instalados no Cockpit.\n// Confira nomes e opções na documentação da versão.\nawait this.fila.add(\n  'enviar-resumo',\n  { userId, dia },\n  { jobId: `resumo:${userId}:${dia}`, attempts: 5, backoff: { type: 'exponential', delay: 1000 } },\n);\n```\n\n### Entrega pelo menos uma vez\n\nA garantia de uma fila como essa é *at-least-once* (pelo menos uma vez). O cenário que impede o \"exatamente uma vez\": o worker envia o e-mail e cai **antes** de avisar a fila de que terminou. A fila não tem como saber. Passado um tempo, entrega o job a outro worker, e o e-mail sai de novo.\n\nA consequência é uma regra: **todo handler de fila precisa ser idempotente.** Rodar duas vezes tem de dar o mesmo resultado que rodar uma.\n\n| técnica | como |\n|---|---|\n| Operação naturalmente idempotente | `status = 'enviado'` pode repetir. `saldo = saldo - 30` não pode |\n| Chave de idempotência no banco | grave a chave do job numa tabela com *constraint* única, na **mesma transação** do efeito. Segunda execução viola a constraint e sai sem fazer nada |\n| Chave repassada ao terceiro | muitos provedores aceitam uma chave e descartam o pedido repetido |\n\nUm `jobId` fixo evita **enfileirar** duas vezes o mesmo pedido. Ele não impede o mesmo job de **executar** duas vezes.\n\n### Nova tentativa com espera crescente\n\nSe o provedor de e-mail caiu, tentar de novo imediatamente só aumenta a pressão sobre ele. *Backoff* exponencial dobra a espera a cada tentativa: 1 s, 2 s, 4 s, 8 s. Duas regras de sênior:\n\n- **Separe erro transitório de erro permanente.** Tempo esgotado e resposta 503 merecem nova tentativa. Dado inválido (um e-mail malformado) vai falhar igual nas cinco tentativas. O BullMQ tem um erro específico para dizer \"não tente de novo\". Confira o nome na documentação.\n- **Defina um teto.** Tentativas sem limite escondem um defeito por dias.\n\n### Fila de mortos\n\nEsgotadas as tentativas, o job vai para um lugar à parte: a DLQ (*dead letter queue*, fila de mortos). No BullMQ os jobs que esgotaram as tentativas ficam no conjunto de **falhados** da própria fila. Se você quer uma fila separada, é você quem move.\n\nA parte que mais se esquece é operacional: **fila de mortos sem alerta é uma lixeira que ninguém abre.** Ela precisa de três coisas: alerta quando cresce, uma forma de ver o erro de cada job e uma forma de reprocessar depois da correção.\n\n### A escrita dupla\n\nGravar o pedido no Postgres e depois enfileirar no Redis são duas operações em dois sistemas. Entre uma e outra o processo pode cair. A saída clássica é o padrão *outbox* (caixa de saída): na mesma transação do pedido você grava uma linha numa tabela de pendências, e um processo à parte lê essa tabela e enfileira. Você reconhece o desenho: é a tabela de pendências do começo desta lição.\n\n### O custo, e quando não usar\n\nFila traz o Redis para operar, um processo worker para implantar e monitorar, e consistência eventual: o usuário clica e o resultado não está pronto na resposta. Num sistema pequeno, com um Postgres só, uma tabela de pendências lida com `FOR UPDATE SKIP LOCKED` entrega durabilidade e nova tentativa sem nenhuma peça nova. Fila dedicada se paga com volume, com vários tipos de job ou com necessidade de controle de ritmo.",
+      "naPratica": "O Cockpit, de um usuário só, não precisa de BullMQ hoje: o envio do resumo pode ser uma tabela de pendências no próprio Postgres. O que vale levar desde já é a disciplina do handler idempotente, porque ela serve igual para cron, fila e webhook.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mesmo job é entregue duas vezes (o worker caiu antes de confirmar). Primeiro com handler ingênuo, depois com chave de idempotência. Preveja as duas linhas.",
+          "codigo": "let creditos = 100;\nconst jaProcessados = new Set<string>();\n\nfunction debitar(job: { id: string; valor: number }, idempotente: boolean) {\n  if (idempotente) {\n    if (jaProcessados.has(job.id)) return;\n    jaProcessados.add(job.id);\n  }\n  creditos -= job.valor;\n}\n\nconst job = { id: 'pedido-42', valor: 30 };\n\ndebitar(job, false);\ndebitar(job, false);\nconsole.log(creditos);\n\ncreditos = 100;\ndebitar(job, true);\ndebitar(job, true);\nconsole.log(creditos);\n",
+          "saida": "40\n70\n",
+          "explicacao": "Sem proteção, a entrega repetida debita duas vezes: sobram 40. Com a chave, a segunda execução reconhece o job e sai sem fazer nada: sobram 70, o valor correto. No sistema real o `Set` é uma tabela com constraint única, e a gravação da chave e o débito ficam na **mesma transação**. Se ficarem em transações separadas, o processo pode cair entre as duas e a proteção deixa de valer."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Nova tentativa com espera exponencial e teto. O job `email-1` falha duas vezes e depois passa. O `email-2` falha sempre. Preveja a saída.",
+          "codigo": "const esperaMs = (tentativa: number, base = 1000) => base * 2 ** (tentativa - 1);\nconst mortos: string[] = [];\n\nfunction processar(job: string, falhasAntesDeDarCerto: number, maxTentativas: number) {\n  for (let t = 1; t <= maxTentativas; t++) {\n    if (t > falhasAntesDeDarCerto) return `${job}: ok na tentativa ${t}`;\n    if (t < maxTentativas) console.log(`${job}: falhou na ${t}, espera ${esperaMs(t)} ms`);\n  }\n  mortos.push(job);\n  return `${job}: esgotou as tentativas`;\n}\n\nconsole.log(processar('email-1', 2, 4));\nconsole.log(processar('email-2', 99, 3));\nconsole.log(mortos);\n",
+          "saida": "email-1: falhou na 1, espera 1000 ms\nemail-1: falhou na 2, espera 2000 ms\nemail-1: ok na tentativa 3\nemail-2: falhou na 1, espera 1000 ms\nemail-2: falhou na 2, espera 2000 ms\nemail-2: esgotou as tentativas\n[ 'email-2' ]\n",
+          "explicacao": "A espera dobra a cada falha: 1000, depois 2000. O `email-1` dá certo na terceira tentativa e nunca chega perto do teto. O `email-2` falha nas três permitidas: depois da última não há espera, ele vai para a lista de mortos. Essa lista é o que alguém precisa olhar: o job não foi feito e ninguém vai tentar de novo sozinho."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um job de envio de e-mail falha com \"endereço de destino inválido\". A fila está configurada com 5 tentativas e espera exponencial. O que é o certo?",
+          "opcoes": [
+            "Deixar as 5 tentativas correrem: alguma pode dar certo",
+            "Aumentar para 10 tentativas",
+            "Tratar como erro permanente: falhar sem nova tentativa e registrar para correção do dado",
+            "Marcar o job como concluído para não poluir a fila de mortos"
+          ],
+          "correta": 2,
+          "explicacao": "Nova tentativa serve para erro transitório (rede, serviço fora do ar). Dado inválido falha igual em todas as tentativas e só gasta tempo e cota do provedor. O handler deve distinguir os dois casos. Marcar como concluído esconde o problema: o e-mail não foi enviado e ninguém fica sabendo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que uma fila com nova tentativa não consegue garantir que cada job execute exatamente uma vez?",
+          "opcoes": [
+            "Porque o Redis perde dados com frequência",
+            "Porque o worker pode concluir o efeito e cair antes de confirmar à fila, que então entrega o job de novo",
+            "Porque o BullMQ sempre executa cada job duas vezes para conferir",
+            "Porque os workers não conseguem ler o mesmo Redis"
+          ],
+          "correta": 1,
+          "explicacao": "O efeito (enviar, gravar) e a confirmação à fila são dois passos. Entre eles o processo pode morrer. A fila só sabe que não recebeu confirmação, e a escolha segura é entregar de novo. Por isso a garantia prática é \"pelo menos uma vez\", e a idempotência fica por conta do handler."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o cliente reclamou que recebeu o mesmo e-mail de confirmação duas vezes. A gente usa fila justamente para ser confiável. Como isso acontece?\"",
+          "pontos": [
+            "Fila garante entrega pelo menos uma vez, não exatamente uma vez",
+            "Cenário: o worker enviou e caiu (ou estourou o tempo) antes de confirmar",
+            "A correção é tornar o handler idempotente, com chave única gravada junto do efeito",
+            "`jobId` fixo evita enfileirar em dobro, mas não evita executar em dobro",
+            "Conferiria o log do job para confirmar a causa antes de mexer"
+          ],
+          "modelo": "A fila está fazendo o que promete: entregar pelo menos uma vez. O caso típico é o worker enviar o e-mail e cair, ou estourar o tempo, antes de confirmar para a fila. Ela não tem como saber que o envio aconteceu e entrega de novo. Isso não se resolve na fila, e sim no handler: antes de enviar, ele grava uma chave única daquele envio, pedido mais tipo de e-mail, numa tabela com constraint. Se a chave já existe, sai sem enviar. Vou olhar o histórico desse job para confirmar que foram duas execuções do mesmo job e não dois jobs enfileirados, porque aí a correção seria no produtor."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que significa entrega \"pelo menos uma vez\"?",
+          "verso": "O job nunca se perde, mas pode ser executado mais de uma vez: o worker pode cair depois do efeito e antes de confirmar."
+        },
+        {
+          "frente": "Por que todo handler de fila precisa ser idempotente?",
+          "verso": "Porque a fila pode entregar o mesmo job de novo. Rodar duas vezes tem de dar o mesmo resultado que rodar uma."
+        },
+        {
+          "frente": "Como implementar idempotência com o banco?",
+          "verso": "Gravar a chave do job numa tabela com constraint única, na mesma transação do efeito. A segunda execução viola a constraint e não faz nada."
+        },
+        {
+          "frente": "O que uma fila de mortos precisa para ser útil?",
+          "verso": "Alerta quando cresce, o erro de cada job visível e um jeito de reprocessar depois da correção."
+        },
+        {
+          "frente": "Qual erro merece nova tentativa e qual não?",
+          "verso": "Transitório (tempo esgotado, serviço fora) merece, com espera crescente e teto. Permanente (dado inválido) falha de vez e vai para correção."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Queues",
+          "url": "https://docs.nestjs.com/techniques/queues"
+        },
+        {
+          "titulo": "BullMQ — Documentação",
+          "url": "https://docs.bullmq.io/"
+        },
+        {
+          "titulo": "PostgreSQL — SELECT (FOR UPDATE, SKIP LOCKED)",
+          "url": "https://www.postgresql.org/docs/current/sql-select.html"
+        }
+      ]
+    },
+    {
+      "id": "nest-16",
+      "titulo": "Tempo real: SSE × WebSocket (gateways)",
+      "minutos": 11,
+      "ponte": "No Forms não existe o servidor avisar a tela: quem quer dado novo consulta de novo, à mão ou com um timer. O mais perto de aviso que o banco oferece é o `DBMS_ALERT`, com uma sessão parada esperando o sinal. Tempo real na web é essa mesma ideia, com uma **conexão HTTP aberta por cliente** no lugar da sessão. Onde a analogia quebra: o banco é um só. A API tem várias instâncias, e a conexão do cliente está em uma delas enquanto o evento pode nascer em outra.",
+      "texto": "\"Tempo real\" quer dizer o servidor mandar dado ao navegador **sem o navegador pedir**. Há três formas, da mais simples para a mais capaz.\n\n| | *Polling* (consulta periódica) | SSE | WebSocket |\n|---|---|---|---|\n| Direção | cliente pergunta | servidor para cliente | os dois sentidos |\n| Transporte | HTTP comum | HTTP comum, resposta que não termina | protocolo próprio, depois de uma troca inicial em HTTP |\n| Reconexão | não se aplica | automática, pelo navegador | por sua conta (ou da biblioteca) |\n| Infraestrutura | nenhuma | proxies precisam tolerar resposta longa | proxies precisam aceitar a troca de protocolo |\n| Atraso | o intervalo da consulta | quase zero | quase zero |\n\n### SSE\n\nSSE (*Server-Sent Events*, eventos enviados pelo servidor) é uma resposta HTTP com tipo `text/event-stream` que fica aberta. O servidor escreve blocos de texto, cada um terminado por uma linha em branco:\n\n```text\nid: 12\nevent: tarefa.concluida\ndata: {\"id\":7}\n\n```\n\nNo navegador, o objeto `EventSource` lê os blocos. Se a conexão cai, ele **reconecta sozinho** e envia o cabeçalho `Last-Event-ID` com o último `id` recebido, para o servidor poder reenviar o que faltou. No Nest, uma rota com o decorator `@Sse()` devolve um fluxo de eventos:\n\n```ts\n// ilustrativo: confira a forma do retorno na documentação da sua versão\n@Sse('eventos')\neventos(@CurrentUser() usuario: UsuarioLogado): Observable<{ data: unknown }> {\n  return this.notificacoes.fluxoDe(usuario.id);\n}\n```\n\nComo é uma rota HTTP comum, guards e cookies funcionam como nas outras.\n\n### WebSocket\n\nWebSocket abre um canal em que os dois lados enviam mensagens quando quiserem. No Nest, a peça é o *gateway* (porta de entrada de mensagens):\n\n```ts\n// ilustrativo: @nestjs/websockets não está instalado no Cockpit\n@WebSocketGateway()\nexport class QuadroGateway {\n  @SubscribeMessage('mover-cartao')\n  mover(@MessageBody() dados: MoverCartaoDto) { ... }\n}\n```\n\nUm gateway **não é um controller**. A mensagem não passa pelo caminho HTTP de nest-09: middlewares do Express não rodam, e autenticação, validação e tratamento de erro precisam ser pensados para esse canal.\n\n### O critério\n\n1. **O atraso de alguns segundos incomoda alguém?** Se não, use consulta periódica. No front, o TanStack Query já refaz a consulta em intervalo ou quando a aba volta ao foco. É a opção com menos peças.\n2. **Só o servidor fala?** Notificação, progresso de um job, painel que se atualiza: SSE.\n3. **O cliente também fala, com frequência, e a latência importa?** Chat, edição colaborativa, cursor de outros usuários: WebSocket.\n\nO erro comum é ir direto ao WebSocket porque \"é tempo real\". A maioria das telas que pedem atualização ao vivo só **recebe**.\n\n### O que muda com várias instâncias\n\nA conexão do cliente mora na memória de **uma** instância. Um evento gerado na instância 2 não chega ao cliente conectado na instância 1. A solução é um barramento entre as instâncias: todas publicam e assinam num canal comum (o mecanismo de publicar e assinar do Redis é a escolha usual), e cada uma repassa aos clientes que tem.\n\nOutros custos que aparecem em produção:\n\n- **Cada cliente é uma conexão aberta o tempo todo.** Memória e limite de conexões do processo e do balanceador entram na conta.\n- **Proxies fecham conexão parada.** É preciso mandar um sinal periódico para mantê-la viva.\n- **Todo deploy derruba todas as conexões**, e os clientes reconectam ao mesmo tempo.\n- **SSE sobre HTTP/1.1** esbarra no limite do navegador de cerca de seis conexões por domínio. Com várias abas abertas, as demais requisições travam. HTTP/2 remove o problema.\n- **`EventSource` não envia cabeçalho personalizado.** A autenticação vai por cookie.",
+      "naPratica": "No Cockpit, com um usuário e uma aba, refazer a consulta quando a janela volta ao foco resolve quase tudo. O primeiro caso real de aviso do servidor (por exemplo o fim de uma sessão de foco) cabe em SSE. WebSocket só entraria com edição simultânea, que o produto não tem.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas instâncias, um cliente conectado em cada uma. O evento nasce na `api-1`. Primeiro sem barramento, depois com. Preveja as duas linhas.",
+          "codigo": "type Instancia = { nome: string; clientes: string[] };\n\nconst api1: Instancia = { nome: 'api-1', clientes: ['ana'] };\nconst api2: Instancia = { nome: 'api-2', clientes: ['bruno'] };\n\nfunction entregar(instancia: Instancia, mensagem: string): string[] {\n  return instancia.clientes.map((c) => `${c} recebeu \"${mensagem}\" pela ${instancia.nome}`);\n}\n\n// sem barramento: só a instância onde o evento nasceu entrega\nconsole.log(entregar(api1, 'tarefa 7 concluída').join('; '));\n\n// com barramento: o evento é publicado e todas as instâncias repassam\nconst assinantes = [api1, api2];\nconsole.log(assinantes.flatMap((i) => entregar(i, 'tarefa 7 concluída')).join('; '));\n",
+          "saida": "ana recebeu \"tarefa 7 concluída\" pela api-1\nana recebeu \"tarefa 7 concluída\" pela api-1; bruno recebeu \"tarefa 7 concluída\" pela api-2\n",
+          "explicacao": "Sem barramento, a `api-1` só conhece as conexões que estão na memória dela: Bruno, conectado na `api-2`, não recebe nada, e não há erro em lugar nenhum. Com o barramento, o evento é publicado num canal que todas assinam, e cada instância repassa aos seus clientes. Esse defeito não aparece em desenvolvimento, onde há uma instância só."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O formato de um evento SSE é texto puro. Esta função monta as linhas de um evento. Preveja a saída, incluindo a linha em branco.",
+          "codigo": "function eventoSse(id: number, evento: string, dados: unknown): string[] {\n  return [`id: ${id}`, `event: ${evento}`, `data: ${JSON.stringify(dados)}`, ''];\n}\n\nfor (const linha of eventoSse(12, 'tarefa.concluida', { id: 7 })) {\n  console.log(linha);\n}\nconsole.log('fim do bloco');\n",
+          "saida": "id: 12\nevent: tarefa.concluida\ndata: {\"id\":7}\n\nfim do bloco\n",
+          "explicacao": "Um evento SSE são linhas `campo: valor` seguidas de uma linha em branco, que marca o fim do bloco. Sem a linha em branco, o navegador continua esperando o resto e não dispara o evento. O `id` é o que o navegador devolve em `Last-Event-ID` ao reconectar. Não há protocolo binário nem biblioteca obrigatória: é HTTP com uma resposta que não termina."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A tela mostra o progresso (0 a 100%) de uma importação que roda no servidor. O usuário só acompanha. Qual a escolha mais adequada?",
+          "opcoes": [
+            "WebSocket, porque é a tecnologia de tempo real",
+            "SSE, ou até consulta periódica: só o servidor envia dado",
+            "Um cron no front que recarrega a página",
+            "Não é possível sem WebSocket"
+          ],
+          "correta": 1,
+          "explicacao": "O fluxo tem um sentido só, do servidor para o cliente. SSE resolve com HTTP comum e reconexão automática. Consultar a cada dois segundos também serve e é ainda mais simples. WebSocket funcionaria, mas traz protocolo próprio, reconexão por sua conta e um caminho de autenticação separado, sem necessidade."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de subir a segunda instância da API, alguns usuários deixaram de receber notificações ao vivo, de forma intermitente. Qual a causa mais provável?",
+          "opcoes": [
+            "O navegador limita SSE a uma instância por domínio",
+            "A conexão do usuário está numa instância e o evento é gerado na outra, sem barramento entre elas",
+            "O balanceador converte SSE em consulta periódica",
+            "Os eventos ficaram grandes demais para o protocolo"
+          ],
+          "correta": 1,
+          "explicacao": "A lista de conexões abertas vive na memória de cada processo. Com duas instâncias e sem um canal comum de publicar e assinar, o evento só alcança os clientes da instância onde nasceu. A intermitência vem do balanceador, que distribui conexões e requisições entre as duas."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o pessoal de produto quer que a lista de tarefas atualize sozinha quando outra pessoa do time muda algo. Vamos colocar WebSocket?\"",
+          "pontos": [
+            "Perguntou qual atraso é aceitável antes de escolher a tecnologia",
+            "Só o servidor envia: SSE ou consulta periódica bastam",
+            "WebSocket se paga quando o cliente também envia com frequência",
+            "Citou o custo com várias instâncias (barramento) e conexões abertas",
+            "Propôs começar pelo mais simples e medir"
+          ],
+          "modelo": "Antes da tecnologia, uma pergunta: quanto de atraso o produto aceita? Se dez segundos servem, eu refaço a consulta em intervalo e quando a aba volta ao foco, e não coloco nenhuma peça nova. Se precisa ser na hora, esse caso é só o servidor avisando a tela, então eu usaria SSE: é HTTP comum, o navegador reconecta sozinho e a autenticação por cookie já funciona. WebSocket eu guardaria para quando a tela também enviar muita coisa, como edição simultânea. Nos dois casos de aviso ao vivo existe um custo: com mais de uma instância, preciso de um barramento entre elas. Eu começaria pela consulta periódica e mediria se alguém reclama."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a diferença essencial entre SSE e WebSocket?",
+          "verso": "SSE: só o servidor envia, sobre HTTP comum, com reconexão automática. WebSocket: os dois lados enviam, em protocolo próprio."
+        },
+        {
+          "frente": "Qual a primeira pergunta antes de adotar tempo real?",
+          "verso": "Quanto de atraso é aceitável? Se alguns segundos servem, consulta periódica resolve sem nenhuma peça nova."
+        },
+        {
+          "frente": "Por que tempo real quebra ao subir a segunda instância?",
+          "verso": "A conexão do cliente vive na memória de uma instância. Evento gerado em outra não chega, a menos que haja um barramento de publicar e assinar entre elas."
+        },
+        {
+          "frente": "O que o `EventSource` faz quando a conexão cai?",
+          "verso": "Reconecta sozinho e envia `Last-Event-ID` com o último id recebido, para o servidor reenviar o que faltou."
+        },
+        {
+          "frente": "Por que um gateway WebSocket não herda a proteção das rotas HTTP?",
+          "verso": "A mensagem não percorre o caminho HTTP. Autenticação, validação e tratamento de erro precisam ser configurados para o gateway."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Server-Sent Events",
+          "url": "https://docs.nestjs.com/techniques/server-sent-events"
+        },
+        {
+          "titulo": "NestJS — Gateways",
+          "url": "https://docs.nestjs.com/websockets/gateways"
+        },
+        {
+          "titulo": "MDN — Using server-sent events",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events"
+        }
+      ]
+    },
+    {
+      "id": "nest-17",
+      "titulo": "Cache no back-end e invalidação",
+      "minutos": 11,
+      "ponte": "Cache é uma *materialized view* feita à mão: uma cópia do resultado, mais rápida de ler e possivelmente atrasada. Você conhece a pergunta que vem junto: atualiza no commit ou sob demanda, e quanto de atraso o negócio aceita. Onde a analogia quebra: o banco sabe de quais tabelas a visão depende e cuida da atualização. No cache da aplicação ninguém sabe. A invalidação é código seu, e esquecer dela não dá erro: dá dado velho.",
+      "texto": "Cache troca **atualidade** por **velocidade**. Toda decisão de cache é uma decisão sobre quanto de dado velho você aceita, por quanto tempo e para quem.\n\n### O padrão: cache-aside\n\nO código consulta o cache primeiro e só vai ao banco se não achar:\n\n```ts\n// ilustrativo: @nestjs/cache-manager não está instalado no Cockpit\nasync planoDoDia(userId: string, dia: string) {\n  const chave = `plano:${userId}:${dia}`;\n  const emCache = await this.cache.get<Plano>(chave);\n  if (emCache) return emCache;\n\n  const plano = await this.montarPlano(userId, dia);\n  await this.cache.set(chave, plano, TTL);\n  return plano;\n}\n```\n\nO Nest tem um módulo de cache com esse desenho e um interceptor que guarda respostas de rotas `GET`. Confira a API na versão que instalar. A **unidade do tempo de vida** já mudou de segundos para milissegundos entre versões da biblioteca, e errar isso por um fator de mil é fácil.\n\n### Dois jeitos de o dado sair do cache\n\n- **TTL** (*time to live*, tempo de vida): a entrada expira sozinha. Simples e à prova de esquecimento. O dado pode ficar velho por até um TTL inteiro.\n- **Invalidação por evento:** quando o dado muda, o código apaga a chave. O dado fica correto logo em seguida, **se** todo caminho de escrita lembrar de invalidar. O evento `tarefa.concluida` de nest-14 é o gancho natural: um ouvinte apaga `plano:<usuário>:<dia>`.\n\nUse **os dois**. Mesmo com invalidação, existe uma corrida: a leitura busca o valor antigo no banco, a escrita altera e apaga a chave, e só então a leitura grava o valor antigo no cache. Sem TTL, esse valor velho fica para sempre. O TTL é o limite do pior caso.\n\n### Os defeitos que custam caro\n\n- **Chave sem o dono.** `tarefas` em vez de `tarefas:<userId>` entrega a lista de um usuário a outro. É vazamento de dado, causado por um cache. Todo dado por usuário leva o usuário na chave.\n- **Cache em memória com várias instâncias.** Cada instância tem a sua cópia. A invalidação feita numa não chega à outra, e o usuário vê o dado mudar e \"desmudar\" conforme a instância que atende. Com mais de uma instância, o cache é compartilhado (Redis).\n- **Estouro de manada.** Uma chave muito lida expira, e cem requisições simultâneas vão ao banco refazer a mesma consulta pesada. Mitiga-se com trava por chave ou renovando antes de expirar.\n- **Cachear erro ou vazio por engano.** Uma falha momentânea vira resposta oficial por um TTL inteiro.\n\n### Antes de pôr cache\n\nA ordem das perguntas de sênior:\n\n1. **Medi?** Qual consulta é lenta, quanto demora e com que frequência é chamada.\n2. **Dá para resolver na origem?** Um índice, uma consulta reescrita ou a remoção de um laço de consultas resolvem sem criar o problema da invalidação. Você sabe fazer isso melhor que a maioria.\n3. **Quanto de atraso esse dado tolera?** Lista de categorias tolera horas. Saldo e permissão toleram zero, e não são candidatos.\n4. **A taxa de acerto compensa?** Dado por usuário, lido uma vez por dia, quase nunca está no cache quando alguém pede.\n\nCache esconde consulta lenta. No dia em que ele esvazia (deploy, reinício do Redis), a lentidão volta toda de uma vez, com o sistema sob carga.\n\n### O que costuma valer\n\nDado lido muito e alterado pouco, compartilhado entre usuários, e que tolera atraso: tabelas de apoio, configuração, resultado de chamada cara a terceiro. Para o resto, um banco bem indexado costuma bastar por muito tempo.",
+      "naPratica": "No Cockpit, a consulta do plano do dia é a única candidata razoável, e mesmo ela deve ser medida antes. Se entrar cache, a chave leva usuário e dia, o TTL é curto e os eventos de tarefa invalidam. O cache do TanStack Query no front já evita boa parte das idas repetidas à API.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Cache-aside com uma escrita que esquece de invalidar e outra que invalida. Preveja as três linhas.",
+          "codigo": "const banco = new Map([['tarefa:7', 'Estudar Nest']]);\nconst cache = new Map<string, string>();\nlet idasAoBanco = 0;\n\nfunction ler(chave: string): string {\n  const emCache = cache.get(chave);\n  if (emCache !== undefined) return emCache;\n  idasAoBanco++;\n  const valor = banco.get(chave) ?? '';\n  cache.set(chave, valor);\n  return valor;\n}\nfunction gravar(chave: string, valor: string, invalida: boolean) {\n  banco.set(chave, valor);\n  if (invalida) cache.delete(chave);\n}\n\nler('tarefa:7');\nler('tarefa:7');\nconsole.log(idasAoBanco);\n\ngravar('tarefa:7', 'Estudar filas', false);\nconsole.log(ler('tarefa:7'));\n\ngravar('tarefa:7', 'Estudar cache', true);\nconsole.log(ler('tarefa:7'), idasAoBanco);\n",
+          "saida": "1\nEstudar Nest\nEstudar cache 2\n",
+          "explicacao": "Duas leituras, uma ida ao banco: o cache funcionou. A primeira gravação altera o banco e não invalida: a leitura seguinte devolve `Estudar Nest`, o valor **velho**, sem erro nenhum. O valor `Estudar filas` nunca chega a ser lido. A segunda gravação apaga a chave: a leitura vai ao banco de novo (segunda ida) e traz o valor atual. Um caminho de escrita que esquece de invalidar é um defeito silencioso, e só um TTL limita o estrago."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A mesma rota de listagem, com duas escolhas de chave de cache. Preveja as quatro linhas.",
+          "codigo": "const cache = new Map<string, string>();\nconst consultaNoBanco = (userId: string) => `tarefas de ${userId}`;\n\nfunction listar(userId: string, chave: string) {\n  if (!cache.has(chave)) cache.set(chave, consultaNoBanco(userId));\n  return cache.get(chave);\n}\n\nconsole.log(listar('ana', 'tarefas'));\nconsole.log(listar('bruno', 'tarefas'));\n\ncache.clear();\nconsole.log(listar('ana', 'tarefas:ana'));\nconsole.log(listar('bruno', 'tarefas:bruno'));\n",
+          "saida": "tarefas de ana\ntarefas de ana\ntarefas de ana\ntarefas de bruno\n",
+          "explicacao": "Com a chave fixa `tarefas`, a consulta de Ana preenche o cache e Bruno recebe **as tarefas de Ana**: a segunda linha é um vazamento de dado entre usuários. Com o usuário na chave, cada um tem a sua entrada. O guard autenticou os dois corretamente e a consulta ao banco filtra por dono. O defeito está só na chave do cache, e passa em qualquer teste feito com um usuário."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você já invalida a chave em toda escrita. Por que manter um TTL mesmo assim?",
+          "opcoes": [
+            "Não precisa: invalidação por evento torna o TTL redundante",
+            "Porque existe uma corrida em que um valor antigo é gravado no cache depois da invalidação, e sem TTL ele nunca sairia",
+            "Porque o Redis exige TTL em toda chave",
+            "Para o cache ocupar mais memória"
+          ],
+          "correta": 1,
+          "explicacao": "Uma leitura pode buscar o valor antigo, ser ultrapassada por uma escrita que altera e invalida, e só depois gravar o valor antigo no cache. Além disso, algum caminho de escrita pode esquecer de invalidar (um script, outro serviço). O TTL é o limite do pior caso. O Redis não exige TTL."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a tela do plano do dia está demorando três segundos. Coloca um cache nessa rota que resolve, né?\"",
+          "pontos": [
+            "Mediu antes: qual consulta é lenta e por quê",
+            "Tentou resolver na origem (índice, consulta, laço de consultas) antes do cache",
+            "Perguntou quanto de atraso o dado tolera",
+            "Citou o custo da invalidação e o risco de dado velho ou de outro usuário",
+            "Se usar cache: chave com usuário, TTL curto e invalidação nas escritas"
+          ],
+          "modelo": "Pode ser que resolva, mas eu não começaria por aí. Três segundos numa tela dessas costuma ser consulta sem índice ou um laço fazendo uma consulta por tarefa. Primeiro eu meço qual consulta pesa e tento resolver no banco, que conserta para todo mundo e não cria dado velho. Cache eu deixo para o caso de a consulta ser cara por natureza. E aí vem a conta: o plano muda toda vez que uma tarefa muda, então eu preciso invalidar em cada escrita, pôr o usuário na chave para não entregar plano de um a outro, e um TTL curto de segurança. Me dá uma hora para medir e eu volto com o número."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Decida o que mereceria cache",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/cache.md`, liste cinco leituras do Cockpit (lista de tarefas, plano do dia, histórico de foco, perfil do usuário, configurações).",
+            "Para cada uma, preencha: frequência de leitura, frequência de escrita, atraso tolerável e se é por usuário.",
+            "Marque quais seriam candidatas a cache e escreva a chave e o que invalida cada uma.",
+            "Para as não candidatas, escreva em uma frase o que você faria no lugar (índice, paginação, nada)."
+          ],
+          "prontoQuando": "A tabela tem as cinco leituras com as quatro colunas, no máximo duas candidatas com chave e gatilho de invalidação, e a alternativa das demais."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é cache-aside?",
+          "verso": "O código consulta o cache. Se não achar, busca no banco, grava no cache e devolve. A escrita apaga ou atualiza a chave."
+        },
+        {
+          "frente": "Por que usar TTL mesmo com invalidação por evento?",
+          "verso": "Há corrida entre leitura e escrita que regrava valor antigo, e algum caminho de escrita pode esquecer de invalidar. O TTL limita o pior caso."
+        },
+        {
+          "frente": "Qual o defeito mais grave ao montar a chave de cache?",
+          "verso": "Deixar o usuário de fora em dado que é por usuário. O cache entrega a resposta de um a outro."
+        },
+        {
+          "frente": "Por que cache em memória não serve com várias instâncias?",
+          "verso": "Cada instância tem a sua cópia e a invalidação não se propaga. O usuário vê versões diferentes conforme quem atende."
+        },
+        {
+          "frente": "Quais perguntas vêm antes de adicionar cache?",
+          "verso": "Medi a consulta? Dá para resolver na origem (índice, consulta)? Quanto de atraso o dado tolera? A taxa de acerto compensa?"
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Caching",
+          "url": "https://docs.nestjs.com/techniques/caching"
+        },
+        {
+          "titulo": "Redis — Documentação",
+          "url": "https://redis.io/docs/latest/"
+        }
+      ]
+    },
+    {
+      "id": "nest-18",
+      "titulo": "Testar no Nest: módulo de teste, mocks de provider e e2e",
+      "minutos": 12,
+      "ponte": "Testar um package é rodar um script: prepara os dados, chama a procedure, confere o resultado e dá rollback. O teste e2e de uma API é esse mesmo roteiro, com uma requisição HTTP no lugar da chamada. O que não tem paralelo no PL/SQL é trocar a dependência: lá o package chama o outro pelo nome e pronto. Aqui a injeção deixa substituir qualquer peça por uma falsa. É onde a analogia quebra e onde mora o risco novo: falsificar tanto que o teste só prova que o falso funciona.",
+      "texto": "O projeto usa o **Vitest**. A configuração liga os nomes globais, então `describe`, `it`, `expect` e `vi` estão disponíveis sem import. Arquivos `*.spec.ts` rodam com `npm test`, e `*.e2e-spec.ts` com `npm run test:e2e`.\n\n### Três níveis\n\n| nível | o que monta | o que prova | velocidade |\n|---|---|---|---|\n| **Unitário** | uma classe, com dependências falsas | a regra daquele service | milissegundos |\n| **Módulo de teste** | um pedaço real da árvore, com trocas pontuais | que as peças se encaixam pela injeção | rápido |\n| **e2e** (ponta a ponta) | a aplicação inteira, com requisição HTTP de verdade | rota, validação, guard, filtro, banco | mais lento |\n\n### Módulo de teste e mock de provider\n\n`Test.createTestingModule` recebe as mesmas listas de um `@Module` e monta um contêiner só para o teste:\n\n```ts\n// tarefas.service.spec.ts (ilustrativo)\nimport { Test } from '@nestjs/testing';\n\ndescribe('TarefasService', () => {\n  const prisma = { tarefa: { findFirst: vi.fn() } };\n  let service: TarefasService;\n\n  beforeEach(async () => {\n    const moduleRef = await Test.createTestingModule({\n      providers: [TarefasService, { provide: PrismaService, useValue: prisma }],\n    }).compile();\n    service = moduleRef.get(TarefasService);\n  });\n\n  it('responde 404 quando a tarefa não é do usuário', async () => {\n    prisma.tarefa.findFirst.mockResolvedValue(null);\n    await expect(service.buscar('t1', 'u1')).rejects.toThrow(NotFoundException);\n  });\n});\n```\n\nO `{ provide: PrismaService, useValue: prisma }` é o provider de nest-02: mesmo token, outra receita. *Mock* é esse objeto falso que você controla. `vi.fn()` cria uma função que registra as chamadas e devolve o que você mandar.\n\nQuando o teste importa um módulo inteiro, a troca é feita depois, com `overrideProvider`:\n\n```ts\nconst moduleRef = await Test.createTestingModule({ imports: [AppModule] })\n  .overrideProvider(EmailService)\n  .useValue(emailFalso)\n  .compile();\n```\n\nExistem também `overrideGuard`, `overridePipe`, `overrideInterceptor` e `overrideFilter`.\n\n### e2e com o mesmo setup do `main.ts`\n\n```ts\n// app.e2e-spec.ts (ilustrativo)\nimport request from 'supertest';\n\nlet app: INestApplication;\n\nbeforeAll(async () => {\n  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();\n  app = moduleRef.createNestApplication();\n  setupApp(app); // a mesma função que o main.ts chama\n  await app.init();\n});\nafterAll(() => app.close());\n\nit('recusa tarefa sem título', async () => {\n  await request(app.getHttpServer()).post('/api/v1/tarefas').send({}).expect(400);\n});\n```\n\nA linha `setupApp(app)` é a mais importante do arquivo. Prefixo, versão, `ValidationPipe` e `cookie-parser` são configurados nela, fora dos módulos (nest-05). Sem ela, o teste exercita outra aplicação: a rota responde em outro caminho e aceita corpo inválido. É por isso que o Cockpit tem `app.setup.ts` separado do `main.ts`. E `app.close()` dispara os hooks de desligamento (nest-10). Sem ele, o pool do banco fica aberto e o processo de teste não termina.\n\n### O que falsificar\n\n- **Falsifique as bordas:** envio de e-mail, API de terceiro, relógio. São lentas, custam dinheiro ou não são determinísticas.\n- **Não falsifique o banco no e2e.** Um mock de Prisma prova que você chamou `findFirst`. Não prova que a consulta filtra por dono, que a constraint barra o duplicado nem que a transação desfaz. Para quem veio de banco isso é evidente: a regra que mora na consulta só é testada contra um banco de verdade. Use um Postgres de teste e limpe os dados entre os testes.\n- **Teste unitário onde há regra.** Cálculo, decisão com vários ramos, transição de estado: rápido de escrever e de rodar. Service que só repassa uma chamada ao Prisma não ganha nada com teste unitário cheio de mock. O e2e cobre.\n\n### Armadilhas\n\n- **Teste que confere a implementação**, do tipo \"chamou o método X com os argumentos Y\". Quebra a cada refatoração e deixa passar defeito. Confira o resultado observável.\n- **Mock sem tipo.** Se a assinatura real mudar, o falso continua aceitando a antiga e o teste segue verde. Tipar o falso a partir da classe real faz o compilador avisar.\n- **Sem teste de recusa.** Todo guard e toda regra de permissão merecem um teste em que o acesso é **negado** (nest-11).",
+      "naPratica": "O primeiro e2e do Cockpit pode ser pequeno: uma rota inexistente deve responder 404 em `application/problem+json`. Ele prova de uma vez que o teste sobe a aplicação com `setupApp`, que o filtro registrado com `APP_FILTER` veio junto e que o `app.close()` encerra o processo.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um teste unitário feito à mão: o service recebe um repositório falso que registra as chamadas. Preveja as três linhas.",
+          "codigo": "type Tarefa = { id: number; feita: boolean };\ntype Repo = { buscar(id: number): Promise<Tarefa | null> };\n\nclass TarefasService {\n  repo: Repo;\n  constructor(repo: Repo) {\n    this.repo = repo;\n  }\n  async concluir(id: number): Promise<Tarefa> {\n    const tarefa = await this.repo.buscar(id);\n    if (!tarefa) throw new Error('404');\n    return { ...tarefa, feita: true };\n  }\n}\n\nconst chamadas: number[] = [];\nconst repoFalso: Repo = {\n  buscar: async (id) => {\n    chamadas.push(id);\n    return id === 7 ? { id, feita: false } : null;\n  },\n};\n\nconst service = new TarefasService(repoFalso);\nconsole.log(JSON.stringify(await service.concluir(7)));\nconsole.log(await service.concluir(8).catch((e: Error) => e.message));\nconsole.log(chamadas);\n",
+          "saida": "{\"id\":7,\"feita\":true}\n404\n[ 7, 8 ]\n",
+          "explicacao": "O service foi testado sem banco e sem Nest: bastou entregar um repositório falso pelo construtor. A tarefa 7 existe no falso e volta concluída. A 8 não existe e o service lança o erro, que aqui é capturado e impresso. O array `chamadas` é o que `vi.fn()` faz por você: registra com que argumentos o falso foi chamado. O que este teste **não** prova é que a consulta real ao banco está certa."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Um falso tipado a partir da classe real. A assinatura real devolve uma tarefa ou `null`. Este falso compila?",
+          "codigo": "class TarefasRepo {\n  async buscar(id: number): Promise<{ id: number; feita: boolean } | null> {\n    return { id, feita: false };\n  }\n  async remover(id: number): Promise<void> {}\n}\n\nconst repoFalso: Pick<TarefasRepo, 'buscar'> = {\n  buscar: async () => 'tarefa 7',\n};\n",
+          "compila": false,
+          "erro": "TS2322",
+          "explicacao": "TS2322: o falso devolve `string` onde a assinatura real exige uma tarefa ou `null`. `Pick<TarefasRepo, 'buscar'>` amarra o falso ao tipo da classe verdadeira e permite falsificar só o método usado. Se amanhã a assinatura real mudar, o compilador aponta todo falso desatualizado. Um falso declarado como `any` continuaria aceitando qualquer coisa e o teste seguiria verde."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O e2e monta a aplicação com `imports: [AppModule]`, chama `createNestApplication()` e `app.init()`, e faz `POST /api/v1/tarefas`. A resposta é 404. O que provavelmente falta?",
+          "opcoes": [
+            "Um `overrideProvider` para o `PrismaService`",
+            "Chamar `setupApp(app)`: o prefixo `api` e a versão são configurados fora dos módulos",
+            "Importar o `supertest` com `require`",
+            "Rodar o teste com `npm test` em vez de `npm run test:e2e`"
+          ],
+          "correta": 1,
+          "explicacao": "Prefixo global e versão por URL são definidos em `setupApp`, sobre a aplicação. Sem a chamada, a rota existe em `/tarefas`, e `/api/v1/tarefas` responde 404. Pior que o 404 é o caso em que o teste passa: sem `setupApp` também não há `ValidationPipe`, e corpo inválido é aceito."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num teste e2e da rota \"buscar tarefa por id\", o que um mock de Prisma deixa de provar?",
+          "opcoes": [
+            "Que o controller chama o service",
+            "Que a consulta de verdade filtra pela tarefa **e** pelo usuário dono",
+            "Que a rota responde em JSON",
+            "Que o guard exige autenticação"
+          ],
+          "correta": 1,
+          "explicacao": "Com o banco falsificado, o teste controla o que `findFirst` devolve, qualquer que seja o filtro passado. A regra mais importante da rota (não devolver tarefa de outro usuário) está na cláusula da consulta, e só um banco real com dados de dois usuários a exercita. As outras opções continuam cobertas mesmo com mock."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "O primeiro e2e do Cockpit",
+          "minutos": 30,
+          "passos": [
+            "Em `apps/api/test/`, crie `app.e2e-spec.ts` que monta a aplicação com `Test.createTestingModule({ imports: [AppModule] })`, chama `setupApp(app)` e `app.init()`, e fecha com `app.close()` no `afterAll`.",
+            "Escreva um teste: `GET /api/v1/nao-existe` responde 404 com `content-type` contendo `application/problem+json` e corpo com `status: 404`.",
+            "Rode `npm run test:e2e` com o banco de desenvolvimento no ar e as variáveis de ambiente definidas.",
+            "Comente a linha `setupApp(app)`, rode de novo e anote o que mudou no resultado. Descomente.",
+            "Comente o `app.close()`, rode e observe se o processo termina. Descomente."
+          ],
+          "prontoQuando": "O teste passa, o comando termina sozinho, e você anotou em `estudo/e2e.md` o efeito de remover `setupApp` e o de remover `app.close()`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `Test.createTestingModule` faz?",
+          "verso": "Monta um contêiner de injeção só para o teste, a partir das mesmas listas de um `@Module`. Depois de `compile()`, você pega instâncias com `moduleRef.get`."
+        },
+        {
+          "frente": "Por que o e2e deve chamar a mesma função de setup do `main.ts`?",
+          "verso": "Prefixo, versão, `ValidationPipe` e middlewares são configurados na aplicação, fora dos módulos. Sem repetir, o teste roda contra outra API."
+        },
+        {
+          "frente": "O que vale falsificar num teste, e o que não vale?",
+          "verso": "Vale: bordas lentas ou não determinísticas (e-mail, API externa, relógio). Não vale: o banco no e2e, porque a regra que mora na consulta deixa de ser testada."
+        },
+        {
+          "frente": "Para que serve `overrideProvider(X).useValue(falso)`?",
+          "verso": "Trocar um provider por um falso num módulo já montado (por exemplo o `AppModule` inteiro), sem alterar o código da aplicação."
+        },
+        {
+          "frente": "Por que chamar `app.close()` no fim do e2e?",
+          "verso": "Dispara os hooks de desligamento e fecha o pool do banco. Sem isso o processo de teste fica aberto."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Testing",
+          "url": "https://docs.nestjs.com/fundamentals/testing"
+        },
+        {
+          "titulo": "Vitest — Guide",
+          "url": "https://vitest.dev/guide/"
+        },
+        {
+          "titulo": "Vitest — Mocking",
+          "url": "https://vitest.dev/guide/mocking"
+        }
+      ]
+    }
+  ]
+}

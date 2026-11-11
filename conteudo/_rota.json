@@ -1,0 +1,507 @@
+{
+  "fases": [
+    {
+      "id": "f1",
+      "nome": "Fase 1 — Base",
+      "resumo": "TypeScript essencial, o assíncrono do Node, o esqueleto do Nest e o roteiro de resposta sobre migração.",
+      "sprints": "Sprint 1 do Cockpit",
+      "chefao": "c0",
+      "licoes": [
+        "ts-01",
+        "mig-02",
+        "js-06",
+        "ts-02",
+        "js-01",
+        "ts-03",
+        "mig-01",
+        "http-01",
+        "ts-04",
+        "js-07",
+        "nest-01",
+        "js-08",
+        "nest-02",
+        "ts-05",
+        "http-03",
+        "nest-08",
+        "ts-06",
+        "ferr-01",
+        "nest-09",
+        "test-01",
+        "js-04",
+        "mig-13"
+      ]
+    },
+    {
+      "id": "f2",
+      "nome": "Fase 2 — API de verdade",
+      "resumo": "Autenticação, segurança, dados e testes: uma API que você defende num review.",
+      "sprints": "Sprints 2 e 3 do Cockpit",
+      "chefao": "c1",
+      "licoes": [
+        "http-02",
+        "http-05",
+        "seg-01",
+        "nest-04",
+        "nest-05",
+        "seg-02",
+        "seg-03",
+        "nest-06",
+        "ts-09",
+        "seg-04",
+        "js-02",
+        "js-03",
+        "dados-01",
+        "dados-02",
+        "dados-05",
+        "ts-07",
+        "ts-08",
+        "test-02",
+        "test-04",
+        "dados-03",
+        "dados-07",
+        "ferr-02",
+        "ferr-06",
+        "mig-04",
+        "mig-06",
+        "dados-12",
+        "nest-18",
+        "test-05",
+        "js-11",
+        "http-07",
+        "http-08"
+      ]
+    },
+    {
+      "id": "f3",
+      "nome": "Fase 3 — React",
+      "resumo": "A virada do Forms para o React: estado, dados do servidor, formulários e a tela que conversa com a API.",
+      "sprints": "Sprints 4, 5 e 6 do Cockpit",
+      "chefao": "c2",
+      "licoes": [
+        "react-01",
+        "react-02",
+        "ui-01",
+        "react-03",
+        "react-04",
+        "ui-02",
+        "react-05",
+        "react-07",
+        "http-06",
+        "front-01",
+        "front-02",
+        "react-10",
+        "ui-03",
+        "front-03",
+        "front-04",
+        "react-06",
+        "js-05",
+        "react-08",
+        "react-09",
+        "react-11",
+        "react-12",
+        "front-05",
+        "front-06",
+        "front-07",
+        "seg-05",
+        "ui-04",
+        "mig-07",
+        "mig-08",
+        "mig-09",
+        "test-06",
+        "ts-10",
+        "ts-11",
+        "react-14"
+      ]
+    },
+    {
+      "id": "f4",
+      "nome": "Fase 4 — Pleno",
+      "resumo": "Tudo o que falta do nível pleno: produção, arquitetura do dia a dia, review, o resto de cada trilha.",
+      "sprints": "Sprints 7 a 10 do Cockpit",
+      "chefao": "c3",
+      "auto": {
+        "ateNivel": 2
+      }
+    },
+    {
+      "id": "f5",
+      "nome": "Fase 5 — Sênior",
+      "resumo": "Critério de decisão: arquitetura, escala, mensageria, operação e a migração de ponta a ponta.",
+      "sprints": "Módulos A a D",
+      "chefao": "c4",
+      "auto": {
+        "ateNivel": 3
+      }
+    }
+  ],
+  "missoes": [
+    {
+      "id": "s0",
+      "sprint": 0,
+      "titulo": "Sprint 0 — Fundação do repositório",
+      "guia": "Sprint 0 — Fundação do repositório",
+      "sessoes": 4,
+      "prontoQuando": "Monorepo no GitHub com CI verde."
+    },
+    {
+      "id": "s1.1",
+      "sprint": 1,
+      "titulo": "1.1 Configuração validada",
+      "guia": "1.1 Configuração validada",
+      "sessoes": 1,
+      "prontoQuando": "A API se recusa a subir sem as variáveis obrigatórias."
+    },
+    {
+      "id": "s1.2",
+      "sprint": 1,
+      "titulo": "1.2 Prisma",
+      "guia": "1.2 Prisma",
+      "sessoes": 1,
+      "prontoQuando": "A API conecta no banco na partida."
+    },
+    {
+      "id": "s1.3",
+      "sprint": 1,
+      "titulo": "1.3 Bootstrap",
+      "guia": "1.3 Bootstrap",
+      "sessoes": 2,
+      "prontoQuando": "A API sobe, o /docs abre e o openapi.json é gerado."
+    },
+    {
+      "id": "s1.4",
+      "sprint": 1,
+      "titulo": "1.4 Erros padronizados (RFC 9457)",
+      "guia": "1.4 Erros padronizados (RFC 9457)",
+      "sessoes": 1,
+      "prontoQuando": "Rota inexistente devolve 404 em application/problem+json."
+    },
+    {
+      "id": "s1.5",
+      "sprint": 1,
+      "titulo": "1.5 Health",
+      "guia": "1.5 Health",
+      "sessoes": 1,
+      "prontoQuando": "GET /health devolve 200 com o banco \"up\". Commit: feat(api): add health check."
+    },
+    {
+      "id": "s1.6",
+      "sprint": 1,
+      "titulo": "1.6 Testes da sprint e Pull Request",
+      "guia": "1.6 Testes desta sprint",
+      "sessoes": 3,
+      "prontoQuando": "1 teste unitário e 2 e2e verdes, CI verde, PR com squash na main fechando a issue da Sprint 1."
+    },
+    {
+      "id": "s2.1",
+      "sprint": 2,
+      "titulo": "2.1 Modelos de usuário e token",
+      "guia": "2.1 Modelos",
+      "sessoes": 1,
+      "prontoQuando": "Migration criada e aplicada; commit feito."
+    },
+    {
+      "id": "s2.2",
+      "sprint": 2,
+      "titulo": "2.2 Gerar os módulos de Users e Auth",
+      "guia": "2.2 Gerar os módulos",
+      "sessoes": 1,
+      "prontoQuando": "Módulos gerados pela CLI e registrados; a API sobe."
+    },
+    {
+      "id": "s2.3",
+      "sprint": 2,
+      "titulo": "2.3 Peças centrais da autenticação",
+      "guia": "2.3 Peças centrais",
+      "sessoes": 3,
+      "prontoQuando": "Registro e login funcionam no Swagger; rota protegida devolve 401 sem token."
+    },
+    {
+      "id": "s2.4",
+      "sprint": 2,
+      "titulo": "2.4 Refresh rotativo",
+      "guia": "2.4 Refresh rotativo (o coração da sprint)",
+      "sessoes": 3,
+      "prontoQuando": "Renovar troca o token; reapresentar o antigo derruba a família inteira."
+    },
+    {
+      "id": "s2.5",
+      "sprint": 2,
+      "titulo": "2.5 Testes e Pull Request da Sprint 2",
+      "guia": "2.5 Testes",
+      "sessoes": 3,
+      "prontoQuando": "Testes da seção verdes, CI verde, PR com squash na main."
+    },
+    {
+      "id": "s3.1",
+      "sprint": 3,
+      "titulo": "3.1 A receita nest g resource",
+      "guia": "3.1 A receita `nest g resource`",
+      "sessoes": 1,
+      "prontoQuando": "Você gerou um recurso e sabe dizer o que cada arquivo faz."
+    },
+    {
+      "id": "s3.2",
+      "sprint": 3,
+      "titulo": "3.2 Workspaces",
+      "guia": "3.2 Workspaces",
+      "sessoes": 2,
+      "prontoQuando": "CRUD de workspaces funcionando, isolado por usuário."
+    },
+    {
+      "id": "s3.3",
+      "sprint": 3,
+      "titulo": "3.3 Tasks",
+      "guia": "3.3 Tasks",
+      "sessoes": 3,
+      "prontoQuando": "CRUD de tarefas com filtros e tags."
+    },
+    {
+      "id": "s3.4",
+      "sprint": 3,
+      "titulo": "3.4 Captura rápida com TDD",
+      "guia": "3.4 Captura rápida (TDD de ponta a ponta)",
+      "sessoes": 2,
+      "prontoQuando": "O histórico de commits mostra o teste vermelho antes do verde."
+    },
+    {
+      "id": "s3.5",
+      "sprint": 3,
+      "titulo": "3.5 Ordenação por índice fracionário",
+      "guia": "3.5 Ordenação por índice fracionário",
+      "sessoes": 1,
+      "prontoQuando": "Reordenar não renumera a lista inteira."
+    },
+    {
+      "id": "s3.6",
+      "sprint": 3,
+      "titulo": "3.6 Testes obrigatórios e Pull Request da Sprint 3",
+      "guia": "3.6 Testes obrigatórios da sprint",
+      "sessoes": 2,
+      "prontoQuando": "Testes verdes, CI verde, PR com squash na main."
+    },
+    {
+      "id": "s4.1",
+      "sprint": 4,
+      "titulo": "4.1 Tailwind e shadcn/ui",
+      "guia": "4.1 Tailwind 4 e shadcn/ui",
+      "sessoes": 2,
+      "prontoQuando": "Um botão do shadcn aparece estilizado na tela."
+    },
+    {
+      "id": "s4.2",
+      "sprint": 4,
+      "titulo": "4.2 Rotas, Query e providers",
+      "guia": "4.2 Rotas, Query e providers",
+      "sessoes": 2,
+      "prontoQuando": "Navegar entre duas rotas funciona sem recarregar a página."
+    },
+    {
+      "id": "s4.3",
+      "sprint": 4,
+      "titulo": "4.3 Cliente HTTP com refresh automático",
+      "guia": "4.3 Cliente HTTP com refresh automático",
+      "sessoes": 2,
+      "prontoQuando": "Um 401 dispara a renovação e a chamada original é repetida."
+    },
+    {
+      "id": "s4.4",
+      "sprint": 4,
+      "titulo": "4.4 Gerar o cliente do contrato",
+      "guia": "4.4 Gerar o cliente do contrato (orval)",
+      "sessoes": 1,
+      "prontoQuando": "npm run api:gen gera o cliente tipado a partir do openapi.json."
+    },
+    {
+      "id": "s4.5",
+      "sprint": 4,
+      "titulo": "4.5 Telas de login e testes da Sprint 4",
+      "guia": "4.5 Telas e testes desta sprint",
+      "sessoes": 3,
+      "prontoQuando": "Login de ponta a ponta no navegador, testes verdes, PR na main."
+    },
+    {
+      "id": "s5.1",
+      "sprint": 5,
+      "titulo": "5.1 Plano do dia — API",
+      "guia": "5.1 API",
+      "sessoes": 4,
+      "prontoQuando": "Plano do dia com capacidade e carry-over testado em dois fusos."
+    },
+    {
+      "id": "s5.2",
+      "sprint": 5,
+      "titulo": "5.2 Tela Hoje — Web",
+      "guia": "5.2 Web",
+      "sessoes": 4,
+      "prontoQuando": "Tela Hoje com arrastar e soltar e atualização otimista; PR na main."
+    },
+    {
+      "id": "s6",
+      "sprint": 6,
+      "titulo": "Sprint 6 — Foco e Standup",
+      "guia": "Sprint 6 — Foco e Standup",
+      "sessoes": 7,
+      "prontoQuando": "Timer de foco com teste de relógio falso; índice parcial de sessão ativa; PR na main."
+    },
+    {
+      "id": "s7",
+      "sprint": 7,
+      "titulo": "Sprint 7 — Pessoas, delegações e 1:1",
+      "guia": "Sprint 7 — Pessoas, delegações e 1:1",
+      "sessoes": 7,
+      "prontoQuando": "Formulário de pauta com itens dinâmicos; teste de rollback da transação; PR na main."
+    },
+    {
+      "id": "s8",
+      "sprint": 8,
+      "titulo": "Sprint 8 — Decisões, paleta de comandos e atalhos",
+      "guia": "Sprint 8 — Decisões, paleta de comandos e atalhos",
+      "sessoes": 6,
+      "prontoQuando": "Paleta navegável por teclado devolvendo o foco; PR na main."
+    },
+    {
+      "id": "s9",
+      "sprint": 9,
+      "titulo": "Sprint 9 — Revisão semanal",
+      "guia": "Sprint 9 — Revisão semanal",
+      "sessoes": 5,
+      "prontoQuando": "Tela de revisão semanal com agregações e gráfico; PR na main."
+    },
+    {
+      "id": "s10.1",
+      "sprint": 10,
+      "titulo": "10.1 Deploy",
+      "guia": "10.1 Deploy",
+      "sessoes": 3,
+      "prontoQuando": "Cockpit no ar com URL pública no README."
+    },
+    {
+      "id": "s10.2",
+      "sprint": 10,
+      "titulo": "10.2 Endurecer",
+      "guia": "10.2 Endurecer",
+      "sessoes": 2,
+      "prontoQuando": "Rate limit, cabeçalhos e revisão de segurança feitos."
+    },
+    {
+      "id": "s10.3",
+      "sprint": 10,
+      "titulo": "10.3 README de portfólio",
+      "guia": "10.3 README de portfólio",
+      "sessoes": 2,
+      "prontoQuando": "README com GIF, arquitetura, decisões e números."
+    },
+    {
+      "id": "mA",
+      "sprint": 11,
+      "titulo": "Módulo A — Nest avançado (fila, tempo real, cache, módulo dinâmico)",
+      "guia": "Módulo A — Nest avançado",
+      "sessoes": 10,
+      "prontoQuando": "As 4 entregas do módulo passam no critério de pronto de cada uma."
+    },
+    {
+      "id": "mB",
+      "sprint": 12,
+      "titulo": "Módulo B — Produção (contêiner, observabilidade, hexagonal, segurança)",
+      "guia": "Módulo B — Produção",
+      "sessoes": 10,
+      "prontoQuando": "As 4 entregas do módulo passam no critério de pronto de cada uma."
+    },
+    {
+      "id": "mC",
+      "sprint": 13,
+      "titulo": "Módulo C — Transferência (projeto novo sem guia, IA no fluxo)",
+      "guia": "Módulo C — Transferência",
+      "sessoes": 12,
+      "prontoQuando": "Fatia de back e de front de um projeto novo, sem guia, com testes."
+    },
+    {
+      "id": "mD",
+      "sprint": 14,
+      "titulo": "Módulo D — Piloto de migração Forms → web",
+      "guia": "Módulo D — Piloto de migração",
+      "sessoes": 12,
+      "prontoQuando": "Uma tela genérica estilo Forms refeita em React + Nest, com a proposta de migração escrita."
+    }
+  ],
+  "chefoes": [
+    {
+      "id": "c0",
+      "nome": "Chefão 0 — O primeiro marco",
+      "tempoMin": 75,
+      "pode": "Documentação oficial (Nest, TypeScript, Node) e o terminal.",
+      "naoPode": "IA, o código do Cockpit e o guia.",
+      "enunciado": "**Parte A — API do zero (55 min).** Numa pasta nova em `chefoes/c0`, crie um projeto com `nest new`. Entregue:\n\n1. `POST /notas` recebendo `{ titulo, texto }`, com DTO validado: `titulo` obrigatório, de 3 a 80 caracteres; `texto` opcional. Guarda em memória (um array no service).\n2. `GET /notas` devolvendo a lista.\n3. `ValidationPipe` global com `whitelist`: um campo desconhecido no corpo é descartado.\n4. Um teste e2e provando que `POST /notas` sem título devolve 400.\n\n**Parte B — Corredor (20 min).** Por escrito, sem consulta, responda em até 8 linhas cada:\n\n1. \"{{nome}}, dá para migrar uma tela de cadastro do Forms para React? O que você precisa saber antes de dar prazo?\"\n2. \"Por que a API nova não pode simplesmente travar o registro enquanto o usuário edita, como o Forms faz?\"",
+      "aprova": [
+        "A API sobe e as duas rotas respondem",
+        "POST sem título devolve 400",
+        "Campo desconhecido é descartado",
+        "O teste e2e está verde",
+        "As duas respostas têm veredito, risco e primeiro passo"
+      ],
+      "depois": "Peça ao seu mentor (uma pessoa experiente ou uma IA; veja a Parte 8 do guia): \"revisa o Chefão 0\". O que travou vira cartão."
+    },
+    {
+      "id": "c1",
+      "nome": "Chefão 1 — API do zero",
+      "tempoMin": 120,
+      "pode": "Documentação oficial (Nest, Prisma, Node) e o terminal.",
+      "naoPode": "IA, o código do Cockpit e o guia.",
+      "enunciado": "Pasta nova em `chefoes/c1`. API Nest de **Notas**: `POST`, `GET`, `PATCH` e `DELETE /notes`, DTO validado, Prisma com Postgres (um branch novo no Neon), filtro de erro no formato RFC 9457, Swagger, 1 teste unitário do service e 1 e2e da criação.",
+      "aprova": [
+        "Roda do zero numa pasta limpa",
+        "Entrada errada devolve 400 em application/problem+json",
+        "Os 2 testes estão verdes",
+        "Nenhum `any` no código",
+        "Bônus: paginação"
+      ],
+      "depois": "Peça ao seu mentor: \"revisa o Chefão 1\". Reprovou? Refaça na semana seguinte com outro tema (Contatos). Refazer é o método funcionando."
+    },
+    {
+      "id": "c2",
+      "nome": "Chefão 2 — Tela do zero",
+      "tempoMin": 120,
+      "pode": "Documentação oficial e a API do Chefão 1 rodando como back-end.",
+      "naoPode": "IA e o código do Cockpit.",
+      "enunciado": "App Vite + React + TypeScript para as **Notas** do Chefão 1: lista com filtro na URL, criação por formulário validado com Zod, edição, exclusão com atualização otimista e rollback, estados de carregando, erro e vazio, tudo navegável por teclado.",
+      "aprova": [
+        "Funciona de ponta a ponta contra a API",
+        "1 teste com Testing Library + MSW da criação",
+        "Nenhum `any`",
+        "Filtro sobrevive a recarregar a página",
+        "Dá para usar só com o teclado"
+      ],
+      "depois": "Peça ao seu mentor: \"revisa o Chefão 2\"."
+    },
+    {
+      "id": "c3",
+      "nome": "Chefão 3 — Feature completa",
+      "tempoMin": 180,
+      "pode": "Documentação oficial.",
+      "naoPode": "IA e o guia.",
+      "enunciado": "No Cockpit, a feature **Reuniões com itens de ação**: módulo Nest com Prisma e migration; a regra \"item de ação vira tarefa ao fechar a reunião\" dentro de uma transação; contrato atualizado e cliente regerado; tela React com formulário de itens dinâmicos e atualização otimista; testes unitário, e2e e de componente; PR com descrição de tech lead.",
+      "aprova": [
+        "CI verde",
+        "A regra está coberta por teste que falha se a transação for removida",
+        "Revisão do mentor sem achado crítico",
+        "Você explica qualquer linha quando perguntado"
+      ],
+      "depois": "Peça ao seu mentor: \"revisa o Chefão 3 e me sabatina sobre o código\"."
+    },
+    {
+      "id": "c4",
+      "nome": "Chefão 4 — Banca de arquitetura",
+      "tempoMin": 180,
+      "pode": "Tudo, inclusive IA para pesquisar. A defesa é sua.",
+      "naoPode": "Entregar texto que você não consegue defender linha a linha.",
+      "enunciado": "Escolha um módulo **genérico** no estilo Forms (por exemplo, \"pedido e itens\": mestre-detalhe, uma LOV grande, uma validação de regra, um relatório). Escreva em até 3 páginas, em `chefoes/c4/proposta.md`:\n\n1. Inventário e classificação das triggers.\n2. Estratégia para a regra (package, extração ou reescrita) com o porquê.\n3. Arquitetura alvo (desenho de caixas: tela, API, banco, identidade) e como as duas telas convivem.\n4. Transação e concorrência na tela nova.\n5. Riscos, estimativa em faixa e plano de corte e de retorno.\n\nDepois, a banca: peça ao seu mentor **\"faz a banca de arquitetura do Chefão 4\"**. Ele vai atacar cada decisão como um arquiteto cético.",
+      "aprova": [
+        "Cada decisão tem alternativa descartada e motivo",
+        "A estimativa é uma faixa com as premissas",
+        "Você respondeu à banca sem recorrer a \"depende\" vazio",
+        "Existe plano de retorno"
+      ],
+      "depois": "O documento vira o seu modelo de proposta de migração para o trabalho (sem dado de empresa)."
+    }
+  ]
+}

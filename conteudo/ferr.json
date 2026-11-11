@@ -1,0 +1,671 @@
+{
+  "licoes": [
+    {
+      "id": "ferr-01",
+      "titulo": "Git para quem vem do CVS",
+      "minutos": 10,
+      "ponte": "No CVS cada arquivo tem a própria linha de revisões (1.1, 1.2, 1.3), o commit é por arquivo e uma tag anota \"a revisão 1.7 deste, a 1.3 daquele\". No Git a unidade é o **projeto inteiro**: um commit é uma foto de todos os arquivos de uma vez. Onde a analogia quebra: quase todo reflexo do CVS (revisão por arquivo, travar para editar, servidor como única verdade) não tem equivalente, e tentar reproduzi-lo é o erro mais comum de quem migra.",
+      "texto": "### Commit: uma foto do projeto inteiro\n\nUm *commit* do Git guarda o estado de **todos** os arquivos do projeto naquele momento, mais autor, data, mensagem e um ponteiro para o commit anterior (o pai). Ele é identificado por um *hash* calculado a partir do conteúdo, como `3f2a9c1`. Três consequências:\n\n- **É atômico.** Ou entram todas as alterações, ou nenhuma. Não existe \"subi três dos cinco arquivos e a rede caiu\".\n- **Não existe \"a revisão 1.7 do arquivo X\".** Existe \"o arquivo X como estava no commit `3f2a9c1`\".\n- **O histórico é uma corrente de fotos**, cada uma apontando para a anterior. Alterar um commit antigo muda o hash dele e de todos os seguintes: adulteração aparece.\n\n### As três áreas\n\nEntre editar e commitar existe uma etapa que o CVS não tem.\n\n1. *Working directory* (pasta de trabalho): os arquivos como estão no disco.\n2. *Staging area* (área de preparação, também chamada *index*): o que você **escolheu** para a próxima foto, com `git add`.\n3. Repositório: as fotos tiradas, com `git commit`.\n\nA área de preparação existe para você montar um commit coeso mesmo tendo mexido em várias coisas. `git add -p` escolhe trecho por trecho.\n\n### Branch é barata\n\nUma *branch* (ramo) é só um **ponteiro para um commit**: um arquivo pequeno com um hash dentro. Criar uma é instantâneo, local e não copia nada. No CVS, abrir um ramo é um evento. Aqui é rotina: uma branch por mudança, apagada depois de integrada. `HEAD` é o ponteiro que diz em que branch você está.\n\n### Local e remoto\n\n`git clone` traz o **histórico inteiro** para a sua máquina. Commit, branch, log e diff funcionam sem rede. O servidor (o *remote*, por convenção chamado `origin`) só entra em três comandos: `git push` envia os seus commits, `git fetch` traz os dos outros e `git pull` faz `fetch` e integra. `origin/main` é a sua cópia local de como a `main` do servidor estava no último `fetch`.\n\n### Tradução rápida\n\n| CVS | Git |\n|---|---|\n| `cvs checkout` | `git clone` |\n| `cvs update` | `git pull` |\n| `cvs commit` | `git add`, `git commit` e depois `git push` |\n| revisão `1.7`, por arquivo | hash do commit, do projeto inteiro |\n| tag: uma revisão de cada arquivo | tag: um nome para um commit |\n| `cvs edit` e travas | não existe: divergência se resolve na integração |\n\n### O que você ganha\n\nCommit atômico, arquivo renomeado sem perder histórico, branch e *merge* (integração de ramos) baratos, trabalho sem rede, e ferramentas que dependem da foto inteira: voltar o projeto todo a um ponto, ou achar por busca binária o commit que introduziu um defeito (ferr-03).\n\n### Critério de sênior\n\n- **Commit pequeno e coeso.** Uma intenção por commit. A mensagem diz o porquê; o diff já mostra o quê.\n- **Segredo commitado é segredo vazado.** O histórico guarda para sempre, e apagar o arquivo num commit seguinte não remove nada. Senha vai em variável de ambiente, e o `.gitignore` protege o `.env`.\n- **Binário funciona mal.** O Git guarda um `.fmb` sem problema, mas não mostra diferença nem integra duas versões. Todo o fluxo de revisão do Git supõe arquivo de texto.",
+      "naPratica": "No Cockpit, cada mudança nasce numa branch a partir da `main` e volta por Pull Request. Ninguém pergunta \"qual revisão do arquivo está em produção\": pergunta \"qual commit\", e a resposta vale para o projeto inteiro.",
+      "exercicios": [
+        {
+          "tipo": "pratica",
+          "titulo": "As três áreas na mão",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/`, rode `git init git-lab` e entre na pasta. É um repositório descartável.",
+            "Crie `a.txt` e `b.txt` com uma linha cada. Rode `git status` e leia a seção de arquivos não rastreados.",
+            "Rode `git add a.txt` e `git status` de novo: um arquivo está preparado, o outro não. Faça `git commit -m \"docs: adiciona a\"`.",
+            "Rode `git log --oneline` e `git show --stat HEAD`: confira que `b.txt` não entrou na foto.",
+            "Rode `git switch -c experimento`, altere `a.txt`, commite e rode `git log --oneline --all --graph`.",
+            "Volte com `git switch -` (a branch inicial, `main` ou `master` conforme a sua configuração) e abra `a.txt`: a alteração não está lá. Abra `.git/refs/heads/experimento` num editor e veja que a branch é um hash."
+          ],
+          "prontoQuando": "Você tem dois commits em duas branches, consegue explicar por que `b.txt` aparece como não rastreado nas duas, e viu que o arquivo da branch contém só um hash."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No Git, o que identifica \"a versão que está em produção\"?",
+          "opcoes": [
+            "A lista com o número de revisão de cada arquivo publicado",
+            "Um commit (ou uma tag que aponta para ele): um identificador único para o projeto inteiro",
+            "A data do último `git push`",
+            "O nome da branch em que o desenvolvedor estava"
+          ],
+          "correta": 1,
+          "explicacao": "Um commit é a foto de todos os arquivos, então um hash basta para reconstruir o projeto inteiro. A lista de revisões por arquivo é o modelo do CVS e não existe aqui. A branch não serve: ela é um ponteiro que anda a cada commit novo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você alterou cinco arquivos: três são da correção e dois são um teste que ainda não terminou. Como commitar só a correção?",
+          "opcoes": [
+            "Não dá: o Git sempre commita tudo o que mudou na pasta",
+            "Copiar os dois arquivos para fora da pasta, commitar e copiar de volta",
+            "`git add` nos três arquivos da correção e `git commit`: só o que está na área de preparação entra na foto",
+            "Criar uma branch para cada arquivo"
+          ],
+          "correta": 2,
+          "explicacao": "A área de preparação existe para isso. O commit leva só o que passou pelo `git add`; o resto continua alterado na pasta de trabalho. Copiar arquivo para fora é o reflexo de quem não tem essa etapa intermediária."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma senha foi commitada por engano e enviada ao remoto. No commit seguinte o arquivo foi apagado. A senha está segura?",
+          "opcoes": [
+            "Sim: o arquivo não existe mais no repositório",
+            "Sim, desde que o `.gitignore` passe a listar o arquivo",
+            "Não: o commit antigo continua no histórico com o conteúdo. A senha deve ser trocada",
+            "Não, mas basta apagar a branch em que o commit foi feito"
+          ],
+          "correta": 2,
+          "explicacao": "Cada commit é uma foto completa e permanente: o anterior ainda contém o arquivo, e qualquer clone tem o histórico inteiro. A única resposta segura é considerar a senha vazada e trocá-la. O `.gitignore` só impede arquivos **novos** de serem rastreados."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que um commit do Git guarda?",
+          "verso": "Uma foto de todos os arquivos do projeto, autor, data, mensagem e o ponteiro para o commit pai. É identificado por um hash."
+        },
+        {
+          "frente": "O que é uma branch no Git?",
+          "verso": "Um ponteiro para um commit: um arquivo pequeno com um hash. Criar é instantâneo e local."
+        },
+        {
+          "frente": "Para que serve a área de preparação (staging)?",
+          "verso": "Para escolher o que entra no próximo commit. Permite montar um commit coeso mesmo com outras alterações em andamento."
+        },
+        {
+          "frente": "Por que apagar um arquivo com senha num commit novo não resolve?",
+          "verso": "O commit antigo continua no histórico com o conteúdo, em todos os clones. A senha tem que ser trocada."
+        },
+        {
+          "frente": "Que comandos do Git falam com o servidor?",
+          "verso": "`push`, `fetch` e `pull` (além do `clone`). Commit, branch, log e diff são locais."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Pro Git (livro oficial)",
+          "url": "https://git-scm.com/book/en/v2"
+        },
+        {
+          "titulo": "Pro Git — What is Git?",
+          "url": "https://git-scm.com/book/en/v2/Getting-Started-What-is-Git%3F"
+        }
+      ]
+    },
+    {
+      "id": "ferr-02",
+      "titulo": "Fluxo de Pull Request e Conventional Commits",
+      "minutos": 10,
+      "ponte": "No fluxo que você conhece, o objeto é versionado direto na linha principal, e a revisão, quando acontece, vem depois e arquivo por arquivo. O *Pull Request* inverte a ordem: a mudança fica numa branch, é revisada **inteira** e só entra na principal depois de aprovada e com as verificações verdes. Onde quebra: revisar antes de entrar só funciona com mudança pequena. Um PR de duas mil linhas recebe um \"aprovado\" sem leitura.",
+      "texto": "Um *Pull Request* (PR, pedido de integração) é a proposta de levar os commits de uma branch para a `main`. Ele junta, numa página só, o diff, a conversa da revisão e o resultado das verificações automáticas.\n\n### O fluxo\n\n1. Atualize a `main` e crie uma branch para **uma** mudança: `git switch -c feat/filtro-por-prazo`.\n2. Commite em passos pequenos.\n3. `git push -u origin feat/filtro-por-prazo` e abra o PR.\n4. O CI roda lint, tipos e testes (ferr-05). Alguém revisa.\n5. Você responde aos comentários com novos commits na mesma branch.\n6. Com aprovação e CI verde, integra e apaga a branch.\n\n### PR pequeno\n\nO fator que mais pesa na qualidade da revisão é o tamanho. Como regra de bolso, um PR deve caber numa leitura de 15 a 20 minutos. Acima disso o revisor passa o olho e aprova. Para manter pequeno:\n\n- Um PR, uma intenção. Renomear e mudar comportamento são dois PRs.\n- Refatoração preparatória vai antes, separada, sem mudar comportamento.\n- Funcionalidade grande entra em fatias, cada uma integrável, escondida atrás de uma chave se ainda não pode aparecer.\n\n### A descrição\n\nO revisor não estava na sua cabeça. A descrição responde a quatro perguntas:\n\n- **O que muda**, em uma ou duas frases.\n- **Por quê**: o problema, com o link da tarefa.\n- **Como testar**: os passos exatos para ver funcionando. É a parte mais esquecida e a que mais economiza tempo.\n- **O que ficou de fora** e os pontos em que você quer atenção.\n\n### Como integrar\n\n| estratégia | o que fica na `main` | quando |\n|---|---|---|\n| *squash merge* | **um** commit por PR | padrão recomendado para time pequeno: histórico linear, um PR é uma linha |\n| *merge commit* | todos os commits e mais um de junção | quando os commits intermediários têm valor próprio |\n| *rebase merge* | os commits reaplicados em linha | times que cuidam de cada commit individual |\n\nCom *squash*, os commits de \"ajusta\", \"corrige o review\" somem, e reverter uma funcionalidade é reverter um commit.\n\n### Conventional Commits\n\nÉ uma convenção de mensagem que pessoas e ferramentas conseguem ler:\n\n```text\ntipo(escopo opcional): descrição curta no imperativo\n\ncorpo opcional explicando o porquê\n```\n\nOs tipos do dia a dia: `feat` (funcionalidade), `fix` (correção), `refactor`, `test`, `docs`, `chore` (manutenção), `ci`, `perf`. Mudança que quebra compatibilidade leva `!` depois do tipo (`feat(api)!: ...`) ou um rodapé `BREAKING CHANGE:`.\n\nO ganho: o histórico vira leitura de uma linha por mudança, e ferramentas geram o registro de alterações e decidem o número da próxima versão a partir dos tipos. Com *squash merge*, a mensagem que fica na `main` é o **título do PR**. É o título que precisa seguir a convenção.\n\n### Critério de sênior\n\n- Abra o PR cedo, como rascunho (*draft*), quando quiser opinião sobre o rumo antes de terminar.\n- O autor é o primeiro revisor: leia o seu próprio diff na página do PR antes de pedir revisão.\n- Branch que vive mais de dois ou três dias acumula conflito. Se está demorando, a fatia está grande.",
+      "naPratica": "No Cockpit, a `main` é protegida e o `commitlint` reprova mensagem fora do padrão já no commit local. O título do PR segue o mesmo formato, porque é ele que vira o commit da `main` no squash.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas mensagens segue o Conventional Commits e descreve bem a mudança?",
+          "opcoes": [
+            "`ajustes`",
+            "`Fix: Corrigido o bug da tela de tarefas.`",
+            "`fix(tarefas): impede concluir tarefa já arquivada`",
+            "`feat/fix: várias melhorias no módulo de tarefas e no login`"
+          ],
+          "correta": 2,
+          "explicacao": "Tipo em minúsculas, escopo, dois-pontos e uma descrição que diz o comportamento novo. A segunda tem o tipo com maiúscula, ponto final e não diz o que mudou. A última mistura duas intenções: são dois commits."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um PR tem 1.800 linhas: renomeia um módulo inteiro e, no meio, altera a regra de cálculo do prazo. Qual o maior risco?",
+          "opcoes": [
+            "O CI demorar mais para rodar",
+            "A alteração da regra passar sem ser vista, perdida no ruído da renomeação",
+            "O Git não conseguir integrar um PR desse tamanho",
+            "O squash merge perder parte das alterações"
+          ],
+          "correta": 1,
+          "explicacao": "O revisor vê centenas de linhas mecânicas e para de ler com atenção. As dez linhas que mudam comportamento passam junto. Separando em dois PRs, o primeiro é aprovado em minutos e o segundo recebe leitura de verdade. O Git integra qualquer tamanho; o limite é a atenção humana."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, é uma linha só. Por que eu não posso commitar direto na main em vez de abrir PR?\"",
+          "pontos": [
+            "Reconheceu o custo: para uma linha, o PR parece burocracia",
+            "Explicou que o PR dispara o CI e deixa registro do porquê, além da revisão",
+            "Lembrou que mudança pequena também quebra produção, e que o PR de uma linha é aprovado em minutos",
+            "Disse que a regra vale para todos, inclusive para ele, e por quê",
+            "Ofereceu o caminho rápido legítimo: PR pequeno, revisão imediata"
+          ],
+          "modelo": "Entendo, para uma linha parece burocracia. Mas o PR não é só a revisão: é ele que faz o CI rodar antes de a mudança chegar na main, e é o registro de por que a linha mudou. Boa parte dos incidentes que eu já vi começou com uma linha só, feita com pressa. E o custo é baixo: PR de uma linha eu aprovo em dois minutos, me chama que eu olho agora. A regra vale para mim também. Se a gente abre exceção para o que parece simples, cada um passa a decidir sozinho o que é simples, e a proteção deixa de existir."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Escreva a descrição de um PR",
+          "minutos": 15,
+          "passos": [
+            "No repositório descartável `estudo/git-lab` (da lição ferr-01), crie a branch `feat/saudacao` com `git switch -c feat/saudacao`.",
+            "Crie `saudacao.txt` e faça dois commits no padrão Conventional Commits, um `feat` e um `docs`.",
+            "Rode `git log --oneline` e confira se cada linha diz, sozinha, o que mudou.",
+            "Escreva em `descricao-pr.md` a descrição do PR com as quatro partes: o que muda, por quê, como testar (passos numerados) e o que ficou de fora.",
+            "Volte para a branch inicial e simule o squash: `git merge --squash feat/saudacao` seguido de `git commit -m \"feat: adiciona saudacao\"`. Confira com `git log --oneline` que entrou um commit só."
+          ],
+          "prontoQuando": "A branch inicial tem um único commit novo com mensagem no padrão, e `descricao-pr.md` tem um \"como testar\" que outra pessoa conseguiria seguir sem perguntar nada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as quatro partes da descrição de um PR?",
+          "verso": "O que muda, por quê, como testar e o que ficou de fora."
+        },
+        {
+          "frente": "Por que PR pequeno?",
+          "verso": "A qualidade da revisão cai com o tamanho. PR grande é aprovado sem leitura, e a mudança de comportamento passa no meio do ruído."
+        },
+        {
+          "frente": "O que o squash merge deixa na `main`?",
+          "verso": "Um commit por PR. Histórico linear, e reverter a funcionalidade é reverter um commit."
+        },
+        {
+          "frente": "Formato do Conventional Commits",
+          "verso": "`tipo(escopo): descrição`. Tipos comuns: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Quebra de compatibilidade: `!` ou rodapé `BREAKING CHANGE:`."
+        },
+        {
+          "frente": "Com squash merge, qual mensagem precisa seguir a convenção?",
+          "verso": "O título do PR: é ele que vira a mensagem do commit na `main`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "GitHub Docs — Pull requests",
+          "url": "https://docs.github.com/en/pull-requests"
+        },
+        {
+          "titulo": "Conventional Commits 1.0.0",
+          "url": "https://www.conventionalcommits.org/en/v1.0.0/"
+        },
+        {
+          "titulo": "Google Engineering Practices — Small CLs",
+          "url": "https://google.github.io/eng-practices/review/developer/small-cls.html"
+        }
+      ]
+    },
+    {
+      "id": "ferr-03",
+      "titulo": "Git avançado: rebase, bisect, cherry-pick e reflog",
+      "minutos": 12,
+      "ponte": "No CVS o histórico é o que o servidor registrou, e ponto. No Git, o histórico **local** é rascunho: você pode reordenar, juntar e reescrever commits antes de publicar. É como revisar o script antes de entregar para execução: depois de entregue, você não edita, manda outro. Onde quebra: \"editar\" um commit não altera nada. O Git cria commits **novos**, com outro hash, e os antigos ficam órfãos, recuperáveis por um tempo.",
+      "texto": "Quatro ferramentas separam quem usa o Git de quem domina o Git. As quatro dependem da mesma ideia de ferr-01: commit é uma foto imutável, e branch é um ponteiro.\n\n### Rebase\n\n`git rebase main` pega os commits da sua branch e os **reaplica** em cima do topo atual da `main`. O resultado é um histórico em linha reta, como se você tivesse começado hoje. Os commits reaplicados são novos: mesmo conteúdo, outro hash.\n\n`git rebase -i` (interativo) abre a lista dos seus commits para você editar o histórico antes de publicar: `reword` troca a mensagem, `squash` e `fixup` juntam commits, `drop` descarta, e mudar a ordem das linhas reordena.\n\n**A regra de ouro: só faça rebase de commits que são só seus.** Se outra pessoa já baseou trabalho neles, os hashes dela deixam de existir no seu histórico e a integração vira duplicata e conflito. Depois de um rebase em branch já enviada, o envio é `git push --force-with-lease`, que recusa se alguém mandou algo que você não viu. Nunca `--force` puro.\n\n### Bisect\n\n\"Funcionava na semana passada e hoje não\" é uma busca binária. `git bisect start`, marque o commit atual com `git bisect bad` e um antigo que funcionava com `git bisect good <hash>`. O Git posiciona você no meio. Você testa e responde `good` ou `bad`, e ele divide de novo. Mil commits são resolvidos em cerca de dez testes. Com `git bisect run <comando>`, o Git roda o teste sozinho e usa o código de saída do comando. No fim, `git bisect reset`.\n\nBisect só funciona bem se cada commit da `main` **compila e passa nos testes**. É mais um motivo para o squash merge de ferr-02.\n\n### Cherry-pick\n\n`git cherry-pick <hash>` copia **um** commit para a branch atual, como commit novo. O uso legítimo é levar uma correção pontual para uma branch de versão já publicada. Use pouco: o mesmo conteúdo passa a existir em dois commits diferentes, e o Git não sabe que são a mesma mudança.\n\n### Reflog: a rede de segurança\n\nO *reflog* é o diário local de **todo lugar por onde o `HEAD` passou**: commits, trocas de branch, rebases, resets. `git reflog` lista, e `git reset --hard <hash>` ou `git branch resgate <hash>` trazem de volta. Fez um rebase errado, apagou uma branch, deu `reset --hard` no lugar errado: o commit ainda existe e o reflog sabe onde.\n\nOs limites: o reflog é **local** (não vai no `push`), as entradas expiram depois de algumas semanas, e ele só conhece o que foi **commitado**. Alteração nunca commitada que você descartou não volta. Daí o hábito de sênior: commit antes de qualquer operação arriscada.\n\n### Merge ou rebase\n\nA discussão é antiga e a resposta útil é uma divisão de trabalho:\n\n| situação | use |\n|---|---|\n| atualizar a **sua** branch com a `main` | rebase: histórico reto, sem commits de junção no PR |\n| arrumar os **seus** commits antes do PR | rebase interativo |\n| integrar o PR na `main` | merge (de preferência squash), pelo botão da plataforma |\n| branch em que mais de uma pessoa trabalha | merge. Rebase só com todos combinados |\n\nO que não funciona é cada pessoa do time fazer de um jeito. Uma convenção escrita, mesmo imperfeita, vale mais do que a escolha certa aplicada pela metade.",
+      "naPratica": "Quando um teste do Cockpit começar a falhar sem que ninguém saiba desde quando, `git bisect run npm test` acha o commit em minutos. E no dia em que um rebase der errado, a primeira ação não é entrar em pânico nem clonar de novo: é `git reflog`.",
+      "exercicios": [
+        {
+          "tipo": "pratica",
+          "titulo": "Perca um commit e recupere pelo reflog",
+          "minutos": 10,
+          "passos": [
+            "No repositório descartável `estudo/git-lab`, crie `importante.txt`, faça `git add` e `git commit -m \"feat: trabalho importante\"`.",
+            "Anote o resultado de `git log --oneline -1`. Agora destrua: `git reset --hard HEAD~1`. Confira que o arquivo sumiu e que o commit não aparece no `git log`.",
+            "Rode `git reflog` e localize a linha do commit perdido.",
+            "Recupere com `git reset --hard <hash>`, usando o hash que o reflog mostrou. (No PowerShell, se preferir a forma `HEAD@{1}`, escreva entre aspas simples: `'HEAD@{1}'`.)"
+          ],
+          "prontoQuando": "`importante.txt` está de volta, `git log --oneline -1` mostra o mesmo hash que você anotou e você consegue dizer por que isso não funcionaria se o arquivo nunca tivesse sido commitado."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Ache o commit culpado com bisect",
+          "minutos": 20,
+          "passos": [
+            "No `git-lab`, crie `conta.txt` com o texto `ok` e faça 8 commits, cada um acrescentando uma linha `ok`. No quinto commit, acrescente `QUEBROU` em vez de `ok`. Não olhe mais para o log.",
+            "Rode `git bisect start`, depois `git bisect bad` (o estado atual tem o defeito) e `git bisect good <hash do primeiro commit>`.",
+            "A cada parada, abra `conta.txt`: se contém `QUEBROU`, responda `git bisect bad`; senão, `git bisect good`. Conte quantas respostas você deu.",
+            "Quando o Git anunciar o primeiro commit ruim, confira com `git show` e finalize com `git bisect reset`."
+          ],
+          "prontoQuando": "O Git apontou o quinto commit em no máximo 3 respostas, e você voltou à branch original com `git bisect reset`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você fez rebase da sua branch, que já estava no remoto, e o `git push` foi recusado. Qual o próximo comando?",
+          "opcoes": [
+            "`git pull` e depois `git push`",
+            "`git push --force`",
+            "`git push --force-with-lease`, depois de confirmar que só você trabalha nessa branch",
+            "`git reset --hard origin/minha-branch`"
+          ],
+          "correta": 2,
+          "explicacao": "O rebase criou commits novos, e o remoto tem os antigos: o envio comum é recusado por definição. `--force-with-lease` sobrescreve só se o remoto estiver como você viu pela última vez. `git pull` traria os commits antigos de volta e duplicaria tudo. `--force` puro apaga trabalho alheio sem avisar. O `reset` jogaria fora o seu rebase."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de um rebase interativo desastrado, três commits seus sumiram do `git log`. O que é verdade?",
+          "opcoes": [
+            "Estão perdidos: rebase reescreve o histórico de forma definitiva",
+            "Continuam no repositório local e aparecem no `git reflog`; dá para voltar com `git reset --hard` ao ponto anterior ao rebase",
+            "Só dá para recuperar se já tinham ido para o remoto",
+            "Voltam sozinhos no próximo `git pull`"
+          ],
+          "correta": 1,
+          "explicacao": "Rebase não apaga commits: cria novos e move o ponteiro. Os antigos ficam órfãos, e o reflog registra onde o `HEAD` estava antes. Eles só somem de vez quando as entradas do reflog expiram e o Git faz a limpeza, semanas depois."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, merge ou rebase? Cada um do time faz de um jeito e o histórico está uma bagunça.\"",
+          "pontos": [
+            "Não escolheu um lado: separou os usos (atualizar a própria branch × integrar na main)",
+            "Citou a regra de ouro: rebase só em commits que são só seus",
+            "Recomendou squash merge na integração, pelo botão da plataforma",
+            "Mencionou `--force-with-lease` e o reflog como rede de segurança",
+            "Propôs escrever a convenção e configurar o repositório para aplicá-la"
+          ],
+          "modelo": "Os dois, cada um num lugar. Para atualizar a sua branch com a main e arrumar os seus commits antes do PR, rebase: o PR fica limpo. Para integrar na main, squash merge pelo botão, e cada PR vira um commit. A única regra dura é não fazer rebase em branch que outra pessoa também usa. Quem fizer rebase em branch já enviada usa force-with-lease, nunca force puro, e se der errado o reflog traz de volta. A bagunça de hoje não vem da ferramenta, vem de cada um decidir sozinho. Eu escrevo isso em meia página no repositório e deixo só o squash habilitado nas configurações."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a regra de ouro do rebase?",
+          "verso": "Só em commits que são só seus. Rebase cria commits novos; quem baseou trabalho nos antigos fica com histórico divergente."
+        },
+        {
+          "frente": "Por que `--force-with-lease` e não `--force`?",
+          "verso": "Ele só sobrescreve se o remoto estiver como você viu pela última vez. `--force` apaga o que outra pessoa enviou, sem aviso."
+        },
+        {
+          "frente": "O que o `git bisect` faz?",
+          "verso": "Busca binária no histórico: você marca um commit bom e um ruim, testa o do meio e repete. Mil commits em cerca de dez testes."
+        },
+        {
+          "frente": "O que o reflog recupera, e o que não recupera?",
+          "verso": "Recupera qualquer commit por onde o `HEAD` passou, mesmo após rebase ou reset. Não recupera o que nunca foi commitado, é local e expira."
+        },
+        {
+          "frente": "Merge ou rebase?",
+          "verso": "Rebase para atualizar e arrumar a sua branch. Merge (squash) para integrar na `main`. O que importa é o time ter uma convenção só."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Git — git-rebase",
+          "url": "https://git-scm.com/docs/git-rebase"
+        },
+        {
+          "titulo": "Git — git-bisect",
+          "url": "https://git-scm.com/docs/git-bisect"
+        },
+        {
+          "titulo": "Git — git-reflog",
+          "url": "https://git-scm.com/docs/git-reflog"
+        }
+      ]
+    },
+    {
+      "id": "ferr-04",
+      "titulo": "Lint, formatador, checagem de tipos e hooks de commit",
+      "minutos": 10,
+      "ponte": "O compilador de PL/SQL pega erro de sintaxe e de tipo. O resto (`WHEN OTHERS THEN NULL`, `SELECT *`, variável que ninguém usa, padrão de nome) depende de um revisor humano perceber. Aqui cada uma dessas classes de problema tem uma ferramenta automática, e elas rodam antes do commit. Onde quebra: nenhuma delas entende regra de negócio. Elas tiram o ruído da revisão para o humano gastar atenção no que importa.",
+      "texto": "São seis ferramentas pequenas, e a confusão comum é achar que fazem a mesma coisa. Cada uma pega uma classe de problema.\n\n| ferramenta | pega | não pega |\n|---|---|---|\n| **Prettier** (formatador) | aspas, vírgulas, quebras de linha, indentação | nenhum defeito: só aparência |\n| **Lint** (oxlint) | padrão suspeito: variável não usada, `==`, Promise solta, regra de hooks do React | erro de tipo entre arquivos |\n| **`tsc --noEmit`** | erro de tipo no projeto inteiro | estilo, regra de negócio |\n| **husky** | não verifica nada: **instala os hooks** do Git | |\n| **lint-staged** | não verifica nada: roda os comandos **só nos arquivos preparados** | |\n| **commitlint** | mensagem de commit fora do padrão | |\n\n### Formatador\n\nO Prettier reescreve o arquivo num formato único. O valor não é a beleza: é **acabar com a discussão de estilo** e com o diff sujo de espaço em branco. A postura de sênior é adotar o padrão da ferramenta e não abrir debate sobre largura de linha.\n\n### Lint\n\nO *linter* lê o código e acusa padrões que costumam ser defeito. O mais difundido no ecossistema é o ESLint. O Cockpit usa o **oxlint**, que é muito mais rápido e implementa boa parte das regras conhecidas. Na API ele roda com `--type-aware`, modo em que as regras consultam os tipos. É esse modo que permite regras como a de Promise solta (js-08), que precisa saber que uma expressão é uma Promise.\n\nToda regra desligada por comentário no código precisa de justificativa ao lado. Comentário de desligamento sem explicação é o `WHEN OTHERS THEN NULL` do lint.\n\n### Checagem de tipos\n\n`tsc --noEmit` roda o compilador só para **verificar**, sem gerar arquivo. Ela é uma etapa separada porque as ferramentas que executam o seu código (o Node, o Vite, o executor de testes) **apagam os tipos sem conferir**. Código com erro de tipo roda, e os testes podem passar. Só o `tsc` reprova.\n\n### Hooks de commit\n\nUm *hook* é um script que o Git roda num momento definido. O husky mantém esses scripts na pasta `.husky/` do repositório e os instala para todos quando alguém roda `npm install`. No Cockpit são dois:\n\n- `pre-commit` roda o lint-staged, que aplica `oxlint --fix` e `prettier --write` **só nos arquivos que estão no commit**. Leva segundos.\n- `commit-msg` roda o commitlint, que confere a mensagem contra o Conventional Commits (ferr-02).\n\n### Por que o `tsc` não está no hook\n\nLint e formatação funcionam arquivo por arquivo. Tipo não: mudar uma interface quebra arquivos que você não tocou. Checar tipo exige o projeto inteiro, e isso é lento para rodar a cada commit. Fica no build e no CI.\n\n### Critério de sênior\n\n- **Hook é conveniência, não portão.** `git commit --no-verify` pula tudo. O portão de verdade é o CI, que ninguém pula (ferr-05). O hook existe para o erro aparecer em dois segundos e não em dez minutos.\n- **Hook lento é hook desligado.** Se passar de alguns segundos, o time aprende o `--no-verify`.\n- **Aviso que ninguém corrige vira ruído.** Regra de lint é erro, ou está desligada. Um projeto com 400 avisos não tem lint.\n- Nenhuma dessas ferramentas substitui teste. Elas provam que o código está bem formado, não que decide certo.",
+      "naPratica": "No Cockpit, a sequência antes de abrir PR é `npm run lint` e `npm run build` na raiz. O build do front roda `tsc -b` antes do Vite, então erro de tipo reprova o build. Quando o commit for recusado, leia qual hook falou: `pre-commit` é código, `commit-msg` é a mensagem.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma função `async` é chamada sem `await` e sem `.catch`. Qual ferramenta acusa?",
+          "opcoes": [
+            "O Prettier",
+            "O `tsc --noEmit`: chamar sem `await` é erro de tipo",
+            "O lint com regras que consultam tipos (Promise solta)",
+            "O commitlint"
+          ],
+          "correta": 2,
+          "explicacao": "Não é erro de tipo: descartar uma Promise é código válido para o compilador. É um padrão suspeito, e pegar padrão suspeito é trabalho do lint. Essa regra precisa saber que a expressão é uma Promise, por isso depende do modo que consulta os tipos."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você muda o tipo de um campo numa interface. Os testes passam e o lint-staged aprova o commit. O CI reprova com erro de tipo num arquivo que você não tocou. Por quê?",
+          "opcoes": [
+            "O CI usa uma versão diferente do TypeScript",
+            "O lint-staged só olha os arquivos do commit, e os testes rodam com os tipos apagados; só o `tsc` do projeto inteiro vê o arquivo que quebrou",
+            "O hook foi pulado com `--no-verify`",
+            "O Prettier alterou o tipo ao formatar"
+          ],
+          "correta": 1,
+          "explicacao": "Mudar uma interface afeta quem a usa, em outros arquivos. O lint-staged não os enxerga, e o executor de testes apaga os tipos sem checar. A checagem do projeto inteiro mora no build e no CI. É o desenho funcionando, não uma falha."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega propõe: \"já temos o hook de pre-commit, o lint no CI é redundante, vamos tirar para ganhar tempo\". Qual a resposta?",
+          "opcoes": [
+            "Concordar: rodar duas vezes a mesma verificação é desperdício",
+            "Manter: o hook é local e pode ser pulado ou nem estar instalado; o CI é a única verificação que vale para todo mundo",
+            "Tirar o hook e manter só o CI, porque hook atrapalha",
+            "Manter os dois, mas transformar o lint do CI em aviso"
+          ],
+          "correta": 1,
+          "explicacao": "O hook roda na máquina de cada um, pode ser pulado com `--no-verify` e só olha os arquivos do commit. O CI roda no projeto inteiro, numa máquina limpa, e bloqueia a integração. O hook dá resposta rápida; o CI garante. Verificação que vira aviso deixa de ser lida."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Qual ferramenta pega qual erro",
+          "minutos": 15,
+          "passos": [
+            "Em `cockpit/apps/api/src/`, crie o arquivo `rascunho-lint.ts`. Ele não será commitado.",
+            "Escreva três defeitos de propósito: uma linha mal formatada (aspas duplas, sem ponto e vírgula, indentação torta); uma variável declarada e nunca usada; e `const n: number = 'texto';`.",
+            "Na raiz do app, rode `npx prettier --check apps/api/src/rascunho-lint.ts` e anote o que ele acusa.",
+            "Rode `npm run lint -w apps/api` e anote. Depois `npx tsc --noEmit -p apps/api` e anote.",
+            "Monte em `estudo/ferramentas.md` uma tabela defeito × ferramenta que pegou.",
+            "Apague `rascunho-lint.ts` e confirme com `git status` que o repositório está limpo."
+          ],
+          "prontoQuando": "A tabela mostra qual das três ferramentas acusou cada um dos três defeitos, e o `git status` do app não lista nenhuma alteração."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Prettier × lint × `tsc --noEmit`: o que cada um pega?",
+          "verso": "Prettier: formatação. Lint: padrão suspeito (variável não usada, Promise solta). `tsc`: erro de tipo no projeto inteiro."
+        },
+        {
+          "frente": "Por que a checagem de tipos é uma etapa separada?",
+          "verso": "Node, Vite e o executor de testes apagam os tipos sem conferir. Código com erro de tipo roda. Só o `tsc` reprova."
+        },
+        {
+          "frente": "O que fazem husky, lint-staged e commitlint?",
+          "verso": "husky instala os hooks do Git; lint-staged roda lint e formatador só nos arquivos do commit; commitlint valida a mensagem."
+        },
+        {
+          "frente": "Por que o hook de commit não substitui o CI?",
+          "verso": "É local, pode ser pulado com `--no-verify` e só vê os arquivos do commit. O CI roda tudo, em máquina limpa, e bloqueia o merge."
+        },
+        {
+          "frente": "Por que o `tsc` não roda no lint-staged?",
+          "verso": "Tipo não é por arquivo: uma mudança quebra arquivos não tocados. Precisa do projeto inteiro, o que é lento para cada commit."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Oxc — Linter (oxlint)",
+          "url": "https://oxc.rs/docs/guide/usage/linter.html"
+        },
+        {
+          "titulo": "Prettier — Documentação",
+          "url": "https://prettier.io/docs/"
+        },
+        {
+          "titulo": "TypeScript — TSConfig: noEmit",
+          "url": "https://www.typescriptlang.org/tsconfig/#noEmit"
+        }
+      ]
+    },
+    {
+      "id": "ferr-05",
+      "titulo": "Integração contínua com GitHub Actions",
+      "minutos": 11,
+      "ponte": "Hoje, a prova de que um objeto compila e funciona é alguém compilar no ambiente e dizer que deu certo. *Integração contínua* (CI) é um servidor que faz isso sozinho a cada envio, numa máquina limpa, e publica o resultado no Pull Request. Onde quebra: essa máquina **nasce vazia a cada execução**. Nada do seu ambiente existe lá, nem o banco, nem as variáveis, nem o `node_modules`. Tudo o que o projeto precisa tem que estar declarado.",
+      "texto": "CI responde a uma pergunta só: **esta mudança, integrada, ainda compila e passa nos testes?** A resposta vem de uma máquina que não é a de ninguém, o que acaba com o \"na minha máquina funciona\".\n\n### O vocabulário do GitHub Actions\n\n- *Workflow* (fluxo): um arquivo YAML em `.github/workflows/`. Diz **quando** rodar e **o quê**.\n- Evento (`on`): o gatilho. Os comuns são `pull_request` e `push` na `main`.\n- *Job* (trabalho): um conjunto de passos que roda num *runner*, uma máquina virtual nova. Jobs diferentes rodam em paralelo, a menos que um declare `needs` do outro.\n- *Step* (passo): ou `uses`, que chama uma *action* pronta, ou `run`, que executa um comando. Um passo que termina com código diferente de zero **reprova o job** (js-10).\n\n```text\nname: ci\non:\n  pull_request:\n  push: { branches: [main] }\njobs:\n  build-test:\n    runs-on: ubuntu-latest\n    services:\n      postgres:\n        image: postgres:17\n        env: { POSTGRES_PASSWORD: postgres }\n        ports: ['5432:5432']\n        options: --health-cmd pg_isready --health-interval 5s --health-retries 10\n    steps:\n      - uses: actions/checkout@v7\n      - uses: actions/setup-node@v7\n        with: { node-version-file: .nvmrc, cache: npm }\n      - run: npm ci\n      - run: npm run lint\n      - run: npm run build\n      - run: npm run test\n```\n\nOs números de versão das actions mudam com o tempo: copie os do seu repositório e confira a documentação.\n\n### Três peças que merecem explicação\n\n**`npm ci`**, e não `npm install`: instala exatamente o lockfile e falha se ele divergir do `package.json` (js-11).\n\n**Cache.** `cache: npm` guarda os pacotes baixados entre execuções, com chave calculada a partir do lockfile. Não guarda o `node_modules`: o `npm ci` roda sempre, só deixa de baixar da rede. Lockfile mudou, cache novo.\n\n**Service container.** O bloco `services` sobe um Postgres de verdade ao lado do job, descartado no fim. É o que permite teste de API com banco real, sem banco compartilhado e sem dado sujo de outra execução. O `health-cmd` faz o job esperar o banco aceitar conexão antes de começar os passos.\n\n### O que deve bloquear o merge\n\nO CI só protege se a `main` exigir. Na proteção de branch do repositório você marca quais verificações são **obrigatórias**. A regra de decisão:\n\n| bloqueia | não bloqueia |\n|---|---|\n| lint, tipos e build | verificação instável, que falha sem motivo |\n| testes unitários | auditoria de dependências (avisa; alguém faz a triagem) |\n| testes de API com banco | teste de carga, e2e longo de navegador (rodam à noite ou antes do release) |\n\nO critério é: bloqueia o que é **rápido, determinístico e diz algo verdadeiro sobre a mudança**. Um teste instável que bloqueia ensina o time a clicar em \"rodar de novo\" sem ler, e no dia em que a falha for real ninguém vai olhar.\n\n### Critério de sênior\n\n- **Rápido.** Passou de uns dez minutos, as pessoas trocam de assunto enquanto esperam e o PR envelhece. Ordene do mais barato para o mais caro: lint antes de teste.\n- **Os mesmos comandos da sua máquina.** O YAML chama `npm run lint`, não uma lógica própria. Se reprovou no CI, você reproduz com o mesmo comando.\n- **Segredo fora do YAML.** Credencial vai nos *secrets* do repositório. O arquivo do workflow é público para quem lê o repositório.\n- **CI vermelho na `main` é prioridade.** Enquanto está vermelho, ninguém sabe se a própria mudança quebrou algo.",
+      "naPratica": "O workflow do Cockpit roda em todo Pull Request e em todo push na `main`: `npm ci`, lint, build e testes, nessa ordem. Quando o CI reprovar o seu PR, abra o log do passo que falhou, copie o comando e rode igual na sua máquina antes de tentar adivinhar.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Os testes de API passam na sua máquina e falham no CI com \"connection refused\" na porta do banco. Qual a causa mais provável?",
+          "opcoes": [
+            "O CI usa outra versão do Node",
+            "O runner nasce vazio: não existe Postgres lá, a menos que o workflow declare um service container (e espere ele ficar pronto)",
+            "O cache do npm está corrompido",
+            "O GitHub bloqueia conexões de banco nos runners"
+          ],
+          "correta": 1,
+          "explicacao": "Na sua máquina o banco já está no ar. No runner só existe o que o workflow declara. Sem o bloco `services`, ou sem a checagem de saúde que espera o banco aceitar conexão, a porta está fechada. Conexão entre o job e um service container do próprio job é permitida."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que o `cache: npm` do passo de configuração do Node guarda entre as execuções?",
+          "opcoes": [
+            "A pasta `node_modules` pronta, dispensando o `npm ci`",
+            "Os pacotes baixados, com chave derivada do lockfile; o `npm ci` ainda roda, sem baixar tudo de novo",
+            "O resultado dos testes, para não rodar os que já passaram",
+            "O build da aplicação"
+          ],
+          "correta": 1,
+          "explicacao": "O cache é do download, não da instalação. O `npm ci` continua montando o `node_modules` do zero a partir do lockfile, o que mantém a garantia de árvore exata. Quando o lockfile muda, a chave muda e o cache é refeito."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o CI está levando 25 minutos e o pessoal quer tirar os testes de API da lista obrigatória para o merge. O que você acha?\"",
+          "pontos": [
+            "Reconheceu o problema real: 25 minutos trava o fluxo do time",
+            "Recusou tirar a proteção sem antes medir onde o tempo está",
+            "Propôs ações concretas: paralelizar jobs, cache, separar o que é lento e pouco informativo",
+            "Deu o critério: bloqueia o que é rápido, determinístico e diz algo verdadeiro sobre a mudança",
+            "Propôs um primeiro passo com prazo"
+          ],
+          "modelo": "Vinte e cinco minutos é ruim mesmo, e eu entendo o pedido. Mas tirar os testes de API do bloqueio troca espera por defeito em produção: são eles que provam que a rota grava certo no banco. Antes de decidir, quero ver onde o tempo está. Em geral dá para ganhar muito rodando lint, build e testes em jobs paralelos, conferindo se o cache está funcionando e separando os poucos testes lentos. Se sobrar algo demorado e instável, isso sim sai do bloqueio e passa a rodar à noite. Me dá até amanhã: eu levanto o tempo por passo e volto com uma proposta para ficar abaixo de dez minutos."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Anote o workflow do Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Abra `cockpit/.github/workflows/ci.yml` e identifique: os eventos, o job, o runner e cada passo.",
+            "Para cada passo, escreva em `estudo/ci-anotado.md` uma linha com o que ele prova e o que passaria despercebido se fosse removido.",
+            "Na raiz do app, rode localmente os mesmos comandos `run` do workflow, na mesma ordem, e anote quanto tempo cada um leva.",
+            "Responda no arquivo: algum passo depende de algo que só existe na sua máquina (banco no ar, variável de ambiente)? O workflow declara isso?"
+          ],
+          "prontoQuando": "O arquivo tem uma linha por passo, os tempos medidos e a lista do que o runner precisa e o workflow declara ou deixa de declarar."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Workflow, job e step no GitHub Actions",
+          "verso": "Workflow: arquivo YAML com gatilho. Job: conjunto de passos numa máquina nova. Step: uma action (`uses`) ou um comando (`run`)."
+        },
+        {
+          "frente": "Por que o CI usa `npm ci`?",
+          "verso": "Instala exatamente o lockfile e falha se ele divergir do `package.json`. O que roda no CI é o que foi versionado."
+        },
+        {
+          "frente": "Para que serve um service container?",
+          "verso": "Sobe um serviço real (Postgres) ao lado do job, descartado no fim. Permite teste com banco de verdade, limpo a cada execução."
+        },
+        {
+          "frente": "Por que um teste instável não deve bloquear o merge?",
+          "verso": "Ele ensina o time a rodar de novo sem ler. Quando a falha for real, ninguém olha. Conserte ou tire do bloqueio."
+        },
+        {
+          "frente": "O que deve bloquear o merge?",
+          "verso": "O que é rápido, determinístico e diz algo verdadeiro sobre a mudança: lint, tipos, build, testes unitários e de API."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "GitHub Docs — GitHub Actions",
+          "url": "https://docs.github.com/en/actions"
+        },
+        {
+          "titulo": "GitHub Docs — About protected branches",
+          "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches"
+        }
+      ]
+    },
+    {
+      "id": "ferr-06",
+      "titulo": "Depurar com instrumento: debugger, aba Network e DevTools",
+      "minutos": 10,
+      "ponte": "Você já depura com instrumento: ponto de parada numa procedure, execução passo a passo, inspeção de variável, mensagens de rastreio numa trigger de tela. Aqui os instrumentos são equivalentes. O que muda é que o defeito pode estar em **três lugares**: no navegador, na rede entre os dois ou no servidor. Onde quebra: no Forms, tela e banco estão numa sessão só. Aqui, antes de depurar, você precisa descobrir **de que lado** o defeito está.",
+      "texto": "Depurar por tentativa (mudar uma linha, salvar, olhar a tela, repetir) é o método mais lento que existe. O método de sênior é um protocolo curto, com um instrumento para cada pergunta.\n\n### 1. Reproduza com passos exatos\n\nSem reprodução não há depuração, há palpite. Anote os passos, o dado usado e o resultado esperado contra o obtido.\n\n### 2. Descubra o lado: a aba Network\n\nAbra as ferramentas do navegador (F12), aba *Network* (rede), e repita a ação. Três perguntas, nesta ordem:\n\n| pergunta | se a resposta for \"não\" ou \"errado\" |\n|---|---|\n| **Saiu** uma requisição? | o defeito é do front: o evento não disparou, ou o estado impediu |\n| Saiu com a **URL, o método e o corpo** certos? | o front montou errado |\n| **Voltou** o status e o corpo esperados? | o defeito é do back: vá para o servidor |\n\nSe as três respostas forem \"sim\" e a tela ainda mostra errado, o defeito voltou para o front: o dado chegou certo e foi desenhado errado, ou a tela está mostrando um dado antigo em cache. Esse minuto na aba Network corta o espaço de busca pela metade.\n\n### 3. No servidor: o depurador\n\nO Node tem um inspetor embutido. Com a aplicação iniciada em modo de depuração (a opção `--inspect` do Node; no Cockpit, o script `start:debug` da API), o VS Code se conecta ao processo em execução. Isso se chama *attach* (anexar). A partir daí você tem o que já conhece:\n\n- *Breakpoint* (ponto de parada) na linha do service.\n- **Breakpoint condicional**: para só quando `tarefa.id === 42`. Indispensável em laço e em rota muito chamada.\n- *Logpoint*: imprime uma expressão sem parar e sem alterar o código.\n- Pilha de chamadas, variáveis do escopo e expressões vigiadas.\n\nOs pontos de parada funcionam no arquivo `.ts`, mesmo com o Node executando JavaScript, por causa dos *source maps* (mapas que ligam o código gerado ao original).\n\n### 4. No navegador: Sources e React DevTools\n\nA aba *Sources* tem o mesmo depurador para o código do front. A extensão **React DevTools** acrescenta duas abas: *Components*, que mostra a árvore de componentes com as *props* e o estado de cada um em tempo real, e *Profiler*, que mostra o que renderizou e quanto custou. A pergunta \"que valor este componente recebeu?\" se responde olhando, não espalhando `console.log`.\n\n### 5. Uma hipótese por vez\n\nEscreva a hipótese, escolha o instrumento que a confirma ou derruba, e mude **uma** coisa. Duas mudanças juntas que resolvem o problema não ensinam qual das duas era a causa.\n\n### 6. O que não reproduz: log com contexto\n\nDefeito que só acontece em produção não tem depurador. Tem log. E log útil tem **contexto**: identificador da requisição, usuário, entidade, operação e o erro com a causa (js-08), em formato estruturado (JSON) para dar para filtrar. A mensagem \"erro ao salvar\" não serve para nada às três da manhã. Dado sensível nunca vai para o log.\n\n`console.log('aqui')` é instrumento descartável: aceitável durante a caçada, proibido no commit.",
+      "naPratica": "No Cockpit, a queixa \"cliquei em concluir e nada aconteceu\" começa na aba Network. Se a requisição nem saiu, o problema está no handler do botão. Se saiu e voltou 400, o corpo da resposta já diz qual campo o back recusou. Só depois disso vale abrir o depurador, e do lado certo.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "O usuário clica em \"Salvar\" e nada acontece. Na aba Network, nenhuma requisição aparece. Onde procurar primeiro?",
+          "opcoes": [
+            "No service do Nest, com um breakpoint",
+            "No log do banco de dados",
+            "No front: o handler do botão, a validação do formulário ou um estado que impede o envio",
+            "Na configuração de CORS da API"
+          ],
+          "correta": 2,
+          "explicacao": "Se nada saiu do navegador, o servidor nem ficou sabendo. O defeito está antes do envio. Um problema de CORS apareceria na aba Network como requisição que falhou, com erro no console; não como ausência de requisição."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A requisição `PATCH /tarefas/42` saiu com o corpo certo e voltou `200` com a tarefa atualizada. A lista na tela continua mostrando o valor antigo. Qual a hipótese mais forte?",
+          "opcoes": [
+            "O banco não gravou a alteração",
+            "O front está mostrando um dado em cache que não foi invalidado ou atualizado depois da mutação",
+            "O Nest devolveu o status errado",
+            "O navegador bloqueou a resposta"
+          ],
+          "correta": 1,
+          "explicacao": "A resposta 200 com a tarefa atualizada mostra que o back fez a parte dele. Se a tela não mudou, o front não trocou o dado que tinha guardado. O próximo instrumento é o React DevTools (ou a ferramenta de inspeção do cache de dados), não o depurador do servidor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um defeito acontece só no item 3.817 de um laço de 5.000. Qual o instrumento certo?",
+          "opcoes": [
+            "Breakpoint comum, apertando \"continuar\" 3.816 vezes",
+            "`console.log` em cada volta e leitura da saída inteira",
+            "Breakpoint condicional com a condição que identifica o item",
+            "Reduzir o laço para 10 itens e torcer para o defeito aparecer"
+          ],
+          "correta": 2,
+          "explicacao": "O breakpoint condicional só para quando a expressão é verdadeira, direto no caso que interessa, com todas as variáveis disponíveis. Imprimir 5.000 linhas funciona, mas é mais lento e exige alterar o código."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Anexe o depurador à API e pare numa requisição",
+          "minutos": 20,
+          "passos": [
+            "Na raiz do app do Cockpit, suba a API em modo de depuração: `npm run start:debug -w apps/api`. Confira no terminal a mensagem de que o depurador está escutando.",
+            "No VS Code, abra a paleta de comandos, procure a ação de anexar a um processo Node (Attach to Node Process) e escolha o processo da API.",
+            "Ponha um breakpoint na primeira linha de um método de service que atenda a uma rota `GET`.",
+            "Chame a rota pelo navegador com a aba Network aberta. Veja a requisição ficar pendente enquanto a execução está parada.",
+            "Inspecione os argumentos e a pilha de chamadas, anote de onde o método foi chamado e continue a execução.",
+            "Transforme o breakpoint em logpoint que imprime um argumento, chame a rota de novo e veja a saída no console de depuração, sem ter alterado o código."
+          ],
+          "prontoQuando": "Você parou a execução dentro do service a partir de uma requisição real, viu a requisição pendente na aba Network e imprimiu um valor por logpoint sem tocar no arquivo. Anote em `estudo/depuracao.md` a pilha de chamadas que viu."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as três perguntas da aba Network?",
+          "verso": "Saiu a requisição? Saiu com URL, método e corpo certos? Voltou o status e o corpo esperados?"
+        },
+        {
+          "frente": "A requisição nem saiu do navegador. De que lado está o defeito?",
+          "verso": "Do front: evento que não dispara, validação que barra ou estado que impede o envio. O servidor nem foi chamado."
+        },
+        {
+          "frente": "O que é attach no depurador?",
+          "verso": "Conectar o VS Code a um processo Node já em execução, iniciado em modo de inspeção, para usar breakpoints nele."
+        },
+        {
+          "frente": "Por que mudar uma coisa por vez ao depurar?",
+          "verso": "Duas mudanças juntas que resolvem o problema não dizem qual era a causa. Uma hipótese, um instrumento, uma mudança."
+        },
+        {
+          "frente": "O que um log útil de produção contém?",
+          "verso": "Identificador da requisição, usuário, entidade, operação e o erro com a causa, em formato estruturado. Nunca dado sensível."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Node.js — Debugging Node.js",
+          "url": "https://nodejs.org/en/learn/getting-started/debugging"
+        },
+        {
+          "titulo": "VS Code — Node.js debugging",
+          "url": "https://code.visualstudio.com/docs/nodejs/nodejs-debugging"
+        },
+        {
+          "titulo": "React — React Developer Tools",
+          "url": "https://react.dev/learn/react-developer-tools"
+        }
+      ]
+    },
+    {
+      "id": "ferr-07",
+      "titulo": "Monorepo e workspaces",
+      "minutos": 10,
+      "ponte": "Um repositório em que telas, bibliotecas compartilhadas e *packages* do banco são versionados juntos já é um *monorepo*: mudar a assinatura de uma procedure e a tela que a chama é uma entrega só. Onde quebra: aqui cada pasta é um **pacote** com as próprias dependências, o próprio build e os próprios testes, e a ferramenta precisa saber quem depende de quem para construir na ordem certa.",
+      "texto": "*Monorepo* é um repositório que guarda vários projetos que evoluem juntos. O Cockpit é um: `apps/api` e `apps/web` no mesmo Git. O contrário é o *polyrepo*, um repositório por projeto.\n\n### Por que juntar\n\n- **Mudança atômica.** Um campo novo na API e a tela que o usa entram no mesmo PR, revisados juntos. Em repositórios separados são dois PRs, duas publicações e um intervalo em que um lado não combina com o outro.\n- **Código compartilhado sem publicar pacote.** Tipos do contrato, validações e utilitários ficam num pacote interno, usado pelos dois lados.\n- **Uma configuração.** Um lint, um formatador, um lockfile, um CI.\n\n### O que custa\n\n- O CI passa a rodar tudo a cada mudança, se ninguém ensinar o que foi afetado.\n- Importar de qualquer lugar fica fácil demais. Sem fronteira explícita, o front acaba importando arquivo interno da API.\n- Permissão e histórico são do repositório todo.\n\n### npm workspaces\n\nÉ o suporte nativo do npm. Na raiz, o `package.json` declara onde estão os pacotes:\n\n```json\n{\n  \"name\": \"cockpit\",\n  \"private\": true,\n  \"workspaces\": [\"apps/*\"]\n}\n```\n\nO que muda com isso:\n\n- **Um `npm install` na raiz** instala tudo, com **um lockfile**.\n- As dependências sobem para o `node_modules` da raiz sempre que possível (*hoisting*, içamento).\n- Cada pacote do repositório aparece em `node_modules` como **atalho** para a pasta real. Importar um pacote interno funciona como importar um pacote do npm.\n- Comandos escolhem o alvo: `npm run build -w apps/api` roda num pacote só, e `npm run test --workspaces --if-present` roda em todos os que têm o script.\n\n### Dependência entre pacotes\n\nPara compartilhar tipos, você cria `packages/contratos` com um `package.json` de nome `@cockpit/contratos` e declara esse nome nas dependências de `apps/web` e `apps/api`. O npm liga pelo atalho, sem publicar nada.\n\nDois cuidados:\n\n1. **Ordem de build.** Se `contratos` precisa ser compilado, tem que ser antes de quem o usa. O npm puro roda os pacotes na ordem em que estão listados e não calcula essa ordem por você.\n2. **Dependência fantasma.** Com o içamento, um pacote consegue importar algo que **não declarou**, só porque outro pacote trouxe para a raiz. Funciona na sua máquina e quebra no dia em que o pacote é instalado sozinho, por exemplo numa imagem de produção. Cada pacote declara tudo o que importa.\n\n### Quando entram Turborepo e Nx\n\nSão orquestradores de tarefas para monorepo. Sem entrar na configuração de cada um, o que entregam é:\n\n- **Grafo de tarefas:** sabem que o build de `web` depende do build de `contratos` e rodam na ordem certa, em paralelo onde der.\n- **Cache por conteúdo:** se as entradas de uma tarefa não mudaram, o resultado anterior é reaproveitado em vez de refeito.\n- **Só o afetado:** rodam testes e build apenas do que a mudança atinge.\n\nO critério: com dois ou três pacotes e um CI de poucos minutos, **npm workspaces bastam**. A ferramenta passa a valer quando o build completo começa a doer ou quando a ordem entre pacotes vira fonte de erro. Adotar antes é configuração a mais para manter. Confira a documentação da versão atual antes de escolher: as duas mudam rápido.\n\n### Não confunda\n\nMonorepo é organização de **código**. Não diz nada sobre **implantação**. Um monorepo pode publicar dez serviços separados, e um monólito pode viver espalhado em cinco repositórios.",
+      "naPratica": "No Cockpit, o contrato da API é exportado em `openapi.json` na raiz e os dois lados moram no mesmo repositório: mudar um endpoint e a tela que o consome é um PR só. Os scripts da raiz chamam `--workspaces --if-present`, e `-w apps/api` roda um lado sem tocar no outro.",
+      "exercicios": [
+        {
+          "tipo": "pratica",
+          "titulo": "Um monorepo de dois pacotes em dez minutos",
+          "minutos": 20,
+          "passos": [
+            "Em `estudo/mono-lab/`, crie um `package.json` com `\"name\": \"mono-lab\"`, `\"private\": true` e `\"workspaces\": [\"packages/*\"]`.",
+            "Crie `packages/contratos/package.json` com `\"name\": \"@lab/contratos\"`, `\"version\": \"1.0.0\"`, `\"type\": \"module\"` e `\"exports\": \"./index.js\"`. No `index.js`, exporte uma função `saudacao(nome)`.",
+            "Crie `packages/app/package.json` com `\"name\": \"@lab/app\"`, `\"version\": \"1.0.0\"`, `\"type\": \"module\"`, um script `\"start\": \"node index.js\"` e a dependência `\"@lab/contratos\": \"*\"`. No `index.js`, importe de `@lab/contratos` e imprima a saudação.",
+            "Na raiz do `mono-lab`, rode `npm install`. Liste `node_modules/@lab` e confira que os dois pacotes aparecem como atalhos para as pastas reais.",
+            "Rode `npm run start -w packages/app`. Depois altere o texto em `packages/contratos/index.js` e rode de novo, sem reinstalar.",
+            "Remova a dependência `@lab/contratos` do `package.json` do app, sem rodar `npm install` de novo, e execute outra vez. Anote o que acontece e por quê."
+          ],
+          "prontoQuando": "O app imprime a saudação vinda do outro pacote, a alteração no `contratos` apareceu sem reinstalar, e você escreveu em uma frase por que o último passo ainda funciona e qual o nome desse problema."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`apps/web` importa uma biblioteca de datas que só `apps/api` declara no `package.json`. Local e no CI funciona. Qual o risco?",
+          "opcoes": [
+            "Nenhum: num monorepo todos os pacotes compartilham as dependências por definição",
+            "É uma dependência fantasma: funciona porque foi içada para a raiz e quebra quando o `web` for instalado sozinho ou a API deixar de usar a biblioteca",
+            "O npm vai instalar duas cópias e dobrar o tamanho do bundle",
+            "O TypeScript recusa importações entre workspaces"
+          ],
+          "correta": 1,
+          "explicacao": "O içamento põe a biblioteca no `node_modules` da raiz, onde o `web` a encontra por acaso. No dia em que a API trocar de biblioteca, o front quebra sem que ninguém tenha mexido nele. A regra é cada pacote declarar tudo o que importa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O time tem `api` e `web` no monorepo, o CI leva 4 minutos, e alguém propõe adotar um orquestrador de tarefas \"porque todo monorepo usa\". Qual a posição de sênior?",
+          "opcoes": [
+            "Adotar já: sem orquestrador um monorepo não funciona",
+            "Recusar sempre: orquestrador é complexidade desnecessária em qualquer tamanho",
+            "Não agora: com dois pacotes e CI de 4 minutos não há dor que ele resolva. Reavaliar quando o tempo de build ou a ordem entre pacotes virar problema",
+            "Trocar o monorepo por repositórios separados"
+          ],
+          "correta": 2,
+          "explicacao": "A ferramenta entrega grafo de tarefas, cache e execução só do afetado. Isso paga quando o build completo é lento ou quando há muitos pacotes interdependentes. Sem essa dor, é mais uma configuração para manter. A resposta tem o critério de quando mudar de ideia, e é isso que a separa de um \"não\" por gosto."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "\"Estamos num monorepo, então a aplicação é um monólito.\" A frase está correta?",
+          "opcoes": [
+            "Sim: um repositório, uma aplicação",
+            "Não: monorepo é como o código é organizado; quantas unidades são implantadas é outra decisão",
+            "Sim, desde que exista um único `package.json`",
+            "Não: monorepo sempre implica microsserviços"
+          ],
+          "correta": 1,
+          "explicacao": "Repositório e unidade de implantação são eixos independentes. O Cockpit é um monorepo que publica duas coisas, a API e o front. A confusão entre os dois termos atrapalha as conversas de arquitetura."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `\"workspaces\": [\"apps/*\"]` muda no npm?",
+          "verso": "Um `npm install` na raiz instala tudo com um lockfile só, e cada pacote interno vira um atalho em `node_modules`."
+        },
+        {
+          "frente": "Como rodar um script em um pacote só, e em todos?",
+          "verso": "`npm run build -w apps/api` para um. `npm run build --workspaces --if-present` para todos os que têm o script."
+        },
+        {
+          "frente": "O que é dependência fantasma?",
+          "verso": "Importar um pacote que você não declarou e que só existe porque outro workspace o trouxe para a raiz. Quebra quando instalado sozinho."
+        },
+        {
+          "frente": "Por que usar monorepo?",
+          "verso": "Mudança atômica entre API e front num PR só, código compartilhado sem publicar pacote e uma configuração única de lint, lockfile e CI."
+        },
+        {
+          "frente": "Quando adotar Turborepo ou Nx?",
+          "verso": "Quando o build completo começa a doer ou a ordem entre pacotes vira fonte de erro. Entregam grafo de tarefas, cache e execução só do afetado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "npm Docs — Workspaces",
+          "url": "https://docs.npmjs.com/cli/v11/using-npm/workspaces"
+        },
+        {
+          "titulo": "monorepo.tools — conceitos e comparação de ferramentas",
+          "url": "https://monorepo.tools/"
+        }
+      ]
+    }
+  ]
+}

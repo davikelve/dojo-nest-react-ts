@@ -1,0 +1,722 @@
+{
+  "licoes": [
+    {
+      "id": "front-01",
+      "titulo": "Estado do servidor × estado da tela",
+      "minutos": 9,
+      "ponte": "No Forms, o bloco de dados guarda em memória uma cópia do que a query trouxe, e cada registro tem um estado (`QUERY`, `CHANGED`, `INSERT`). Você sabe que aquela cópia pode estar velha: outro usuário pode ter alterado a linha depois do seu `EXECUTE_QUERY`. No front é igual. Onde a analogia quebra: o Forms segura uma sessão e pode travar a linha; o navegador não trava nada e a cópia envelhece sem aviso.",
+      "texto": "Uma tela React lida com dois tipos de dado que parecem iguais e não são.\n\n**Estado da tela** (*client state*): o que só existe no navegador. O modal está aberto, qual aba está ativa, o texto que o usuário digitou e ainda não enviou. Esse dado é **seu**: nasce na tela, morre na tela, ninguém mais altera.\n\n**Estado do servidor** (*server state*): a lista de tarefas, o perfil, o plano do dia. Esse dado mora no banco. O que a tela tem é uma **cópia emprestada**, tirada em um instante. Ela pode estar velha um segundo depois, porque outra aba, outro aparelho ou um job alterou o original.\n\nTratar os dois do mesmo jeito é o erro mais comum de quem começa:\n\n```tsx\nfunction Tarefas() {\n  const [tarefas, setTarefas] = useState<Tarefa[]>([]);\n  const [carregando, setCarregando] = useState(true);\n  const [erro, setErro] = useState<Error | null>(null);\n\n  useEffect(() => {\n    fetch('/api/tarefas')\n      .then((r) => r.json())\n      .then(setTarefas)\n      .catch(setErro)\n      .finally(() => setCarregando(false));\n  }, []);\n  // ...\n}\n```\n\nFunciona na demonstração e falha no uso real. O que esse código **não** resolve:\n\n- **Cópias duplicadas.** A lista e o contador do cabeçalho buscam cada um a sua cópia. Depois de uma alteração, uma atualiza e a outra não.\n- **Dado velho.** O efeito roda uma vez. Se o usuário volta à aba depois do almoço, vê a foto da manhã.\n- **Corrida.** O filtro muda rápido, duas respostas chegam fora de ordem e a mais antiga sobrescreve a mais nova.\n- **Requisição repetida.** Cada componente que precisa do mesmo dado dispara a própria busca.\n- **Três `useState` por consulta**, repetidos em toda tela, com as combinações impossíveis que você já viu (carregando e com erro ao mesmo tempo).\n- **Componente desmontado.** A resposta chega depois que o usuário saiu da tela.\n\nCada item tem solução manual. Somadas, as soluções são uma biblioteca de cache. Por isso o desenho atual do React separa as responsabilidades:\n\n| Tipo de dado | Quem cuida |\n|---|---|\n| Estado do servidor | Uma biblioteca de cache assíncrono (TanStack Query, no Cockpit) |\n| Estado da tela | `useState`, `useReducer`, URL, formulário |\n\nA biblioteca de cache trata o dado do servidor pelo que ele é: uma cópia com **idade**, identificada por uma **chave**, compartilhada por todos os componentes que a pedem, renovada quando há sinal de que envelheceu.\n\n### O critério\n\nPara classificar um dado, responda: **se eu recarregar a página, de onde ele volta?** Se volta do servidor, é estado do servidor e não vai para `useState`. Se some e tudo bem, é estado da tela. Se precisa voltar e não está no servidor, provavelmente é da URL (front-05).\n\n### A armadilha\n\nCopiar o dado do cache para um `useState` \"para poder editar\". A partir daí existem duas cópias e a sua não recebe as atualizações. A exceção legítima é o formulário: o valor inicial vem do servidor, e o rascunho é estado de formulário até o envio.\n\nO custo da biblioteca é uma dependência a mais e um modelo mental novo (frescor, chave, invalidação). Para uma tela que busca um dado uma vez e nunca altera, `fetch` no efeito ainda serve. Em um app com listas, edição e várias telas sobre o mesmo dado, não serve.",
+      "naPratica": "No Cockpit, a lista de tarefas aparece no plano do dia, no modo foco e no contador do cabeçalho. Com uma cópia por componente, concluir uma tarefa deixaria dois dos três lugares errados. Com cache por chave, os três leem a mesma entrada.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas telas guardam cada uma a sua cópia da lista. Uma tarefa é criada e só uma das telas busca de novo. O que sai?",
+          "codigo": "const servidor = { tarefas: ['Revisar PR'] };\nconst busca = () => [...servidor.tarefas];\n\nconst telaLista = { copia: busca() };\nconst telaContador = { copia: busca() };\n\nservidor.tarefas.push('Planejar o dia');\ntelaLista.copia = busca();\n\nconsole.log('lista:', telaLista.copia.length);\nconsole.log('contador:', telaContador.copia.length);\nconsole.log('mesma cópia?', telaLista.copia === telaContador.copia);\n",
+          "saida": "lista: 2\ncontador: 1\nmesma cópia? false\n",
+          "explicacao": "Cada tela tem a própria cópia. Só a lista buscou de novo, então o contador continua mostrando 1. Esse é o efeito de guardar resposta de API em `useState` por componente. Um cache compartilhado por chave elimina a segunda cópia."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes dados é estado do servidor?",
+          "opcoes": [
+            "O texto digitado no campo de busca, antes de o usuário confirmar",
+            "Se o painel lateral está recolhido",
+            "A lista de tarefas do dia exibida na tela",
+            "Qual linha da tabela está com o foco do teclado"
+          ],
+          "correta": 2,
+          "explicacao": "A lista mora no banco e a tela só tem uma cópia que pode envelhecer. Os outros três nascem e morrem no navegador. O texto digitado tenta enganar porque vira parâmetro de uma busca, mas enquanto está no campo é estado da tela."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um componente usa `useEffect` com `fetch` e lista de dependências `[filtro]`. O usuário troca o filtro duas vezes seguidas e a tela mostra o resultado do filtro anterior. Qual a causa mais provável?",
+          "opcoes": [
+            "O React executa os efeitos em ordem aleatória",
+            "As duas respostas chegaram fora de ordem e a mais antiga gravou o estado por último",
+            "O `fetch` devolve resposta em cache do navegador para a segunda chamada",
+            "O `useState` não aceita duas atualizações no mesmo segundo"
+          ],
+          "correta": 1,
+          "explicacao": "É uma condição de corrida: nada garante que a rede responda na ordem em que você perguntou. Sem cancelar ou ignorar a resposta antiga, vence quem chega por último. O cache do navegador é a hipótese tentadora, mas não explica mostrar o filtro errado."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, por que instalar uma biblioteca só para buscar dado? `useEffect` com `fetch` resolve e é uma dependência a menos.\" Responda em até um minuto.",
+          "pontos": [
+            "Reconheceu que para um caso isolado e somente leitura o `fetch` no efeito serve",
+            "Separou estado do servidor (cópia que envelhece) de estado da tela",
+            "Citou pelo menos dois problemas concretos: cópias duplicadas, corrida, dado velho, requisição repetida",
+            "Disse que resolver isso à mão é escrever uma biblioteca de cache pior",
+            "Nomeou o custo: dependência e modelo mental novo"
+          ],
+          "modelo": "Para uma tela que lê um dado uma vez, resolve mesmo. O problema aparece quando o mesmo dado está em mais de uma tela e alguém altera. Dado de API é uma cópia do banco que envelhece, e com `useState` cada componente guarda a sua cópia: concluo uma tarefa e o contador do cabeçalho fica errado. Ainda tem a corrida de respostas fora de ordem e a requisição repetida. Dá para resolver tudo na mão, mas a soma dessas soluções é uma biblioteca de cache, só que sem teste. O custo é uma dependência madura e aprender frescor e invalidação. Para o nosso app, com lista e edição, eu pago esse custo."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Classifique os dados de uma tela",
+          "minutos": 10,
+          "passos": [
+            "Crie `estudo/front-01-estados.md` e liste dez dados da tela de plano do dia do Cockpit (lista de tarefas, filtro, tarefa selecionada, modal aberto, usuário logado, rascunho de nova tarefa etc.).",
+            "Para cada um, responda: se eu recarregar a página, de onde ele volta?",
+            "Marque cada dado como servidor, tela, URL ou formulário."
+          ],
+          "prontoQuando": "O arquivo tem dez dados classificados e nenhum dado de servidor está marcado para `useState`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a diferença entre estado do servidor e estado da tela?",
+          "verso": "Servidor: cópia emprestada do que mora no banco, pode estar velha. Tela: nasce e morre no navegador, só você altera."
+        },
+        {
+          "frente": "Por que não guardar resposta de API em `useState` + `useEffect`?",
+          "verso": "Cada componente fica com a própria cópia: dado duplicado, velho, corrida entre respostas e requisição repetida. Resolver tudo à mão é reescrever um cache."
+        },
+        {
+          "frente": "Que pergunta classifica um dado do front?",
+          "verso": "\"Se eu recarregar a página, de onde ele volta?\" Do servidor: cache. Some: estado local. Precisa voltar e não é do servidor: URL."
+        },
+        {
+          "frente": "Quando é legítimo copiar dado do servidor para estado local?",
+          "verso": "No formulário: o valor inicial vem do servidor e o rascunho é do formulário até o envio."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React — You Might Not Need an Effect",
+          "url": "https://react.dev/learn/you-might-not-need-an-effect"
+        },
+        {
+          "titulo": "TanStack Query — Overview",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/overview"
+        }
+      ]
+    },
+    {
+      "id": "front-02",
+      "titulo": "TanStack Query: query, cache, staleTime × gcTime",
+      "minutos": 12,
+      "ponte": "`useQuery` é o `EXECUTE_QUERY` de um bloco, com duas diferenças grandes. A cópia fica em um cache **compartilhado** por todas as telas que usam a mesma chave, e a biblioteca decide sozinha quando consultar de novo. No Forms o dado só é renovado quando alguém manda consultar. Aqui você declara por quanto tempo confia na cópia.",
+      "texto": "O TanStack Query ainda não está instalado no `apps/web`. O código abaixo segue a versão 5, que usa um objeto único de opções. Antes de digitar, confira a documentação da versão que você instalar.\n\n```tsx\nfunction ListaDeTarefas({ dia }: { dia: string }) {\n  const consulta = useQuery({\n    queryKey: ['tarefas', 'lista', { dia }],\n    queryFn: () => buscaTarefas(dia),\n    staleTime: 30_000,\n  });\n\n  if (consulta.isPending) return <p>Carregando...</p>;\n  if (consulta.isError) return <p>Falhou: {consulta.error.message}</p>;\n  return <ul>{consulta.data.map((t) => <li key={t.id}>{t.titulo}</li>)}</ul>;\n}\n```\n\nTrês peças:\n\n- **`queryKey`** (chave da consulta): um array que identifica o dado no cache. Tudo de que a busca depende entra na chave. Mudou o `dia`, é outra entrada.\n- **`queryFn`**: uma função que devolve uma Promise com o dado, ou rejeita. A biblioteca não sabe o que é HTTP.\n- **`status`**: `pending` (ainda não há dado), `error` ou `success`. É uma união discriminada (ts-04): depois de tratar `isPending` e `isError`, o compilador sabe que `data` existe.\n\nExiste um segundo eixo, o `fetchStatus`. `isFetching` diz que há uma requisição em andamento **agora**, mesmo que já exista dado na tela. `isPending` é para o esqueleto da primeira carga. `isFetching` é para o indicador discreto de atualização.\n\n### Os dois relógios\n\n| Opção | Pergunta que responde | Padrão |\n|---|---|---|\n| `staleTime` | Por quanto tempo considero este dado **fresco**? | 0 |\n| `gcTime` | Por quanto tempo guardo uma entrada que **ninguém está usando**? | 5 minutos |\n\nDado fresco é servido do cache sem rede. Dado *stale* (velho) **também** é servido do cache na hora, e a biblioteca dispara uma busca em segundo plano para trocar pelo novo. Esse padrão se chama *stale-while-revalidate*: mostra o que tem e confere.\n\nUm dado velho só é buscado de novo quando acontece um gatilho: um componente que usa a chave é montado, a janela recupera o foco, a rede volta, ou você invalida a chave (front-03). `staleTime: 0` não significa consultar em laço. Significa que qualquer gatilho renova.\n\nO `gcTime` começa a contar quando o último componente que observa a chave é desmontado. Passado o prazo, a entrada sai da memória. Voltar à tela antes disso mostra o dado guardado no mesmo instante.\n\n### Como escolher o `staleTime`\n\n- **0** (padrão): correto e tagarela. Bom ponto de partida.\n- **Segundos a minutos**: dado que muda pouco e é visto muitas vezes, como a lista de projetos.\n- **`Infinity`**: dado que só muda por ação do próprio usuário, renovado por invalidação.\n\nO critério é de negócio: por quanto tempo é aceitável mostrar esse dado velho. É a mesma conversa de qualquer cache.\n\n### Armadilhas\n\n- **Parâmetro fora da chave.** Se a `queryFn` usa `dia` e a chave não contém `dia`, trocar o dia devolve o dado do dia anterior.\n- **Estranhar o refetch ao focar a janela.** É o padrão e costuma estar certo: quem voltou à aba quer ver o estado atual. Ajuste por consulta se o dado for caro.\n- **`gcTime` menor que `staleTime`.** A entrada é descartada antes de envelhecer e o frescor declarado não serve para nada.\n- **Esquecer a repetição automática.** Por padrão uma consulta que falha é tentada mais algumas vezes antes de virar `error`. Em teste, isso parece lentidão.",
+      "naPratica": "No Cockpit, a lista de tarefas do dia pode usar `staleTime` curto e deixar o foco da janela renovar. Na revisão de código, a primeira coisa a conferir em um `useQuery` é se todo parâmetro usado na `queryFn` aparece na `queryKey`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um mini cache com `staleTime` e relógio falso passado por parâmetro. Quantas vezes ele vai à rede?",
+          "codigo": "type Entrada = { dado: string; em: number };\nconst cache = new Map<string, Entrada>();\nlet buscas = 0;\n\nfunction consulta(chave: unknown[], agora: number, staleTime: number): string {\n  const k = JSON.stringify(chave);\n  const e = cache.get(k);\n  if (e && agora - e.em < staleTime) return e.dado + ' (cache)';\n  buscas++;\n  const dado = 'v' + buscas;\n  cache.set(k, { dado, em: agora });\n  return dado + ' (rede)';\n}\n\nconsole.log(consulta(['tarefas'], 0, 1000));\nconsole.log(consulta(['tarefas'], 500, 1000));\nconsole.log(consulta(['tarefas'], 1500, 1000));\nconsole.log(consulta(['tarefas', { dia: 'hoje' }], 1600, 1000));\nconsole.log('buscas:', buscas);\n",
+          "saida": "v1 (rede)\nv1 (cache)\nv2 (rede)\nv3 (rede)\nbuscas: 3\n",
+          "explicacao": "Em 500 ms o dado tem menos de 1000 ms: fresco, sai do cache. Em 1500 ms está velho e vai à rede. A última chamada tem outra chave serializada, então é outra entrada e busca do zero. Diferença para a biblioteca real: com dado velho ela devolve `v1` na hora e troca por `v2` quando a rede responde."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Agora o `gcTime`: a coleta só remove entrada sem observador há tempo suficiente. O que sobra no cache a cada passo?",
+          "codigo": "type E = { observadores: number; semUsoDesde: number };\nconst cache = new Map<string, E>();\ncache.set('tarefas', { observadores: 1, semUsoDesde: 0 });\ncache.set('perfil', { observadores: 0, semUsoDesde: 0 });\n\nfunction coleta(agora: number, gcTime: number) {\n  for (const [k, e] of cache) {\n    if (e.observadores === 0 && agora - e.semUsoDesde >= gcTime) cache.delete(k);\n  }\n  console.log(agora, [...cache.keys()].join(',') || '(vazio)');\n}\n\ncoleta(1000, 5000);\ncoleta(6000, 5000);\ncache.set('tarefas', { observadores: 0, semUsoDesde: 6000 });\ncoleta(10000, 5000);\ncoleta(11000, 5000);\n",
+          "saida": "1000 tarefas,perfil\n6000 tarefas\n10000 tarefas\n11000 (vazio)\n",
+          "explicacao": "`perfil` não tem observador desde o instante 0 e sai quando completa 5000. `tarefas` tem um componente montado e não é coletada, por mais velha que seja. Quando o componente desmonta em 6000, o relógio do `gcTime` começa ali: em 10000 passaram 4000, em 11000 passaram 5000 e a entrada sai."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O resultado de uma consulta é uma união discriminada pelo `status`. Este código compila?",
+          "codigo": "type Consulta<T> =\n  | { status: 'pending' }\n  | { status: 'error'; error: Error }\n  | { status: 'success'; data: T };\n\nfunction resumo(c: Consulta<string[]>): string {\n  return 'Tarefas: ' + c.data.length;\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 7,
+          "explicacao": "`data` só existe na variante `success`. Sem estreitar por `status` antes, o compilador recusa o acesso. É por isso que o componente trata `isPending` e `isError` primeiro: depois dos dois retornos, sobra só a variante com `data`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma consulta tem `staleTime: 0` e `gcTime` de 5 minutos. O usuário sai da tela e volta 1 minuto depois. O que ele vê?",
+          "opcoes": [
+            "O esqueleto de carregamento, porque o dado está velho",
+            "O dado guardado na hora, e uma busca em segundo plano troca pelo novo",
+            "O dado guardado, sem nenhuma requisição",
+            "Um erro, porque a entrada expirou"
+          ],
+          "correta": 1,
+          "explicacao": "A entrada ainda está no cache (1 minuto é menos que o `gcTime`), então aparece imediatamente. Como está velha e um componente foi montado, a biblioteca busca de novo em segundo plano. O esqueleto só voltaria se a entrada tivesse sido coletada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Para mostrar um indicador discreto de \"atualizando\" enquanto a lista já está na tela, qual sinal usar?",
+          "opcoes": [
+            "`isPending`",
+            "`isError`",
+            "`isFetching`",
+            "`status === 'success'`"
+          ],
+          "correta": 2,
+          "explicacao": "`isFetching` é verdadeiro sempre que há requisição em andamento, com ou sem dado em cache. `isPending` só é verdadeiro enquanto não existe dado nenhum, então some depois da primeira carga."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`staleTime` × `gcTime`",
+          "verso": "`staleTime`: até quando considero o dado fresco (padrão 0). `gcTime`: por quanto tempo guardo a entrada sem nenhum componente usando (padrão 5 min)."
+        },
+        {
+          "frente": "O que a biblioteca faz quando pedem um dado que está velho no cache?",
+          "verso": "Entrega o dado velho na hora e busca o novo em segundo plano (*stale-while-revalidate*)."
+        },
+        {
+          "frente": "Por que todo parâmetro da `queryFn` precisa estar na `queryKey`?",
+          "verso": "A chave é a identidade do dado no cache. Parâmetro fora da chave faz dois pedidos diferentes dividirem a mesma entrada."
+        },
+        {
+          "frente": "`isPending` × `isFetching`",
+          "verso": "`isPending`: ainda não há dado (primeira carga). `isFetching`: há requisição em andamento agora, mesmo com dado na tela."
+        },
+        {
+          "frente": "Que gatilhos renovam um dado velho?",
+          "verso": "Montar um componente que usa a chave, a janela recuperar o foco, a rede voltar, ou a invalidação da chave."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TanStack Query — Important Defaults",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/important-defaults"
+        },
+        {
+          "titulo": "TanStack Query — Queries",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/queries"
+        },
+        {
+          "titulo": "TanStack Query — Caching Examples",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/caching"
+        }
+      ]
+    },
+    {
+      "id": "front-03",
+      "titulo": "Query keys e invalidação",
+      "minutos": 10,
+      "ponte": "Depois de um `COMMIT` que afeta outro bloco, você chama `GO_BLOCK` e `EXECUTE_QUERY` para ele mostrar o dado novo. Invalidar uma chave é isso, com uma vantagem: você não precisa saber quais telas estão abertas. Você marca um **prefixo** como velho e todo mundo que depende dele consulta de novo. Onde a analogia quebra: nada é automático a partir do banco. Se você esquecer de invalidar, a tela fica errada sem erro nenhum.",
+      "texto": "A chave de uma consulta é um array. A biblioteca transforma esse array em texto de forma estável: **a ordem dos itens importa**, a ordem das propriedades de um objeto **não importa**, e propriedade com valor `undefined` é ignorada.\n\nEssa estrutura permite organizar as chaves do mais geral para o mais específico:\n\n```ts\n['tarefas']                               // tudo sobre tarefas\n['tarefas', 'lista']                      // todas as listas\n['tarefas', 'lista', { dia: '2026-11-10' }] // uma lista\n['tarefas', 'detalhe', 42]                // uma tarefa\n```\n\n### Invalidação por prefixo\n\n`invalidateQueries` recebe uma chave e atinge **toda entrada que começa com ela**:\n\n```ts\nqueryClient.invalidateQueries({ queryKey: ['tarefas', 'lista'] });\n```\n\nInvalidar faz duas coisas. Marca as entradas como velhas, passando por cima do `staleTime`. E busca de novo, na hora, as que têm componente montado. As que ninguém está olhando só são buscadas quando alguém voltar a usar. Invalidar é barato: não dispara uma requisição por entrada do cache.\n\n### A fábrica de chaves\n\nChave escrita à mão em cada arquivo é texto solto. Um `'tarefa'` no singular em um lugar e a invalidação deixa de acertar o alvo, sem erro de compilação. A defesa é uma *query key factory* (fábrica de chaves): um objeto por recurso, único lugar onde a chave é montada.\n\n```ts\nexport const chavesTarefa = {\n  todas: ['tarefas'] as const,\n  listas: () => [...chavesTarefa.todas, 'lista'] as const,\n  lista: (filtro: { dia: string }) => [...chavesTarefa.listas(), filtro] as const,\n  detalhe: (id: number) => [...chavesTarefa.todas, 'detalhe', id] as const,\n};\n```\n\nA consulta usa `chavesTarefa.lista({ dia })`. A mutação invalida `chavesTarefa.listas()`. O erro de digitação vira erro de compilação, e a hierarquia fica legível em um lugar só.\n\n### O bug da lista que não atualiza\n\nO sintoma: o usuário cria uma tarefa, o servidor responde 201, e a lista continua sem ela até um F5. As causas, em ordem de frequência:\n\n1. **A mutação não invalida nada.** Ninguém avisou o cache.\n2. **A chave invalidada não é prefixo da chave da consulta.** `['tarefa']` contra `['tarefas', ...]`, ou a ordem dos itens trocada.\n3. **Tipo diferente no mesmo lugar.** `['tarefas', 'detalhe', 42]` e `['tarefas', 'detalhe', '42']` são chaves diferentes. O id que vem da URL é texto.\n4. **A invalidação roda antes de o servidor gravar.** Chamada sem esperar a mutação terminar.\n5. **Cópia em `useState`.** O cache atualizou, mas a tela mostra a cópia local (front-01).\n\n### Critério\n\n- Invalide **largo** por padrão: depois de alterar uma tarefa, invalide `chavesTarefa.todas`. Uma requisição a mais custa menos que uma tela errada.\n- Estreite quando medir que a renovação larga pesa.\n- Lembre do efeito cruzado. Concluir uma tarefa altera também o resumo do dia, que é outro recurso. A lista de chaves a invalidar depois de uma mutação é conhecimento de negócio e merece revisão.",
+      "naPratica": "No Cockpit, cada recurso (tarefas, plano do dia, sessões de foco) ganha o seu arquivo de chaves. No review de uma mutação, a pergunta é: quais telas mostram dado que esta gravação altera, e todas estão cobertas por uma invalidação?",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Quatro entradas no cache. Quantas cada invalidação atinge?",
+          "codigo": "const chaves = {\n  todas: ['tarefas'] as const,\n  listas: () => [...chaves.todas, 'lista'] as const,\n  lista: (f: { dia: string }) => [...chaves.listas(), f] as const,\n  detalhe: (id: number) => [...chaves.todas, 'detalhe', id] as const,\n};\nconst cache: (readonly unknown[])[] = [\n  chaves.lista({ dia: 'hoje' }), chaves.lista({ dia: 'amanha' }), chaves.detalhe(7), ['perfil'],\n];\nconst comeca = (chave: readonly unknown[], prefixo: readonly unknown[]) =>\n  prefixo.every((p, i) => JSON.stringify(p) === JSON.stringify(chave[i]));\nconst atingidas = (prefixo: readonly unknown[]) => cache.filter((c) => comeca(c, prefixo)).length;\n\nconsole.log(atingidas(chaves.todas));\nconsole.log(atingidas(chaves.listas()));\nconsole.log(atingidas(chaves.detalhe(7)));\nconsole.log(atingidas(['tarefa']));\n",
+          "saida": "3\n2\n1\n0\n",
+          "explicacao": "`['tarefas']` é prefixo das duas listas e do detalhe. `['tarefas','lista']` pega só as listas. A chave completa do detalhe pega só ele. `['tarefa']`, no singular, não é prefixo de nada: zero entradas atingidas e nenhum erro. Esse é o bug da lista que não atualiza."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma serialização estável parecida com a da biblioteca: ordena as propriedades dos objetos antes de virar texto. Quais pares são a mesma chave?",
+          "codigo": "const texto = (chave: unknown[]) =>\n  JSON.stringify(chave, (_, v) =>\n    v && typeof v === 'object' && !Array.isArray(v)\n      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))\n      : v,\n  );\n\nconsole.log(texto(['t', { dia: 'hoje', pagina: 1 }]) === texto(['t', { pagina: 1, dia: 'hoje' }]));\nconsole.log(texto(['t', 'lista', 1]) === texto(['t', 1, 'lista']));\nconsole.log(texto(['t', 42]) === texto(['t', '42']));\nconsole.log(texto(['t', { dia: undefined }]) === texto(['t', {}]));\n",
+          "saida": "true\nfalse\nfalse\ntrue\n",
+          "explicacao": "A ordem das propriedades do objeto não muda a chave. A ordem dos itens do array muda. O número 42 e o texto '42' são chaves diferentes: atenção ao id que vem da URL. Propriedade `undefined` some na serialização, então um filtro opcional vazio não cria entrada nova."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Com a fábrica de chaves, o que acontece ao passar o id como texto?",
+          "codigo": "const chaves = {\n  todas: ['tarefas'] as const,\n  detalhe: (id: number) => ['tarefas', 'detalhe', id] as const,\n};\n\nconst idDaUrl: string = '42';\nconst chave = chaves.detalhe(idDaUrl);\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 7,
+          "explicacao": "A fábrica dá tipo ao parâmetro. O id que vem da URL é `string` e o compilador recusa. Com a chave escrita à mão, `['tarefas', 'detalhe', idDaUrl]` compilaria e criaria uma entrada diferente da que usa o número."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de `invalidateQueries({ queryKey: ['tarefas'] })`, o que acontece com uma lista de tarefas que está no cache, mas sem nenhum componente montado?",
+          "opcoes": [
+            "É buscada de novo imediatamente",
+            "É removida do cache",
+            "É marcada como velha e só será buscada quando um componente voltar a usá-la",
+            "Nada, porque invalidação só atinge consultas ativas"
+          ],
+          "correta": 2,
+          "explicacao": "Invalidar marca como velha todas as entradas do prefixo e busca na hora só as que têm observador. As inativas ficam marcadas e são renovadas no próximo uso. Remover do cache é outra operação (`removeQueries`)."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `invalidateQueries({ queryKey: ['tarefas'] })` atinge?",
+          "verso": "Toda entrada cuja chave começa com `['tarefas']`: listas, detalhes, contagens."
+        },
+        {
+          "frente": "Por que usar uma fábrica de chaves?",
+          "verso": "A chave é montada em um lugar só, com tipo. Erro de digitação vira erro de compilação em vez de invalidação que não acerta nada."
+        },
+        {
+          "frente": "Na query key, o que importa: ordem dos itens do array ou ordem das propriedades do objeto?",
+          "verso": "A ordem dos itens do array importa. A das propriedades do objeto, não. E `42` é diferente de `'42'`."
+        },
+        {
+          "frente": "A lista não atualiza depois de criar um item. Três primeiras suspeitas?",
+          "verso": "A mutação não invalida; a chave invalidada não é prefixo da consulta; a tela mostra uma cópia em `useState`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TanStack Query — Query Keys",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/query-keys"
+        },
+        {
+          "titulo": "TanStack Query — Query Invalidation",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/query-invalidation"
+        }
+      ]
+    },
+    {
+      "id": "front-04",
+      "titulo": "Mutações e optimistic update",
+      "minutos": 12,
+      "ponte": "No Forms o usuário altera o registro na tela, vê a mudança e só depois vem o `COMMIT`. Se o `COMMIT` falha, o registro continua `CHANGED` e ele corrige. O *optimistic update* (atualização otimista) é a mesma ideia: a tela muda antes da confirmação do servidor e **desfaz** se a gravação falhar. Onde quebra: no Forms a linha está travada para você. Na web ninguém travou nada, então a chance de o servidor recusar é real.",
+      "texto": "Consulta lê. **Mutação** (*mutation*) altera: `POST`, `PUT`, `PATCH`, `DELETE`. O `useMutation` não guarda nada em cache. Ele acompanha o andamento de uma gravação e oferece ganchos em volta dela.\n\n```tsx\nconst concluir = useMutation({\n  mutationFn: (id: number) => api.concluiTarefa(id),\n  onSuccess: () => queryClient.invalidateQueries({ queryKey: chavesTarefa.todas }),\n});\n\n<button disabled={concluir.isPending} onClick={() => concluir.mutate(tarefa.id)}>\n  Concluir\n</button>\n```\n\nEsse é o caminho **padrão**: grava, espera, invalida, a lista busca de novo. O usuário vê o botão desabilitado por algumas centenas de milissegundos. Para quase toda gravação, isso basta.\n\n### O caminho otimista\n\nPara interações muito frequentes, como marcar uma tarefa como feita, essa espera incomoda. O otimista altera o cache **antes** da resposta:\n\n```ts\nuseMutation({\n  mutationFn: (id: number) => api.concluiTarefa(id),\n  onMutate: async (id) => {\n    await queryClient.cancelQueries({ queryKey: chave });\n    const anterior = queryClient.getQueryData<Tarefa[]>(chave);\n    queryClient.setQueryData<Tarefa[]>(chave, (lista) =>\n      lista?.map((t) => (t.id === id ? { ...t, feita: true } : t)),\n    );\n    return { anterior };\n  },\n  onError: (_erro, _id, contexto) => {\n    queryClient.setQueryData(chave, contexto?.anterior);\n  },\n  onSettled: () => queryClient.invalidateQueries({ queryKey: chave }),\n});\n```\n\nA ordem dos ganchos:\n\n1. **`onMutate`** roda antes da requisição. Cancela buscas em andamento da mesma chave, para uma resposta antiga não sobrescrever a tela. Guarda a foto do cache. Aplica a mudança. O que ele devolve é o **contexto**.\n2. **`onError`** recebe o contexto e restaura a foto. É o *rollback* da tela.\n3. **`onSettled`** roda com sucesso ou com erro e invalida. O servidor tem a palavra final: a busca seguinte corrige qualquer diferença entre o que você supôs e o que foi gravado.\n\nRepare na atualização do cache: sempre um **array novo**, nunca `lista.push` (js-01). O cache compara por referência para decidir quem renderiza.\n\n### Quando NÃO usar otimista\n\n| Situação | Por quê |\n|---|---|\n| A gravação falha com frequência (validação de negócio, conflito) | A tela mente e depois volta atrás. Pior que esperar |\n| O servidor calcula o resultado (id, total, número de ordem) | Você não sabe o que mostrar antes da resposta |\n| A ação é irreversível ou tem efeito externo (pagamento, envio de e-mail) | Mostrar \"feito\" antes de estar feito é erro de produto |\n| O usuário navega logo depois | O erro chega quando ele já saiu da tela e ninguém vê |\n\nBons candidatos: marcar e desmarcar, reordenar, favoritar, editar um texto curto. Ações frequentes, reversíveis, com alta chance de sucesso e resultado previsível.\n\n### O custo\n\nO código triplica e nasce um caminho de erro que quase nunca roda, portanto quase nunca é testado. Duas mutações otimistas simultâneas sobre a mesma chave podem desfazer uma à outra no rollback. A invalidação no `onSettled` existe para reconciliar esses casos.\n\nComece sempre pelo caminho padrão. Promova a otimista a interação que o uso mostrar que precisa.\n\nO React 19 tem o hook `useOptimistic` para o mesmo efeito em estado local (react-17). Quando o dado mora no cache do TanStack Query, o otimista é feito no cache.",
+      "naPratica": "No Cockpit, marcar tarefa como feita e reordenar o plano do dia são candidatos a otimista. Criar tarefa, não: o id vem do servidor. No review, um `onMutate` sem `onError` que restaura e sem `onSettled` que invalida é reprovado.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um otimista em memória: a primeira gravação dá certo, a segunda falha. O que a tela mostra em cada momento?",
+          "codigo": "type Tarefa = { id: number; feita: boolean };\nlet cache: Tarefa[] = [{ id: 1, feita: false }, { id: 2, feita: false }];\nconst mostra = (rotulo: string) => console.log(rotulo, cache.map((t) => (t.feita ? 'x' : '-')).join(''));\n\nasync function concluir(id: number, servidor: () => Promise<void>) {\n  const anterior = cache; // onMutate: guarda a foto\n  cache = cache.map((t) => (t.id === id ? { ...t, feita: true } : t));\n  mostra('otimista');\n  try {\n    await servidor();\n    mostra('confirmado');\n  } catch {\n    cache = anterior; // onError: desfaz\n    mostra('desfeito');\n  }\n}\n\nawait concluir(1, async () => {});\nawait concluir(2, async () => { throw new Error('409'); });\n",
+          "saida": "otimista x-\nconfirmado x-\notimista xx\ndesfeito x-\n",
+          "explicacao": "A tela muda antes de o servidor responder. Na primeira chamada o servidor confirma e nada mais muda. Na segunda a tela chega a mostrar as duas feitas, o servidor recusa e a foto anterior volta. A foto só funciona porque `map` criou um array novo: `anterior` continua apontando para o array antigo, intacto."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Duas mutações otimistas ao mesmo tempo. A de `a` demora e falha, a de `b` é rápida e dá certo. Como fica o cache no final?",
+          "codigo": "let cache = { a: false, b: false };\nconst espera = (ms: number) => new Promise((r) => setTimeout(r, ms));\n\nasync function marca(campo: 'a' | 'b', ms: number, falha: boolean) {\n  const anterior = cache;\n  cache = { ...cache, [campo]: true };\n  await espera(ms);\n  if (falha) cache = anterior;\n}\n\nawait Promise.all([marca('a', 60, true), marca('b', 20, false)]);\nconsole.log(JSON.stringify(cache));\n",
+          "saida": "{\"a\":false,\"b\":false}\n",
+          "explicacao": "A foto de `a` foi tirada antes de `b` mudar. Quando `a` falha e restaura a foto, leva junto a mudança de `b`, que o servidor **aceitou**. A tela mostra `b` desmarcado e o banco tem `b` marcado. É por isso que o `onSettled` invalida: a busca seguinte traz a verdade do servidor e corrige a tela."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Para que serve o `cancelQueries` no início do `onMutate`?",
+          "opcoes": [
+            "Para cancelar a mutação se o usuário clicar duas vezes",
+            "Para impedir que uma busca já em andamento chegue depois e sobrescreva a mudança otimista com o dado antigo",
+            "Para limpar o cache antes de gravar",
+            "Para evitar que o servidor receba requisições duplicadas"
+          ],
+          "correta": 1,
+          "explicacao": "Se uma busca da mesma chave estava em voo, a resposta dela (tirada antes da gravação) chegaria depois do `setQueryData` e desfaria a tela. Cancelar evita essa corrida. Clique duplo se resolve desabilitando o botão com `isPending`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas ações é a pior candidata a optimistic update?",
+          "opcoes": [
+            "Marcar uma tarefa como concluída",
+            "Arrastar uma tarefa para outra posição da lista",
+            "Confirmar o envio de um convite por e-mail para outra pessoa",
+            "Favoritar um projeto"
+          ],
+          "correta": 2,
+          "explicacao": "O envio tem efeito externo e não se desfaz. Mostrar \"enviado\" antes da confirmação engana o usuário se falhar. As outras três são frequentes, reversíveis e quase sempre dão certo."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a tela está lenta. Vamos colocar optimistic update em todas as gravações para ficar instantâneo?\" O que você responde?",
+          "pontos": [
+            "Separou percepção de lentidão de lentidão medida: primeiro olhar o tempo real das requisições",
+            "Disse que otimista é para ação frequente, reversível, com alta chance de sucesso e resultado previsível",
+            "Citou casos em que não cabe: id ou cálculo do servidor, validação que falha muito, efeito externo",
+            "Nomeou o custo: código em triplo e caminho de rollback pouco testado",
+            "Propôs começar por uma ou duas interações"
+          ],
+          "modelo": "Em todas, não. Otimista esconde a espera, não remove. Se uma gravação leva dois segundos, o problema está na API e eu quero medir isso antes. Onde ele vale é em ação frequente, reversível e que quase nunca falha, como marcar tarefa e reordenar. Onde o servidor calcula o resultado, valida regra de negócio ou dispara algo externo, a tela mentiria e depois voltaria atrás, o que é pior que um botão desabilitado por meio segundo. E cada otimista traz um caminho de rollback que quase nunca roda e precisa de teste. Minha proposta: medir as requisições, aplicar em marcar e reordenar, e avaliar o resto com dado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que cada gancho faz no otimista: `onMutate`, `onError`, `onSettled`?",
+          "verso": "`onMutate`: cancela buscas, guarda a foto, altera o cache. `onError`: restaura a foto. `onSettled`: invalida para o servidor dar a palavra final."
+        },
+        {
+          "frente": "Por que invalidar no `onSettled` mesmo quando deu certo?",
+          "verso": "O que você supôs pode diferir do que o servidor gravou, e rollbacks concorrentes podem ter desfeito mudança válida. A busca reconcilia."
+        },
+        {
+          "frente": "Quando NÃO usar optimistic update?",
+          "verso": "Gravação que falha com frequência, resultado calculado pelo servidor, ação irreversível ou com efeito externo."
+        },
+        {
+          "frente": "Qual o caminho padrão de uma mutação?",
+          "verso": "Gravar, esperar a resposta, invalidar as chaves afetadas. Otimista é promoção para interações que precisam."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TanStack Query — Mutations",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/mutations"
+        },
+        {
+          "titulo": "TanStack Query — Optimistic Updates",
+          "url": "https://tanstack.com/query/latest/docs/framework/react/guides/optimistic-updates"
+        }
+      ]
+    },
+    {
+      "id": "front-05",
+      "titulo": "Roteamento: URL como estado, loaders e rotas protegidas",
+      "minutos": 11,
+      "ponte": "No Forms, navegar é `CALL_FORM` ou `OPEN_FORM` com uma lista de parâmetros, e a tela chamada nasce no estado que os parâmetros descrevem. A URL é essa lista de parâmetros, com uma diferença decisiva: ela é **visível, copiável e sobrevive ao F5**. Onde quebra: no Forms só o seu código chama a tela. Na web qualquer pessoa digita qualquer URL, então a rota nunca é controle de acesso.",
+      "texto": "Em uma SPA (*single-page application*, aplicação de página única), o roteador observa a URL e decide quais componentes aparecem. O plano do Cockpit é o React Router no modo *data router*, ainda não instalado. O código abaixo é ilustrativo: confira a documentação da versão que você instalar.\n\n### URL como fonte da verdade\n\nFiltro, página, ordenação, aba ativa e item selecionado são estado que o usuário espera **recuperar**: ao recarregar, ao voltar com o botão do navegador, ao mandar o link para alguém. Esse estado mora na URL, não em `useState`.\n\n```tsx\nconst [params, setParams] = useSearchParams();\nconst status = params.get('status') ?? 'abertas';\nconst pagina = Number(params.get('pagina') ?? '1');\n\nconst tarefas = useQuery({\n  queryKey: chavesTarefa.lista({ status, pagina }),\n  queryFn: () => api.listaTarefas({ status, pagina }),\n});\n```\n\nA URL alimenta a chave, a chave alimenta a consulta. Trocar o filtro é trocar a URL. Não há `useState` nem `useEffect` de sincronização entre os três.\n\nDois cuidados. Tudo que vem da URL é **texto** e pode ter sido digitado por alguém: converta e valide (ts-09). E decida o que entra no histórico: mudar de página merece uma entrada, cada letra digitada na busca não merece (use a opção de substituir a entrada atual).\n\n### Rotas aninhadas e layout\n\nA árvore de rotas espelha a árvore da tela:\n\n```tsx\nconst router = createBrowserRouter([\n  { path: '/login', element: <Login /> },\n  {\n    element: <LayoutLogado />,\n    loader: exigeSessao,\n    children: [\n      { path: '/', element: <PlanoDoDia /> },\n      { path: '/tarefas', element: <Tarefas /> },\n      { path: '/tarefas/:id', element: <DetalheTarefa /> },\n    ],\n  },\n]);\n```\n\n`LayoutLogado` desenha o menu e o cabeçalho e marca com `<Outlet />` o lugar onde a rota filha aparece. Ao navegar entre filhas, o layout não é desmontado.\n\n### Loader\n\nO *loader* é uma função da rota que roda **antes** de o componente renderizar. Serve para duas coisas: decidir se a navegação pode acontecer e adiantar a busca de dado. Com TanStack Query, o loader não guarda o dado por conta própria. Ele pede ao cache para garantir a consulta, e o componente continua usando `useQuery` com a mesma chave. Assim existe um cache só.\n\n### Rota protegida\n\n```ts\nasync function exigeSessao({ request }: { request: Request }) {\n  const sessao = await buscaSessao();\n  if (!sessao) {\n    const destino = new URL(request.url);\n    throw redirect('/login?de=' + encodeURIComponent(destino.pathname + destino.search));\n  }\n  return sessao;\n}\n```\n\nO loader do layout protege todas as filhas de uma vez. O parâmetro `de` permite voltar para onde o usuário queria ir depois do login. Antes de redirecionar para ele, confira que é um caminho interno, que começa com uma barra só. Aceitar URL completa abre a falha de *open redirect* (redirecionamento aberto).\n\n### O limite\n\nRota protegida no front é **experiência de uso**, não segurança. O bundle inteiro está no navegador, e qualquer pessoa chama a API direto. Quem protege o dado é o guard da API (nest-06). O front só evita mostrar uma tela que vai falhar.\n\n### Critério\n\nNem tudo vai para a URL. Modal de confirmação, item com o mouse em cima e rascunho de formulário não merecem link. A pergunta é: **se eu mandar este link para alguém, o que ele deve ver?** O que entra nessa resposta é estado de URL.",
+      "naPratica": "No Cockpit, a data do plano do dia e o filtro de tarefas vão na URL: `/plano?dia=2026-11-10`. Recarregar não perde o contexto, o botão voltar funciona e a query key sai direto dos parâmetros.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`URL` e `URLSearchParams` existem no navegador e no Node. O que sai em cada linha?",
+          "codigo": "const url = new URL('https://cockpit.local/tarefas?status=aberta&pagina=2');\nconst p = url.searchParams;\n\nconst filtro = {\n  status: p.get('status') ?? 'todas',\n  pagina: Number(p.get('pagina') ?? '1'),\n  busca: p.get('q') ?? '',\n};\nconsole.log(JSON.stringify(filtro));\nconsole.log(typeof p.get('pagina'), p.get('ordem'));\n\np.set('pagina', '1');\np.set('q', 'reunião 1:1');\nconsole.log(url.search);\n",
+          "saida": "{\"status\":\"aberta\",\"pagina\":2,\"busca\":\"\"}\nstring null\n?status=aberta&pagina=1&q=reuni%C3%A3o+1%3A1\n",
+          "explicacao": "Todo parâmetro chega como texto: `pagina` só vira número porque o código converteu. Parâmetro ausente devolve `null`, e o `??` aplica o padrão. Ao gravar, a codificação é automática: espaço vira `+`, acento e dois-pontos viram sequências `%`. Nunca monte query string concatenando texto."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A lógica de uma rota protegida, sem biblioteca. Para onde cada navegação vai?",
+          "codigo": "const publicas = ['/login'];\n\nfunction decide(caminho: string, logado: boolean): string {\n  const rota = caminho.split('?')[0] ?? '';\n  if (publicas.includes(rota)) return logado ? '/' : caminho;\n  if (!logado) return '/login?de=' + encodeURIComponent(caminho);\n  return caminho;\n}\n\nconsole.log(decide('/tarefas?status=aberta', true));\nconsole.log(decide('/tarefas?status=aberta', false));\nconsole.log(decide('/login', true));\nconsole.log(decodeURIComponent('%2Ftarefas%3Fstatus%3Daberta'));\n",
+          "saida": "/tarefas?status=aberta\n/login?de=%2Ftarefas%3Fstatus%3Daberta\n/\n/tarefas?status=aberta\n",
+          "explicacao": "Logado segue para onde pediu. Sem sessão vai ao login levando o destino original codificado, para voltar depois. Logado que abre `/login` é mandado para o início. A última linha mostra que o destino sobrevive inteiro à ida e volta, com o filtro incluído."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma rota `/admin` só aparece no menu e só passa pelo loader para quem tem o papel de administrador. Isso é suficiente para proteger os dados administrativos?",
+          "opcoes": [
+            "Sim, porque o loader roda antes de o componente renderizar",
+            "Sim, desde que o papel venha de um token assinado",
+            "Não: o front roda na máquina do usuário e a API precisa verificar a permissão em cada requisição",
+            "Não, mas basta ofuscar o bundle na build de produção"
+          ],
+          "correta": 2,
+          "explicacao": "Tudo que está no front pode ser lido e contornado: a API é chamada direto, sem passar pela rota. A proteção real é o guard no back-end. O token assinado é tentador, mas quem tem que conferir a assinatura e o papel é o servidor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes estados NÃO deveria ir para a URL?",
+          "opcoes": [
+            "A aba ativa de uma tela de detalhe",
+            "O filtro de status de uma lista",
+            "O texto que o usuário está digitando em um formulário de nova tarefa",
+            "O número da página de uma tabela"
+          ],
+          "correta": 2,
+          "explicacao": "Rascunho de formulário é estado de formulário: muda a cada tecla e não faz sentido como link. Aba, filtro e página são o que alguém espera encontrar ao abrir um link ou recarregar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Desenhe a árvore de rotas do Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Em `estudo/front-05-rotas.md`, liste as telas do Cockpit (login, plano do dia, tarefas, detalhe da tarefa, foco, 1:1).",
+            "Escreva a árvore de rotas com indentação, marcando qual rota é layout e quais são filhas.",
+            "Para cada rota, liste os parâmetros de caminho e de query string e o tipo esperado depois da conversão.",
+            "Marque quais rotas são públicas e onde fica o loader que exige sessão."
+          ],
+          "prontoQuando": "A árvore tem um único ponto de proteção para todas as rotas logadas, e todo filtro de lista aparece como parâmetro de URL com tipo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Que pergunta decide se um estado vai para a URL?",
+          "verso": "\"Se eu mandar este link para alguém, o que ele deve ver?\" Filtro, página, aba e item selecionado entram. Modal e rascunho, não."
+        },
+        {
+          "frente": "Por que rota protegida no front não é segurança?",
+          "verso": "O código roda no navegador do usuário e a API pode ser chamada direto. Quem protege o dado é o guard do back-end."
+        },
+        {
+          "frente": "O que é um loader de rota?",
+          "verso": "Função que roda antes de o componente renderizar: decide se a navegação acontece (redireciona) e adianta a busca de dado."
+        },
+        {
+          "frente": "Que cuidado tomar com todo valor lido da URL?",
+          "verso": "É texto e pode ter sido digitado por qualquer pessoa: converter, validar e aplicar padrão."
+        },
+        {
+          "frente": "Que cuidado tomar com o parâmetro de retorno do login (`de`)?",
+          "verso": "Aceitar só caminho interno. URL completa permite redirecionar o usuário para um site de terceiro (*open redirect*)."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "React Router — documentação",
+          "url": "https://reactrouter.com/"
+        },
+        {
+          "titulo": "MDN — URLSearchParams",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams"
+        }
+      ]
+    },
+    {
+      "id": "front-06",
+      "titulo": "Zustand e estado global com parcimônia",
+      "minutos": 10,
+      "ponte": "Você conhece `:GLOBAL` e variável pública de package: prático no primeiro dia, e meses depois ninguém sabe quem gravou o valor nem quando. Uma *store* (armazém de estado) global é a mesma ferramenta, com o mesmo abuso. Onde a analogia quebra: aqui a store **avisa** quem lê quando o valor muda, e cada componente assina só o pedaço que usa.",
+      "texto": "Antes de criar uma store, classifique o dado. Quase tudo tem um lugar melhor.\n\n### Onde mora cada estado\n\n| Tipo | Exemplo | Onde mora |\n|---|---|---|\n| Servidor | lista de tarefas, perfil | cache do TanStack Query |\n| URL | filtro, página, aba, id selecionado | roteador |\n| Formulário | o que o usuário está digitando | React Hook Form (react-14) |\n| Local | modal aberto, item em edição | `useState` no componente, levantado se preciso (react-07) |\n| Global de tela | tema, menu recolhido, timer de foco em andamento | store pequena |\n\nA última linha é o que sobra depois de aplicar as outras quatro. Em um app bem dividido, sobra pouco. Quando a store cresce, o motivo costuma ser dado de servidor guardado nela, e isso recria todos os problemas de front-01.\n\n### Zustand em uma tela\n\nO Zustand ainda não está instalado no Cockpit. O exemplo segue o estilo das versões recentes: confira a documentação da versão instalada.\n\n```ts\ntype EstadoFoco = {\n  tarefaId: number | null;\n  iniciadoEm: number | null;\n  iniciar: (tarefaId: number, agora: number) => void;\n  parar: () => void;\n};\n\nexport const useFoco = create<EstadoFoco>()((set) => ({\n  tarefaId: null,\n  iniciadoEm: null,\n  iniciar: (tarefaId, agora) => set({ tarefaId, iniciadoEm: agora }),\n  parar: () => set({ tarefaId: null, iniciadoEm: null }),\n}));\n```\n\nNão há *provider* em volta da aplicação nem *reducer*. A store é um hook. O `set` mescla o objeto parcial com o estado atual e avisa os assinantes.\n\n### Seletores\n\n```tsx\nconst tarefaId = useFoco((s) => s.tarefaId);\n```\n\nO seletor diz **qual pedaço** o componente quer. O componente só renderiza de novo quando o valor devolvido pelo seletor muda, comparado por referência (`Object.is`). Essa é a vantagem sobre o Context, em que todo consumidor renderiza a cada mudança de qualquer campo (react-13).\n\nA armadilha clássica é o seletor que devolve um objeto novo a cada chamada:\n\n```tsx\nconst { tarefaId, iniciadoEm } = useFoco((s) => ({ tarefaId: s.tarefaId, iniciadoEm: s.iniciadoEm }));\n```\n\nO objeto é novo a cada leitura, a comparação por referência nunca dá igual, e o componente renderiza em toda mudança da store. Dependendo da versão, isso chega a causar laço de renderização. As saídas: um seletor por campo, ou a comparação rasa que a biblioteca oferece (`useShallow` nas versões recentes).\n\nO outro erro é usar `useFoco()` sem seletor. Assina a store inteira.\n\n### Regras de sênior\n\n- **Store pequena e por assunto.** Uma para o foco, outra para preferências de tela. Não uma \"store da aplicação\".\n- **Ações dentro da store.** O componente chama `iniciar(id, agora)`. Ele não monta o novo estado. Assim existe um lugar para procurar quem altera o valor, que é exatamente o que falta à `:GLOBAL`.\n- **Nada de dado do servidor.** Guarde o `tarefaId`. A tarefa vem do cache.\n- **Não derive e guarde.** Tempo decorrido é calculado a partir de `iniciadoEm`, não é um campo.\n- **Persistência com critério.** A biblioteca tem um middleware que grava em `localStorage`. Serve para preferência de tela. Nunca para token ou dado sensível (seg-05).\n\n### Quando nem precisa\n\nSe o estado é usado por dois componentes vizinhos, levante para o pai. Se muda raramente e é lido em muitos lugares, como o tema, Context basta. Store se justifica quando o estado é lido em pontos distantes da árvore, muda com frequência e não cabe em nenhuma das quatro primeiras linhas da tabela.",
+      "naPratica": "No Cockpit, o timer de foco em andamento é o caso típico de store: aparece no cabeçalho, na tela de foco e no plano do dia, e muda sem requisição. A lista de tarefas, o usuário logado e o filtro atual não entram na store.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma mini store com assinatura por seletor. Quem \"renderiza\" em cada `set`?",
+          "codigo": "type Estado = { tema: string; menuAberto: boolean };\nlet estado: Estado = { tema: 'claro', menuAberto: false };\nconst ouvintes = new Set<() => void>();\nconst set = (parte: Partial<Estado>) => {\n  estado = { ...estado, ...parte };\n  ouvintes.forEach((o) => o());\n};\n\nfunction assina<T>(nome: string, seletor: (e: Estado) => T) {\n  let ultimo = seletor(estado);\n  ouvintes.add(() => {\n    const novo = seletor(estado);\n    if (Object.is(novo, ultimo)) return;\n    ultimo = novo;\n    console.log(nome, 'renderiza');\n  });\n}\n\nassina('Cabecalho', (e) => e.tema);\nassina('Menu', (e) => e.menuAberto);\nset({ menuAberto: true });\nset({ tema: 'escuro' });\nset({ tema: 'escuro' });\n",
+          "saida": "Menu renderiza\nCabecalho renderiza\n",
+          "explicacao": "Cada assinante compara só o pedaço que selecionou. Abrir o menu não afeta o cabeçalho. Trocar o tema não afeta o menu. O terceiro `set` grava o mesmo valor: o estado é um objeto novo, mas `e.tema` continua igual, então ninguém renderiza."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A mesma store, agora com um seletor que devolve objeto novo. Quantas renderizações cada componente sofre em três `set`?",
+          "codigo": "type Estado = { tema: string; contador: number };\nlet estado: Estado = { tema: 'claro', contador: 0 };\nconst ouvintes: (() => void)[] = [];\nconst renders: Record<string, number> = {};\n\nfunction assina<T>(nome: string, seletor: (e: Estado) => T) {\n  let ultimo = seletor(estado);\n  renders[nome] = 0;\n  ouvintes.push(() => {\n    const novo = seletor(estado);\n    if (!Object.is(novo, ultimo)) { ultimo = novo; renders[nome]!++; }\n  });\n}\n\nassina('porCampo', (e) => e.tema);\nassina('objetoNovo', (e) => ({ tema: e.tema }));\nfor (let i = 1; i <= 3; i++) {\n  estado = { ...estado, contador: i };\n  ouvintes.forEach((o) => o());\n}\nconsole.log(JSON.stringify(renders));\n",
+          "saida": "{\"porCampo\":0,\"objetoNovo\":3}\n",
+          "explicacao": "O tema nunca mudou. O seletor por campo devolve sempre o mesmo texto e não renderiza. O seletor que monta um objeto devolve uma referência nova a cada chamada, `Object.is` dá falso e o componente renderiza nas três mudanças de um campo que ele nem usa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega propõe guardar na store global a lista de tarefas que vem da API, \"para todas as telas acessarem\". Qual a melhor objeção?",
+          "opcoes": [
+            "Store global é lenta para listas grandes",
+            "A lista é estado do servidor: o cache por chave já compartilha entre as telas e cuida de frescor e invalidação",
+            "O Zustand não aceita arrays no estado",
+            "Deveria ir para um Context em vez de uma store"
+          ],
+          "correta": 1,
+          "explicacao": "Compartilhar entre telas é exatamente o que o cache do TanStack Query faz, com idade e invalidação. Pôr a lista na store cria uma segunda cópia que envelhece sem ninguém saber. Context teria o mesmo defeito."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, estamos começando o front. Vamos de Redux, Zustand ou Context para o estado global?\" Como você responde?",
+          "pontos": [
+            "Reformulou a pergunta: primeiro classificar o estado, depois escolher ferramenta",
+            "Citou a tabela: servidor no cache, filtro na URL, formulário na lib de formulário, local no componente",
+            "Disse que o que sobra é pouco e cabe em uma store pequena",
+            "Deu critério entre as opções: Context para o que muda raramente, store com seletor para o que muda com frequência",
+            "Fez o paralelo do risco: store grande vira variável global sem dono"
+          ],
+          "modelo": "Antes de escolher, eu quero ver quanto estado global a gente tem de verdade. Dado da API fica no cache do TanStack Query, filtro e página ficam na URL, formulário fica na biblioteca de formulário e o resto começa local no componente. O que sobra é coisa como tema, menu recolhido e o timer de foco. Para isso, Context resolve o que quase não muda, e uma store pequena com seletores resolve o que muda com frequência, sem renderizar a árvore toda. Eu iria de Zustand pelo tamanho e pela simplicidade. Redux faz sentido em time grande que quer um fluxo único e ferramentas de depuração. O risco em qualquer uma é virar variável global sem dono."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Os cinco lugares onde um estado pode morar no front",
+          "verso": "Servidor (cache de query), URL (roteador), formulário, local (`useState`), global de tela (store pequena)."
+        },
+        {
+          "frente": "Por que um seletor que devolve `{ a: s.a, b: s.b }` é uma armadilha?",
+          "verso": "O objeto é novo a cada chamada, a comparação por referência nunca dá igual e o componente renderiza em toda mudança da store."
+        },
+        {
+          "frente": "Por que colocar as ações dentro da store?",
+          "verso": "Fica um único lugar que altera o estado. É o que falta à `:GLOBAL`: saber quem grava e quando."
+        },
+        {
+          "frente": "O que nunca vai para a store global?",
+          "verso": "Dado do servidor (vai para o cache), valor derivado (calcula-se) e token ou dado sensível persistido em `localStorage`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Zustand — documentação",
+          "url": "https://zustand.docs.pmnd.rs/"
+        },
+        {
+          "titulo": "React — Choosing the State Structure",
+          "url": "https://react.dev/learn/choosing-the-state-structure"
+        }
+      ]
+    },
+    {
+      "id": "front-07",
+      "titulo": "Cliente HTTP, refresh automático e cliente gerado do OpenAPI",
+      "minutos": 12,
+      "ponte": "Em um sistema PL/SQL bem cuidado ninguém espalha `UTL_HTTP` pelo código: existe um package de integração que monta cabeçalho, trata erro e registra log. O cliente HTTP do front é esse package. E gerar os tipos a partir do OpenAPI é o equivalente de `%ROWTYPE`: a estrutura vem da fonte, não de uma cópia digitada. Onde quebra: `%ROWTYPE` é verificado na compilação contra o banco real. O tipo gerado só vale se a API cumprir o contrato que publicou.",
+      "texto": "Chamar `fetch` direto em cada tela repete, em cada chamada, a URL base, as credenciais, o tratamento de erro e a renovação de sessão. Um *wrapper* (função que embrulha outra) concentra isso.\n\n### O que o `fetch` não faz por você\n\n- **Não rejeita em 4xx e 5xx.** A Promise só rejeita em falha de rede. Um 500 chega como resposta normal, com `res.ok` falso. Sem conferir, o erro vira dado.\n- **Não manda cookie para outra origem.** Em desenvolvimento o front roda em uma porta e a API em outra. Para o cookie de sessão ir junto, a chamada precisa de `credentials: 'include'`, e a API precisa responder com `Access-Control-Allow-Credentials: true` e uma origem explícita, sem curinga (http-06).\n- **Não converte o corpo.** `res.json()` é outra Promise e falha se o corpo vier vazio, como em um 204.\n\n```ts\nexport class ErroDeApi extends Error {\n  status: number;\n  problema: unknown;\n  constructor(status: number, problema: unknown) {\n    super('API respondeu ' + status);\n    this.status = status;\n    this.problema = problema;\n  }\n}\n\nasync function requisita<T>(caminho: string, init?: RequestInit): Promise<T> {\n  const res = await comRenovacao(caminho, init);\n  if (res.status === 204) return undefined as T;\n  const corpo: unknown = await res.json().catch(() => null);\n  if (!res.ok) throw new ErroDeApi(res.status, corpo);\n  return corpo as T;\n}\n```\n\nLançar erro em resposta não-ok é o que faz o TanStack Query entrar em `error`: ele só conhece Promise resolvida ou rejeitada.\n\n### 401, renovar e repetir\n\nO *access token* (credencial de vida curta) expira em minutos (seg-04). Quando a API responde 401, o cliente chama a rota de renovação e **repete a requisição original**, sem o usuário perceber.\n\nO detalhe que separa a versão correta da ingênua: uma tela dispara várias requisições juntas. Todas recebem 401 no mesmo instante. Se cada uma chamar a renovação, a segunda apresenta um *refresh token* que a primeira acabou de trocar. Com rotação e detecção de reuso, o servidor lê isso como roubo e **derruba a sessão**.\n\nA solução é uma renovação por vez. A primeira cria a Promise, as demais esperam a mesma:\n\n```ts\nlet renovando: Promise<void> | null = null;\n\nasync function comRenovacao(caminho: string, init?: RequestInit): Promise<Response> {\n  const faz = () => fetch(BASE + caminho, { ...init, credentials: 'include' });\n  let res = await faz();\n  if (res.status === 401 && caminho !== '/auth/refresh') {\n    renovando ??= renova().finally(() => { renovando = null; });\n    await renovando;\n    res = await faz();\n  }\n  return res;\n}\n```\n\nTrês cuidados: não tentar renovar quando o 401 veio da própria rota de renovação (laço infinito), repetir **uma vez só**, e mandar para o login quando a renovação falha.\n\n### O contrato como fonte única\n\nA API Nest publica um documento OpenAPI (http-08). Escrever à mão, no front, os tipos de cada resposta cria uma segunda definição que diverge na primeira mudança. O plano do Cockpit é usar o **orval**, que lê o OpenAPI e gera tipos, funções de chamada e hooks de TanStack Query, usando o seu wrapper como transporte. Confira na documentação da ferramenta a configuração da versão que instalar.\n\n| Ganho | Custo |\n|---|---|\n| Renomear um campo na API quebra a **compilação** do front | O cliente só é tão bom quanto os decorators de documentação do Nest |\n| Sem tipo digitado duas vezes | Um passo de geração no fluxo e no CI |\n| Chaves e hooks padronizados | Código gerado não se edita à mão: ajusta-se o contrato ou a configuração |\n\nO limite: tipo gerado é uma **promessa**, não uma verificação em execução (ts-09). Se a API devolver algo diferente do que documentou, o TypeScript não vê.",
+      "naPratica": "No Cockpit haverá um único arquivo de transporte. Tela nenhuma chama `fetch` direto, e a regra de lint pode proibir isso. Quando o usuário for deslogado \"do nada\" ao abrir uma tela com várias consultas, a primeira suspeita é renovação concorrente.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Três requisições saem com o token vencido e recebem 401. Quantas renovações acontecem?",
+          "codigo": "let token = 'velho';\nlet renovacoes = 0;\nlet renovando: Promise<void> | null = null;\nconst espera = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));\n\nconst servidor = async (usado: string) => (usado === 'novo' ? 200 : 401);\n\nfunction renova(): Promise<void> {\n  renovando ??= (async () => {\n    renovacoes++;\n    await espera(30);\n    token = 'novo';\n  })().finally(() => { renovando = null; });\n  return renovando;\n}\n\nasync function chama(rota: string): Promise<string> {\n  let status = await servidor(token);\n  if (status === 401) { await renova(); status = await servidor(token); }\n  return rota + ' ' + status;\n}\n\nconst r = await Promise.all([chama('/tarefas'), chama('/plano'), chama('/perfil')]);\nconsole.log(r.join(' | '));\nconsole.log('renovações:', renovacoes);\n",
+          "saida": "/tarefas 200 | /plano 200 | /perfil 200\nrenovações: 1\n",
+          "explicacao": "A primeira chamada que recebe 401 cria a Promise de renovação. As outras duas encontram `renovando` preenchido e esperam a mesma Promise: `??=` só atribui quando está `null`. Depois da renovação, as três repetem com o token novo. Sem a variável compartilhada seriam três renovações, e com refresh rotativo a sessão cairia."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O `fetch` rejeita a Promise quando a API responde 500? `Response` existe no Node, então dá para simular sem rede.",
+          "codigo": "const falso500 = async () => new Response('{\"title\":\"Erro interno\"}', { status: 500 });\n\nasync function ingenuo() {\n  const res = await falso500();\n  return res.json();\n}\n\nasync function correto() {\n  const res = await falso500();\n  if (!res.ok) throw new Error('API respondeu ' + res.status);\n  return res.json();\n}\n\nconsole.log('ingênuo:', JSON.stringify(await ingenuo()));\ntry {\n  await correto();\n} catch (e) {\n  console.log('correto:', (e as Error).message);\n}\n",
+          "saida": "ingênuo: {\"title\":\"Erro interno\"}\ncorreto: API respondeu 500\n",
+          "explicacao": "Uma resposta 500 é uma resposta: a Promise resolve normalmente. A versão ingênua entrega o corpo do erro como se fosse o dado, e a tela tentaria desenhar uma lista a partir dele. A versão correta confere `res.ok` e lança, que é o sinal que o TanStack Query entende como falha."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O tipo abaixo foi gerado a partir do OpenAPI. No back-end, o campo `feita` foi trocado por `concluidaEm`, e o cliente foi gerado de novo. O código da tela ainda compila?",
+          "codigo": "// gerado: não editar\ntype TarefaDto = {\n  id: number;\n  titulo: string;\n  concluidaEm: string | null;\n};\n\nfunction rotulo(t: TarefaDto): string {\n  return t.feita ? 'Feita' : 'Aberta';\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 9,
+          "explicacao": "O campo `feita` não existe mais no tipo gerado, e o compilador aponta cada tela que ainda o usa. Com o tipo digitado à mão no front, o código compilaria e `t.feita` seria `undefined` em produção: toda tarefa apareceria como aberta, sem erro."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O front roda em `localhost:5173` e a API em `localhost:3000`. O login funciona, mas as chamadas seguintes chegam à API sem o cookie de sessão. Qual a causa mais provável?",
+          "opcoes": [
+            "O cookie é `httpOnly`, e o JavaScript não consegue enviá-lo",
+            "As chamadas não usam `credentials: 'include'`, ou a API não libera credenciais no CORS",
+            "O `fetch` não suporta cookies; é preciso mandar o token no corpo",
+            "O cookie expirou entre uma chamada e outra"
+          ],
+          "correta": 1,
+          "explicacao": "Portas diferentes são origens diferentes, e o `fetch` não manda cookie para outra origem por padrão. É preciso `credentials: 'include'` no cliente e `Access-Control-Allow-Credentials` com origem explícita no servidor. `httpOnly` só impede o JavaScript de **ler** o cookie. O navegador continua enviando."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vale a pena gerar o cliente do front a partir do Swagger? Não é mais simples escrever os tipos na mão, que são poucos?\" Qual a sua posição?",
+          "pontos": [
+            "Disse que o problema não é escrever, é manter duas definições sincronizadas",
+            "Citou o ganho principal: mudança de contrato vira erro de compilação no front",
+            "Nomeou os custos: passo de geração e dependência da qualidade da documentação da API",
+            "Lembrou o limite: tipo gerado não valida a resposta em execução",
+            "Deu critério: com poucos endpoints estáveis à mão serve; crescendo, gerar"
+          ],
+          "modelo": "Escrever na mão é rápido. Manter é que custa: são duas definições do mesmo contrato, e a do front fica errada na primeira vez que alguém renomeia um campo na API. Isso não dá erro, dá `undefined` em produção. Gerando do OpenAPI, a mesma mudança quebra a compilação do front e aponta as telas afetadas. O custo é um passo de geração no CI e cuidar da documentação dos DTOs no Nest, porque o cliente sai tão bom quanto o contrato. E não substitui validação em execução: é uma promessa da API. Com três endpoints estáveis eu escreveria na mão. Para o que estamos montando, eu gero desde o início."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O `fetch` rejeita a Promise em resposta 500?",
+          "verso": "Não. Só rejeita em falha de rede. É preciso conferir `res.ok` e lançar o erro."
+        },
+        {
+          "frente": "Por que só pode haver uma renovação de token por vez?",
+          "verso": "Com refresh rotativo, a segunda renovação apresenta um token já trocado. O servidor lê como reuso e derruba a sessão."
+        },
+        {
+          "frente": "Como garantir uma renovação por vez com várias requisições em 401?",
+          "verso": "Guardar a Promise da renovação em uma variável compartilhada. A primeira cria, as demais esperam a mesma, e todas repetem depois."
+        },
+        {
+          "frente": "O que `credentials: 'include'` faz?",
+          "verso": "Faz o `fetch` enviar cookies para outra origem. Exige que a API libere credenciais no CORS com origem explícita."
+        },
+        {
+          "frente": "Qual o limite de um cliente gerado do OpenAPI?",
+          "verso": "O tipo é uma promessa do contrato, não uma verificação em execução. Se a API devolver outra coisa, o compilador não vê."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "MDN — Using the Fetch API",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"
+        },
+        {
+          "titulo": "MDN — Request: credentials",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Request/credentials"
+        },
+        {
+          "titulo": "NestJS — OpenAPI",
+          "url": "https://docs.nestjs.com/openapi/introduction"
+        }
+      ]
+    },
+    {
+      "id": "front-08",
+      "titulo": "Vite, bundle, code splitting e variáveis de ambiente do front",
+      "minutos": 11,
+      "ponte": "Um `.fmb` é o fonte e o `.fmx` é o compilado que vai para o servidor de aplicação. O *build* do front é a mesma etapa: transforma os fontes em arquivos prontos para servir. A diferença que muda tudo: o `.fmx` roda em um servidor que você controla. O bundle é **baixado e executado na máquina do usuário**, que pode abrir e ler cada linha.",
+      "texto": "O Vite faz dois trabalhos diferentes, e confundir os dois gera surpresa em produção.\n\n### Servidor de desenvolvimento × build\n\n| | `vite` (dev) | `vite build` |\n|---|---|---|\n| Objetivo | Resposta rápida a cada edição | Arquivos pequenos e cacheáveis |\n| Como serve | Módulos entregues sob demanda, com troca a quente (HMR) | Arquivos estáticos em `dist/` |\n| Otimização | Quase nenhuma | Minificação, *tree shaking*, divisão em *chunks* |\n| Onde roda | Só na sua máquina | Qualquer servidor de arquivo estático |\n\nO servidor de desenvolvimento **não vai para produção**. O que se publica é a pasta `dist/`: HTML, JavaScript e CSS com *hash* no nome (`index-a1b2c3.js`). O hash muda quando o conteúdo muda, e por isso esses arquivos podem ficar em cache no navegador por um ano. O `index.html` não pode: ele é quem aponta para os nomes novos.\n\nNo `package.json` do Cockpit, o script de build é `tsc -b && vite build`. O Vite **não checa tipos**: ele apaga os tipos e segue. Quem reprova erro de tipo é o `tsc` rodando antes.\n\nRode `vite preview` para servir o `dist/` localmente antes de publicar. Erros que só aparecem no build aparecem ali.\n\n### Bundle e tree shaking\n\nO *bundler* (empacotador) parte do ponto de entrada, segue os `import` e junta tudo em poucos arquivos. *Tree shaking* é a remoção do código exportado que ninguém importa. Funciona porque `import` e `export` de ESM são estáticos (ts-13): o empacotador sabe, sem executar, o que é usado.\n\nO que atrapalha: importar a biblioteca inteira para usar uma função, pacote que só existe em CommonJS, e módulo com efeito colateral na importação.\n\n### Divisão por rota\n\nSem intervenção, todas as telas vão em um arquivo, e o usuário baixa o relatório que nunca vai abrir para ver o login. O `import()` dinâmico marca um ponto de corte: o empacotador gera um *chunk* separado, baixado só quando aquela linha roda.\n\n```tsx\nconst Relatorios = lazy(() => import('./telas/Relatorios'));\n```\n\nO corte natural é **por rota** (react-15 mostrou `lazy` e `Suspense`). Critério: divida telas pesadas e pouco visitadas. Dividir tudo em pedaços minúsculos troca um download por dezenas de requisições e por um carregando a cada clique.\n\n### Variáveis de ambiente do front\n\nO Vite lê arquivos `.env` e expõe em `import.meta.env` **só as variáveis com prefixo `VITE_`**. O mecanismo é substituição de texto no build: `import.meta.env.VITE_API_URL` vira o texto literal da URL dentro do JavaScript gerado.\n\nDuas consequências:\n\n1. **Nenhum segredo vai para o front.** Tudo o que tem `VITE_` está escrito no bundle, legível por qualquer pessoa com a aba Sources aberta. Chave de API paga, segredo de JWT, senha de banco: nada disso. O prefixo existe para você não vazar por acidente. Renomear um segredo para `VITE_ALGO` é vazar de propósito. Se o front precisa de um serviço que exige chave secreta, quem chama é a API.\n2. **O valor é fixado no build.** Isso contraria o \"construa uma vez, publique em vários ambientes\" (prod-01): a mesma pasta `dist/` não serve homologação e produção se a URL da API é diferente. Saídas comuns: servir front e API na mesma origem e usar caminho relativo (`/api`), ou carregar um arquivo de configuração em tempo de execução.\n\n### Análise de bundle\n\nNão otimize no escuro. O próprio `vite build` lista cada arquivo gerado com o tamanho, e existem plugins de visualização que mostram o que ocupa espaço em cada chunk. O achado típico é uma biblioteca grande importada por uma tela só, ou duas bibliotecas que fazem a mesma coisa. O fluxo é o de sempre: medir, cortar o maior, medir de novo.",
+      "naPratica": "No Cockpit, a URL da API é a única variável de ambiente que o front deveria precisar. No review, qualquer `VITE_` com nome parecido com chave, token ou senha é bloqueio imediato, e a pergunta seguinte é se esse valor já foi publicado em algum build.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma simulação do que o build faz com `import.meta.env`: troca cada referência por texto literal, e só expõe o prefixo `VITE_`. O que vai escrito no bundle?",
+          "codigo": "const env: Record<string, string> = {\n  VITE_API_URL: 'https://api.exemplo.dev',\n  VITE_CHAVE_PAGAMENTO: 'sk_live_123',\n  JWT_SECRET: 'segredo-do-servidor',\n};\n\nconst fonte = [\n  'fetch(import.meta.env.VITE_API_URL);',\n  'const chave = import.meta.env.VITE_CHAVE_PAGAMENTO;',\n  'const jwt = import.meta.env.JWT_SECRET;',\n].join('\\n');\n\nconst bundle = fonte.replace(/import\\.meta\\.env\\.(\\w+)/g, (_, nome: string) =>\n  nome.startsWith('VITE_') ? JSON.stringify(env[nome]) : 'undefined',\n);\nconsole.log(bundle);\n",
+          "saida": "fetch(\"https://api.exemplo.dev\");\nconst chave = \"sk_live_123\";\nconst jwt = undefined;\n",
+          "explicacao": "A variável sem o prefixo não é exposta e vira `undefined`: o segredo do servidor ficou protegido. A chave de pagamento, que ganhou o prefixo `VITE_`, está escrita em texto puro no arquivo que todo visitante baixa. O prefixo protege do acidente, não da decisão errada."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`import()` dinâmico devolve uma Promise e só carrega o módulo quando a linha roda. Em que ordem as linhas saem?",
+          "codigo": "console.log('app iniciou');\n\nconst carregaRelatorio = () => import('node:zlib');\nconsole.log('rota registrada:', typeof carregaRelatorio);\n\nconst pendente = carregaRelatorio();\nconsole.log('é Promise?', pendente instanceof Promise);\n\nconst modulo = await pendente;\nconsole.log('módulo carregado:', typeof modulo.gzipSync);\n",
+          "saida": "app iniciou\nrota registrada: function\né Promise? true\nmódulo carregado: function\n",
+          "explicacao": "Declarar a função que faz o `import()` não carrega nada: ela só registra como carregar. O módulo é pedido quando a função é chamada, e o resultado é uma Promise. No front, `lazy` guarda essa função e o `Suspense` mostra o carregando enquanto a Promise não resolve. Para o empacotador, cada `import()` é um ponto de corte de chunk."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A pasta `dist/` foi gerada com `VITE_API_URL` de homologação e copiada para o servidor de produção, onde a variável de ambiente `VITE_API_URL` aponta para a API de produção. Para qual API o front de produção chama?",
+          "opcoes": [
+            "Produção, porque o front lê a variável de ambiente do servidor ao iniciar",
+            "Homologação, porque o valor foi escrito no JavaScript no momento do build",
+            "Nenhuma: o front falha porque os valores divergem",
+            "Produção, porque o navegador lê a variável da máquina do usuário"
+          ],
+          "correta": 1,
+          "explicacao": "O valor é substituído por texto no build. Depois disso não existe leitura de variável: os arquivos são estáticos e o código roda no navegador, que não enxerga o ambiente do servidor. Para trocar a URL sem novo build, use caminho relativo ou um arquivo de configuração carregado em execução."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que o `index.html` não deve ficar em cache longo no navegador, mas os arquivos JavaScript do build podem?",
+          "opcoes": [
+            "Porque HTML é maior que JavaScript",
+            "Porque os arquivos JavaScript têm hash do conteúdo no nome, e o `index.html` é quem aponta para os nomes novos",
+            "Porque o navegador nunca coloca JavaScript em cache",
+            "Porque o `index.html` contém as variáveis de ambiente"
+          ],
+          "correta": 1,
+          "explicacao": "Um arquivo com hash no nome nunca muda de conteúdo: versão nova tem nome novo. O `index.html` tem sempre o mesmo nome e referencia os arquivos atuais. Se ele ficar em cache, o usuário continua na versão antiga, ou pede chunks que já foram removidos do servidor."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Leia o build do Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Em `app/apps/web`, rode o script de build e copie a tabela de arquivos gerados para `estudo/front-08-bundle.md`.",
+            "Abra a pasta `dist/` e anote: quantos arquivos JavaScript existem, o nome com hash e o tamanho de cada um.",
+            "Abra o maior arquivo JavaScript no editor e procure o texto `import.meta.env`. Anote se encontrou e por quê.",
+            "Rode o script de preview e confirme no navegador, pela aba Network, quais arquivos são baixados."
+          ],
+          "prontoQuando": "O arquivo de estudo tem a lista de arquivos com tamanho e uma frase explicando por que `import.meta.env` não aparece no JavaScript gerado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que nenhum segredo pode ir em variável `VITE_`?",
+          "verso": "O valor é escrito como texto no bundle, que todo visitante baixa e pode ler. Segredo fica na API."
+        },
+        {
+          "frente": "Quando o valor de `import.meta.env.VITE_X` é definido?",
+          "verso": "No build, por substituição de texto. A mesma pasta `dist/` não muda de valor conforme o servidor onde é publicada."
+        },
+        {
+          "frente": "O que é tree shaking e por que depende de ESM?",
+          "verso": "Remoção de exportações que ninguém importa. `import` e `export` são estáticos, então o empacotador sabe o que é usado sem executar."
+        },
+        {
+          "frente": "Qual o corte natural para code splitting?",
+          "verso": "Por rota, com `import()` dinâmico e `lazy`. Dividir telas pesadas e pouco visitadas, não tudo."
+        },
+        {
+          "frente": "O Vite checa tipos no build?",
+          "verso": "Não. Ele apaga os tipos. Quem reprova erro de tipo é o `tsc` rodando antes, no script de build."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Vite — Env Variables and Modes",
+          "url": "https://vite.dev/guide/env-and-mode"
+        },
+        {
+          "titulo": "Vite — Building for Production",
+          "url": "https://vite.dev/guide/build"
+        },
+        {
+          "titulo": "Vite — Features",
+          "url": "https://vite.dev/guide/features"
+        }
+      ]
+    }
+  ]
+}

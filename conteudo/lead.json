@@ -1,0 +1,829 @@
+{
+  "licoes": [
+    {
+      "id": "lead-01",
+      "titulo": "Code review que ajuda",
+      "minutos": 11,
+      "ponte": "Você já revisa código: compara a versão nova da package com a anterior e confronta com o pedido antes de subir. O critério é o mesmo. Muda o meio: a revisão acontece num *pull request* (PR), por escrito, linha a linha, antes do merge e com o CI já tendo rodado. Onde a analogia quebra: o comentário fica registrado e é lido por quem não está na sala. O tom e a clareza do que você escreve viram parte do trabalho.",
+      "texto": "No fluxo moderno, nenhum código entra na branch principal sem passar por um PR aprovado. A revisão tem dois objetivos: manter a saúde do código ao longo do tempo e espalhar conhecimento pelo time. Achar defeito é consequência.\n\nO guia de práticas de engenharia do Google resume o padrão de aprovação assim: aprove quando a mudança **melhora a saúde geral do código**, mesmo que não esteja perfeita. Não existe código perfeito, existe código melhor. Revisor que segura PR por preferência pessoal trava o time; revisor que aprova tudo deixa a base degradar.\n\n### O que olhar, nesta ordem\n\nA ordem importa porque um problema de cima invalida o trabalho de baixo.\n\n1. **Desenho.** A mudança pertence a este lugar? As peças se encaixam com o resto do sistema? Resolve o problema certo? Se o desenho está errado, não adianta discutir nome de variável.\n2. **Corretude.** Faz o que o autor pretendia, e o que ele pretendia é bom para quem usa? Pense nos casos de canto: vazio, nulo, duplicado, concorrência, erro no meio.\n3. **Testes.** Existem, estão no nível certo e **falhariam** se o código quebrasse (test-09)?\n4. **Legibilidade.** Nomes, complexidade, comentário que explica o porquê. Outra pessoa consegue manter isso daqui a seis meses?\n\nEstilo e formatação ficam com o formatador e o lint. Revisor humano não gasta comentário com vírgula.\n\n### Comentário que ensina\n\nUm bom comentário tem três partes: **o que** você observou, **por que** importa e **uma direção**. Compare:\n\n- \"Isso está errado.\"\n- \"Se `id` não existir, o `update` lança e a API responde 500. Sugiro checar antes e devolver 404. Vale um teste para esse caso.\"\n\nO segundo pode ser atendido sem uma reunião. Fale do código, nunca da pessoa. Pergunta sincera funciona melhor que ordem quando você não tem certeza: \"o que acontece aqui se a lista vier vazia?\". E registre o que ficou bom: elogio específico também ensina.\n\n### Bloqueante × sugestão\n\nMarque a gravidade de cada comentário. Uma convenção comum:\n\n| Prefixo | Significado |\n|---|---|\n| **bloqueante:** | precisa mudar antes do merge (defeito, risco de segurança, quebra de contrato) |\n| **sugestão:** | melhoraria, mas o autor decide |\n| **nit:** | detalhe pequeno, opcional |\n| **pergunta:** | quero entender, não é pedido de mudança |\n\nSem isso, o autor trata dez comentários como dez exigências, ou como dez opiniões.\n\n### Tamanho do PR\n\nPR pequeno é revisado melhor e mais rápido. Diante de mil linhas, o revisor passa o olho e aprova. Um PR deve conter **uma mudança coesa**: a funcionalidade com seus testes, sem refatoração de carona. Refatoração vai em PR separado, antes. Como referência prática, acima de umas 400 linhas alteradas a atenção do revisor cai muito. Se o PR é grande demais para revisar bem, a resposta correta é pedir para dividir.\n\n### Velocidade\n\nRevisão parada custa mais que revisão imperfeita. A recomendação do mesmo guia é responder em até um dia útil. Quem revisa tarde ensina o time a fazer PR gigante para pedir revisão menos vezes.",
+      "naPratica": "No Cockpit você é autor e revisor. Abra PR mesmo trabalhando sozinho e revise no dia seguinte, seguindo a ordem desenho, corretude, testes, legibilidade. É treino direto para o que você fará com o código de outra pessoa e com o código gerado por IA (lead-04).",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Este trecho chegou num PR:\n\n```ts\nasync concluir(id: string) {\n  const tarefa = await this.prisma.tarefa.findUnique({ where: { id } });\n  await this.prisma.tarefa.update({ where: { id }, data: { status: 'CONCLUIDA' } });\n  return tarefa;\n}\n```\n\nQual comentário de review é o mais útil?",
+          "opcoes": [
+            "\"nit: eu chamaria esse método de `finalizar`.\"",
+            "\"Esse método está errado, refaz.\"",
+            "\"bloqueante: se o `id` não existir, o `update` lança e a rota responde 500. Além disso o retorno é a tarefa lida antes do update, com o status antigo. Sugiro devolver o resultado do `update` e tratar o não encontrado como 404. Falta um teste para `id` inexistente.\"",
+            "\"Aprovado. Depois a gente vê os detalhes.\""
+          ],
+          "correta": 2,
+          "explicacao": "Ele aponta dois defeitos de corretude, diz a consequência para quem usa a API, indica a direção e pede o teste. O autor consegue corrigir sem perguntar nada. O nit discute nome com um defeito em aberto. \"Está errado\" não diz o quê nem por quê. Aprovar para ver depois deixa o 500 ir para produção."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um PR de 1.800 linhas mistura a funcionalidade nova, a renomeação de uma pasta e a troca de uma biblioteca. Qual a melhor atitude do revisor?",
+          "opcoes": [
+            "Revisar com calma ao longo da semana, arquivo por arquivo",
+            "Aprovar confiando no CI verde, já que revisar tudo é inviável",
+            "Pedir para dividir: renomeação e troca de biblioteca em PRs próprios, e a funcionalidade em outro",
+            "Revisar só os arquivos da funcionalidade e ignorar o resto"
+          ],
+          "correta": 2,
+          "explicacao": "Três mudanças independentes num PR só impedem revisão de qualidade e dificultam reverter uma delas. Dividir é barato agora e caro depois do merge. Levar uma semana trava o autor; aprovar pelo CI abre mão da revisão; revisar pela metade aprova o que não foi lido."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em que ordem um revisor experiente examina um PR?",
+          "opcoes": [
+            "Formatação, nomes, testes, desenho",
+            "Desenho, corretude, testes, legibilidade",
+            "Testes, legibilidade, corretude, desenho",
+            "Legibilidade, corretude, desenho, testes"
+          ],
+          "correta": 1,
+          "explicacao": "Do mais caro de mudar para o mais barato. Se o desenho está errado, todo o resto será reescrito, e comentar nomes foi desperdício. Formatação nem entra: é trabalho do formatador automático."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o fulano deixou vinte comentários no meu PR, metade é gosto pessoal. Eu preciso atender tudo para ele aprovar?\"",
+          "pontos": [
+            "Separou bloqueante de sugestão e de nit",
+            "Não tomou partido contra o revisor nem contra o autor",
+            "Propôs um acordo de time (prefixos, o que o lint decide)",
+            "Indicou como responder a cada tipo de comentário",
+            "Lembrou o critério de aprovação: melhora a saúde do código"
+          ],
+          "modelo": "Tudo, não. Mas responder a tudo, sim. Separe os comentários em três grupos: o que aponta defeito ou risco, que você corrige; o que é sugestão com um motivo, que você avalia e ou aplica ou responde por que não; e o que é gosto, que você pode agradecer e deixar como está. Se não dá para saber em qual grupo um comentário cai, o problema é de combinado nosso, não seu. Vou propor ao time usar prefixo, bloqueante, sugestão e nit, e mandar para o lint tudo que for estilo, para ninguém mais discutir isso em PR. O critério para aprovar é o PR deixar o código melhor do que estava, não ficar do jeito que o revisor escreveria."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Revise um PR seu de ontem",
+          "minutos": 20,
+          "passos": [
+            "Abra um PR do Cockpit (ou um commit grande) feito há pelo menos um dia.",
+            "Leia a descrição e o diff inteiro uma vez, sem comentar, só para julgar o desenho.",
+            "Na segunda passada, escreva pelo menos quatro comentários com prefixo (bloqueante, sugestão, nit, pergunta), cada um com o quê, o porquê e uma direção.",
+            "Escreva um comentário elogiando algo específico que ficou bom."
+          ],
+          "prontoQuando": "O PR tem pelo menos cinco comentários prefixados, e nenhum deles é sobre formatação."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Em que ordem revisar um PR?",
+          "verso": "Desenho, corretude, testes, legibilidade. Do mais caro de mudar para o mais barato."
+        },
+        {
+          "frente": "Quais as 3 partes de um comentário de review útil?",
+          "verso": "O que você observou, por que importa e uma direção para resolver."
+        },
+        {
+          "frente": "Por que marcar comentário como bloqueante, sugestão ou nit?",
+          "verso": "Sem a gravidade, o autor não sabe o que impede o merge e o que é opcional. Trata tudo como exigência ou tudo como opinião."
+        },
+        {
+          "frente": "Qual o critério para aprovar um PR, segundo o guia do Google?",
+          "verso": "A mudança melhora a saúde geral do código, mesmo sem estar perfeita."
+        },
+        {
+          "frente": "Por que PR pequeno?",
+          "verso": "É revisado com atenção e rápido, e é fácil de reverter. Em PR enorme o revisor passa o olho e aprova."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Google Engineering Practices — What to look for in a code review",
+          "url": "https://google.github.io/eng-practices/review/reviewer/looking-for.html"
+        },
+        {
+          "titulo": "Google Engineering Practices — How to write code review comments",
+          "url": "https://google.github.io/eng-practices/review/reviewer/comments.html"
+        },
+        {
+          "titulo": "Google Engineering Practices — Small CLs",
+          "url": "https://google.github.io/eng-practices/review/developer/small-cls.html"
+        }
+      ]
+    },
+    {
+      "id": "lead-02",
+      "titulo": "Quebrar e estimar trabalho",
+      "minutos": 10,
+      "ponte": "No mundo Forms, a divisão natural é por camada: primeiro as tabelas, depois a package, depois a tela, e só no fim alguém vê alguma coisa funcionando. Você já sabe o risco: a integração no final revela o que ninguém previu. No fluxo com PR e CI, o corte é atravessado. Onde a analogia quebra: aqui cada pedaço entregue precisa funcionar sozinho em produção, porque o merge é diário e não existe \"fase de integração\".",
+      "texto": "### Fatia vertical\n\nUma *vertical slice* (fatia vertical) é um pedaço de funcionalidade **fino e completo**: atravessa tela, API, regra e banco, e entrega algo que um usuário consegue usar. O oposto é a fatia horizontal, por camada.\n\nPara \"plano do dia\" no Cockpit:\n\n| Corte horizontal | Corte vertical |\n|---|---|\n| 1. Todas as tabelas | 1. Listar as tarefas de hoje (uma rota, uma tela simples) |\n| 2. Todas as rotas | 2. Adicionar uma tarefa ao plano |\n| 3. Todas as telas | 3. Mostrar o total de minutos e avisar quando estoura a capacidade |\n| 4. Integrar e testar | 4. Reordenar por arrastar |\n\nNo corte vertical, a fatia 1 já prova o caminho inteiro: migration, rota, autenticação, chamada do front, deploy. O risco técnico aparece na primeira semana. Cada fatia cabe num PR pequeno (lead-01), pode ser demonstrada e pode ser a última, se a prioridade mudar. No horizontal, três semanas de trabalho não mostram nada e o erro de desenho só aparece na integração.\n\nComo fatiar: comece pelo caminho feliz mais simples, depois acrescente uma regra por vez, depois os casos de erro, depois o acabamento. Se uma fatia não cabe em dois ou três dias, ela ainda é grossa.\n\n### Issue com critério de aceite\n\nCada fatia vira uma *issue* (item de trabalho) com três partes:\n\n- **Contexto:** uma ou duas frases sobre o problema e para quem.\n- **Critérios de aceite:** lista verificável do que precisa ser verdade para estar pronto. \"Dado um plano com 500 minutos e capacidade de 480, a tela mostra o aviso de estouro.\"\n- **Fora do escopo:** o que esta fatia não faz. Evita a carona.\n\nCritério de aceite bom vira nome de teste quase sem alteração. Se você não consegue escrever o critério, a issue ainda não está pronta para ser estimada.\n\n### Estimar em faixa\n\nEstimativa é previsão com incerteza, e um número único esconde a incerteza. \"Cinco dias\" é ouvido como promessa. \"Entre quatro e oito dias, e o que decide é a integração com o calendário\" informa o risco e o que o reduz. A largura da faixa é informação: faixa larga pede uma investigação curta (*spike*) antes de comprometer prazo.\n\nTrês hábitos:\n\n1. Estime a fatia, não o projeto. Some as faixas depois.\n2. Diga do que a faixa depende.\n3. Separe esforço de prazo. Quatro dias de trabalho com reuniões e revisão no meio são sete no calendário.\n\n### Medir estimado × real\n\nGuarde, para cada fatia, o que você estimou e o que levou. Depois de dez itens, você tem o seu fator de correção: se o real costuma ser 1,5 vez o estimado, multiplique. Isso não é cobrança, é calibragem. A estimativa melhora com dado, não com otimismo.\n\n### Quando não estimar em detalhe\n\nTrabalho de descoberta não se estima em dias: dá-se um orçamento de tempo (\"dois dias para descobrir se dá\"). E se as fatias são pequenas e parecidas, contar fatias entregues por semana prevê melhor do que estimar cada uma.",
+      "naPratica": "No Cockpit, cada funcionalidade vira três a cinco issues verticais com critério de aceite. Anote o estimado e o real numa coluna. Na entrevista e no trabalho, \"como você estima?\" tem resposta pronta: fatia fina, faixa, e histórico para calibrar.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O histórico guarda estimado e real, em dias, de quatro fatias. O código calcula os fatores de correção e a faixa para uma fatia nova estimada em 4 dias. O que sai?",
+          "codigo": "const historico = [\n  { est: 2, real: 3 },\n  { est: 5, real: 9 },\n  { est: 3, real: 4 },\n  { est: 1, real: 2 },\n];\n\nconst fatores = historico.map((h) => h.real / h.est).sort((a, b) => a - b);\nconsole.log(fatores.map((f) => f.toFixed(2)).join(' '));\n\nconst nova = 4;\nconst menor = Math.round(nova * fatores[0]!);\nconst maior = Math.round(nova * fatores.at(-1)!);\nconsole.log(`faixa: ${menor} a ${maior} dias`);\n",
+          "saida": "1.33 1.50 1.80 2.00\nfaixa: 5 a 8 dias\n",
+          "explicacao": "Todas as fatias levaram mais que o estimado, entre 1,33 e 2 vezes. Aplicando o menor e o maior fator aos 4 dias, a faixa honesta é de 5 a 8. Repare que o número que você teria dito, 4, nem está dentro da faixa. É para isso que serve medir o estimado contra o real."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas é uma fatia vertical para a funcionalidade \"registro de 1:1\"?",
+          "opcoes": [
+            "Criar todas as tabelas do módulo de 1:1",
+            "Implementar todas as rotas de 1:1 na API, com testes",
+            "Permitir criar um 1:1 com data e uma anotação, e vê-lo listado na tela",
+            "Montar o layout de todas as telas de 1:1 com dados de exemplo"
+          ],
+          "correta": 2,
+          "explicacao": "Ela atravessa banco, API e tela e entrega algo utilizável, mesmo que mínimo. As outras são camadas: ficam prontas sem que ninguém consiga usar nada, e o erro de encaixe só aparece quando as camadas se encontram."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O gerente pergunta quanto tempo leva a integração com o calendário. Você nunca usou a API do provedor. Qual a melhor resposta?",
+          "opcoes": [
+            "\"Uns cinco dias.\"",
+            "\"Não tem como estimar isso.\"",
+            "\"Entre uma e três semanas. A faixa é larga porque não conheço a API. Com dois dias de investigação eu volto com uma faixa bem mais estreita.\"",
+            "\"Duas semanas, com certeza, já colocando uma gordura.\""
+          ],
+          "correta": 2,
+          "explicacao": "Dá a faixa, explica por que é larga e propõe o passo barato que a estreita. O número único vira promessa sem base. \"Não tem como\" não ajuda quem precisa planejar. Gordura escondida é uma faixa que você não contou para ninguém."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, quanto tempo para entregar o módulo de foco? Preciso de uma data para passar para a diretoria.\"",
+          "pontos": [
+            "Não devolveu um número único",
+            "Quebrou em fatias e disse qual entrega valor primeiro",
+            "Deu faixa e disse do que ela depende",
+            "Separou esforço de prazo de calendário",
+            "Ofereceu um ponto de revisão da estimativa com data"
+          ],
+          "modelo": "Consigo te dar uma faixa agora e uma data mais firme em uma semana. O módulo tem quatro fatias: iniciar e parar o foco, histórico do dia, aviso de fim de sessão e relatório semanal. As três primeiras eu estimo entre oito e doze dias de trabalho, o que dá de três a quatro semanas de calendário com revisão e as outras demandas. O relatório é o que mais varia, porque depende de definição que ainda não existe. Minha sugestão: passe para a diretoria a entrega das três primeiras em quatro semanas, e o relatório como segunda etapa. Daqui a uma semana, com a primeira fatia em produção, eu confirmo ou corrijo a faixa com dado real."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Fatie uma funcionalidade do Cockpit",
+          "minutos": 20,
+          "passos": [
+            "Escolha uma funcionalidade ainda não feita. Em `estudo/fatias.md`, escreva o corte horizontal que você faria por hábito.",
+            "Reescreva em três a cinco fatias verticais, cada uma utilizável sozinha.",
+            "Para a primeira fatia, escreva a issue: contexto, três critérios de aceite verificáveis e o que fica fora do escopo.",
+            "Dê uma faixa em dias para cada fatia e anote do que ela depende. Guarde o arquivo para registrar o real depois."
+          ],
+          "prontoQuando": "Há pelo menos três fatias verticais com faixa, e a primeira tem critérios de aceite que você conseguiria transformar em nomes de teste."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é uma fatia vertical?",
+          "verso": "Um pedaço fino de funcionalidade que atravessa tela, API, regra e banco e pode ser usado e demonstrado sozinho."
+        },
+        {
+          "frente": "Por que fatiar na vertical e não por camada?",
+          "verso": "O risco de encaixe aparece na primeira fatia, cada entrega tem valor e cabe num PR pequeno. Por camada, o erro só aparece na integração final."
+        },
+        {
+          "frente": "Quais as 3 partes de uma issue bem escrita?",
+          "verso": "Contexto, critérios de aceite verificáveis e o que está fora do escopo."
+        },
+        {
+          "frente": "Por que estimar em faixa?",
+          "verso": "Um número único esconde a incerteza e é ouvido como promessa. A faixa mostra o risco e do que ele depende."
+        },
+        {
+          "frente": "Para que registrar estimado × real?",
+          "verso": "Para calibrar: depois de alguns itens você conhece o seu fator de correção e estima com dado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Purpose of Estimation",
+          "url": "https://martinfowler.com/bliki/PurposeOfEstimation.html"
+        },
+        {
+          "titulo": "GitHub Docs — Issues",
+          "url": "https://docs.github.com/en/issues"
+        }
+      ]
+    },
+    {
+      "id": "lead-03",
+      "titulo": "Incidente e postmortem sem culpados",
+      "minutos": 10,
+      "ponte": "Você já viveu produção parada: alguém restaura, alguém avisa a área, depois vem a análise de causa. Você conhece o conteúdo. O que o fluxo moderno acrescenta é formato: papéis definidos durante o incidente e um documento escrito depois, que procura a falha do **sistema** e não a pessoa. Onde a analogia quebra: \"quem rodou o script errado\" deixa de ser a resposta e passa a ser o começo da pergunta.",
+      "texto": "### Durante: restaurar primeiro, entender depois\n\nA prioridade num incidente é **reduzir o impacto**, não achar a causa. Reverter o deploy, desligar a *feature flag*, voltar a versão anterior. O diagnóstico completo vem depois, com o serviço de pé. Quem insiste em entender tudo antes de reverter prolonga a parada.\n\nPapéis claros evitam dez pessoas mexendo ao mesmo tempo e ninguém avisando ninguém:\n\n| Papel | Faz |\n|---|---|\n| **Comandante do incidente** | coordena, decide, mantém o foco. Não põe a mão no teclado |\n| **Operações** | investiga e executa as ações técnicas |\n| **Comunicação** | informa os interessados em intervalos regulares, mesmo sem novidade |\n| **Escriba** | anota a linha do tempo enquanto acontece |\n\nEm time pequeno, uma pessoa acumula papéis, mas eles são ditos em voz alta: \"eu coordeno, você investiga\". Como tech lead, o seu lugar natural é o de comandante, e a disciplina difícil é não ir depurar.\n\n### Depois: o postmortem\n\n*Postmortem* é o documento escrito depois do incidente. A estrutura mínima:\n\n1. **Resumo e impacto:** o que parou, para quem, por quanto tempo.\n2. **Linha do tempo:** fatos com horário. O que foi visto, o que foi feito, quando foi detectado, quando foi resolvido.\n3. **Causa e gatilho.**\n4. **O que funcionou e o que não funcionou** na resposta.\n5. **Ações:** cada uma com dono e prazo.\n\n### Causa × gatilho\n\nO **gatilho** é o evento que disparou o incidente: o deploy das 14h, o script de carga, o pico de acesso. A **causa** é a condição que já existia e permitiu que o gatilho virasse incidente: a query sem índice, a migration sem teste em volume real, a ausência de limite de tempo na chamada externa.\n\nCorrigir só o gatilho (\"não rodar mais esse script\") deixa a armadilha armada para o próximo. E quase nunca há uma causa só. Pergunte \"por que isso foi possível?\" várias vezes, e também \"por que demoramos a perceber?\".\n\n### Sem culpados\n\n*Blameless* (sem culpados) parte de uma premissa: a pessoa agiu de boa-fé com a informação que tinha. Se foi possível derrubar produção com um comando, o defeito é do sistema que permitiu.\n\nIsso não é gentileza, é método. Quem tem medo de punição esconde informação, e sem informação você não acha a causa. Na escrita, troque \"fulano esqueceu de rodar a migration\" por \"o deploy não verifica se há migration pendente\". A segunda frase aponta algo que dá para consertar.\n\nSem culpados não significa sem responsabilidade: as ações têm dono e prazo, e alguém cobra.\n\n### Ações que valem\n\n\"Ter mais cuidado\" e \"revisar com mais atenção\" não são ações, porque dependem de memória. Ação boa muda o sistema: um teste, um alerta, uma trava no pipeline, um limite de tempo, um passo automatizado. Poucas ações concluídas valem mais que vinte abertas.\n\n### Quando escrever\n\nNem todo erro pede postmortem. Combine o critério antes: indisponibilidade percebida pelo usuário, perda ou corrupção de dado, falha de segurança. Para o resto, uma nota curta na issue basta.",
+      "naPratica": "Na próxima falha do Cockpit, mesmo sozinho, escreva um postmortem de meia página. Em entrevista para sênior, \"conte um incidente que você conduziu\" é pergunta certa, e a resposta que impressiona tem linha do tempo, causa separada de gatilho e ação que mudou o sistema.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Às 14h um deploy adiciona um filtro à listagem de tarefas. Às 14h05 a API fica lenta para todos. A investigação mostra que a query nova faz varredura completa numa tabela grande, sem índice, e que o ambiente de teste tem só 200 linhas. O que é gatilho e o que é causa?",
+          "opcoes": [
+            "Gatilho: a falta de índice. Causa: o deploy das 14h",
+            "Gatilho: o deploy das 14h. Causas: query sem índice e ausência de teste com volume realista",
+            "Gatilho: o desenvolvedor que escreveu a query. Causa: falta de atenção na revisão",
+            "Gatilho e causa são a mesma coisa: o deploy"
+          ],
+          "correta": 1,
+          "explicacao": "O deploy disparou o problema, mas ele só virou incidente porque nada no caminho mostrava o custo da query com volume real. Corrigir só o gatilho (reverter) não impede o próximo. Apontar a pessoa não gera ação que mude o sistema."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas é a melhor ação de um postmortem?",
+          "opcoes": [
+            "\"Todos devem ter mais atenção ao revisar queries.\"",
+            "\"Orientar o desenvolvedor responsável.\"",
+            "\"Incluir no CI um passo que roda os e2e contra um banco com volume próximo ao de produção. Dono: {{nome}}. Prazo: dia 20.\"",
+            "\"Evitar deploy à tarde.\""
+          ],
+          "correta": 2,
+          "explicacao": "Muda o sistema, é verificável e tem dono e prazo. \"Mais atenção\" depende de memória e falha na próxima pressa. Orientar uma pessoa não protege contra o mesmo erro vindo de outra. Mudar o horário do deploy mexe no gatilho, não na causa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A API caiu e você é o comandante do incidente. Há uma suspeita sobre o último deploy, sem certeza. Qual a primeira decisão?",
+          "opcoes": [
+            "Abrir os logs e investigar até confirmar a causa antes de mexer em qualquer coisa",
+            "Reverter o último deploy para restaurar o serviço e investigar depois, com calma",
+            "Chamar todo o time para investigar junto",
+            "Esperar o próximo ciclo de monitoramento para confirmar que não foi instabilidade passageira"
+          ],
+          "correta": 1,
+          "explicacao": "A prioridade é reduzir o impacto. Reverter é barato e reversível, e se não resolver você descartou uma hipótese em minutos. Investigar com o serviço fora prolonga a parada. Todo mundo investigando ao mesmo tempo sem coordenação piora."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, quem foi que derrubou a produção ontem? Preciso saber para isso não acontecer de novo.\"",
+          "pontos": [
+            "Não entregou um nome como resposta",
+            "Explicou o que aconteceu em termos de sistema (gatilho e causa)",
+            "Explicou por que procurar culpado não evita a repetição",
+            "Disse as ações concretas, com dono e prazo",
+            "Manteve a responsabilidade: alguém responde pelas ações"
+          ],
+          "modelo": "O que derrubou foi um deploy com uma consulta pesada, que passou porque o nosso ambiente de teste tem pouco dado e nada no processo mostrava o custo dela. Qualquer pessoa do time teria passado pelo mesmo caminho, então o nome não te ajuda a evitar a próxima. O que evita são duas mudanças: um teste com volume realista antes do deploy e um alerta de tempo de resposta, que teria avisado em um minuto em vez de dez. As duas têm dono e prazo, e eu respondo por elas. Te mando o postmortem hoje, com a linha do tempo e o andamento das ações."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Postmortem de meia página",
+          "minutos": 20,
+          "passos": [
+            "Escolha uma falha real que você viveu, descrita de forma genérica, sem nomes de sistema, empresa ou pessoa. Arquivo: `estudo/postmortem.md`.",
+            "Escreva o resumo e o impacto em três linhas e a linha do tempo com pelo menos cinco horários.",
+            "Separe o gatilho das causas, perguntando \"por que isso foi possível?\" pelo menos três vezes.",
+            "Escreva três ações que mudam o sistema, com dono e prazo. Releia e troque toda frase que tenha uma pessoa como sujeito do erro."
+          ],
+          "prontoQuando": "O documento cabe em uma página, não cita nenhuma pessoa como causa, e nenhuma ação é do tipo \"ter mais cuidado\"."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a prioridade durante um incidente?",
+          "verso": "Reduzir o impacto: reverter, desligar a flag, voltar a versão. A causa completa fica para depois, com o serviço de pé."
+        },
+        {
+          "frente": "Gatilho × causa",
+          "verso": "Gatilho é o evento que disparou (o deploy). Causa é a condição que permitiu virar incidente (query sem índice, falta de teste com volume)."
+        },
+        {
+          "frente": "Por que o postmortem é sem culpados?",
+          "verso": "Quem teme punição esconde informação, e sem informação não se acha a causa. O defeito é do sistema que permitiu o erro."
+        },
+        {
+          "frente": "O que é uma ação boa de postmortem?",
+          "verso": "Uma que muda o sistema (teste, alerta, trava no pipeline), com dono e prazo. \"Ter mais cuidado\" não é ação."
+        },
+        {
+          "frente": "Qual o papel do comandante do incidente?",
+          "verso": "Coordenar e decidir, sem pôr a mão no teclado. Garante que alguém investiga, alguém comunica e alguém anota."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Google SRE Book — Postmortem Culture: Learning from Failure",
+          "url": "https://sre.google/sre-book/postmortem-culture/"
+        },
+        {
+          "titulo": "Google SRE Book — Managing Incidents",
+          "url": "https://sre.google/sre-book/managing-incidents/"
+        }
+      ]
+    },
+    {
+      "id": "lead-04",
+      "titulo": "IA no fluxo: gerar rápido, revisar com rigor",
+      "minutos": 11,
+      "ponte": "Pense num desenvolvedor novo, muito rápido, que leu toda a documentação do mundo, nunca viu o seu sistema e nunca diz \"não sei\". Você não deixaria o código dele ir para produção sem revisão. Com IA gerando código é a mesma relação, e a sua experiência de revisor vale mais, não menos. Onde a analogia quebra: o júnior aprende com o seu comentário e hesita quando está inseguro. A IA erra com a mesma fluência com que acerta.",
+      "texto": "Um assistente de IA escreve em segundos o que levaria uma hora. Isso muda onde o tempo é gasto: menos em digitar, mais em **especificar e conferir**. O gargalo do time passa a ser a revisão, e quem revisa bem vira a pessoa mais valiosa.\n\n### Onde rende\n\n- **Código repetitivo:** DTO, mapeamento, configuração, o esqueleto de um módulo.\n- **Testes** a partir de casos que **você** listou.\n- **Explicação:** \"o que este trecho faz?\", \"por que este erro de tipo?\". Para quem está entrando numa stack nova, é o uso de maior retorno.\n- **Tradução entre linguagens** quando você domina a origem: você sabe o que a rotina PL/SQL faz e consegue julgar a versão TypeScript.\n- **Primeiro rascunho** de documentação e mensagem de commit.\n\n### Onde erra\n\n| Área | O erro típico |\n|---|---|\n| **Regra de negócio** | Ela não conhece a sua regra. Preenche a lacuna com o caso mais comum da internet, que parece certo |\n| **Caso de canto** | Acerta o caminho feliz. Lista vazia, nulo, fuso, arredondamento e concorrência ficam de fora |\n| **Segurança** | Esquece a checagem de dono do recurso, concatena entrada em SQL, registra dado sensível em log |\n| **API inventada** | Usa método, opção ou pacote que não existe ou que é de outra versão. Chamam isso de alucinação |\n| **Contexto** | Ignora a convenção do projeto e recria algo que já existe ali |\n\nA API inventada costuma ser pega pelo compilador e pelo teste. Já a regra errada compila, passa no lint e parece limpa. É a mais perigosa.\n\n### O revisor responde pelo código\n\nQuem abre o PR responde por cada linha, tenha digitado ou não. \"Foi a IA que gerou\" não é justificativa em revisão nem em incidente. A consequência prática: **não envie para revisão o que você não entendeu.** Se não sabe explicar por que uma linha está ali, você ainda não terminou.\n\n### O teste da mesma IA\n\nSe você pede o código e depois pede \"agora escreva os testes\", a IA lê a implementação e escreve testes que **confirmam o que o código faz**. Se o código arredonda errado, o teste espera o valor errado. Fica tudo verde e nada foi provado.\n\nA saída é inverter a ordem: os **casos saem da regra**, escritos por você (ou gerados a partir da especificação, antes do código). Depois vale o controle negativo de test-09: quebre a regra e veja o teste reprovar.\n\n### Como pedir\n\n1. **Contexto:** a stack, a versão, o arquivo vizinho que serve de modelo.\n2. **Tarefa pequena:** uma função, um endpoint. O que cabe num PR pequeno (lead-01).\n3. **Regra explícita**, com os casos de canto e exemplos de entrada e saída.\n4. **Restrições:** o que não mudar, quais bibliotecas usar.\n\n### Como conferir\n\n1. Leia tudo, na ordem de lead-01: desenho, corretude, testes, legibilidade.\n2. Confira toda API que você não conhece na documentação da versão instalada.\n3. Rode. Teste os casos de canto que você listou.\n4. Procure o que **falta**: autorização, validação, tratamento de erro, transação.\n5. Desconfie do volume. Duzentas linhas onde cabiam trinta são um sinal.\n\n### Quando não usar\n\nQuando você não tem como julgar o resultado, e quando o dado é sigiloso e a ferramenta não está autorizada a recebê-lo. Para aprender, peça a explicação e escreva você: quem só aceita sugestão não forma o critério que a revisão exige.",
+      "naPratica": "No Cockpit você decidiu implementar à mão para aprender, e usa a IA para explicar e revisar. No trabalho o padrão será o inverso: a IA gera e você revisa. O que separa o sênior nesse cenário é achar o que falta num código que parece pronto.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A IA gerou `ordena` (\"ordena as tarefas por minutos\") e, a pedido, o teste. O que as duas linhas imprimem?",
+          "codigo": "import assert from 'node:assert/strict';\n\n// gerado pela IA\nconst ordena = (minutos: number[]) => [...minutos].sort();\n\n// teste gerado pela mesma IA\nassert.deepEqual(ordena([3, 1, 2]), [1, 2, 3]);\nconsole.log('teste da IA: passou');\n\n// o caso que voce pensou\nconsole.log(ordena([10, 9, 100]));\n",
+          "saida": "teste da IA: passou\n[ 10, 100, 9 ]\n",
+          "explicacao": "`sort()` sem função de comparação ordena como **texto**: \"10\" vem antes de \"100\", que vem antes de \"9\". Com números de um dígito o defeito não aparece, e o teste gerado a partir do código escolheu justamente esse caso. O correto é `sort((a, b) => a - b)`. O teste confirmou a implementação; a regra só foi testada quando você trouxe o seu caso."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A IA sugeriu este trecho para pegar a última tarefa da lista. Compila?",
+          "codigo": "const tarefas: string[] = ['Ler', 'Revisar PR', 'Estudar'];\n\nconst ultima = tarefas.last();\n\nexport { ultima };\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 3,
+          "explicacao": "Array não tem `last()` em JavaScript: o método existe em outras linguagens e a IA trouxe de lá. O compilador pega na hora (a forma correta é `tarefas.at(-1)`). Esse é o erro barato da IA. O caro é a regra errada, que compila sem reclamar."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A IA gerou esta rota e o PR chegou para você:\n\n```ts\n@Delete(':id')\nasync remover(@Param('id') id: string) {\n  await this.prisma.tarefa.delete({ where: { id } });\n}\n```\n\nO código compila e o teste gerado junto passa. Qual comentário de review é o mais útil?",
+          "opcoes": [
+            "\"sugestão: devolver 204 de forma explícita com `@HttpCode(204)`.\"",
+            "\"bloqueante: qualquer usuário autenticado apaga a tarefa de qualquer outro, basta saber o id. Falta filtrar pelo dono (vindo do token) e um teste em que o usuário B tenta apagar a tarefa do usuário A e recebe 404.\"",
+            "\"Parece código de IA. Reescreve na mão.\"",
+            "\"nit: o nome `remover` poderia ser `excluir`.\""
+          ],
+          "correta": 1,
+          "explicacao": "O defeito está no que **falta**: a checagem de dono do recurso, a falha que você viu em seg-06. O código parece completo e o teste do caminho feliz passa. O comentário diz o risco, a correção e o teste que prova. A origem do código não é argumento de revisão: o critério é o mesmo para qualquer autor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você pediu à IA a função de cálculo de capacidade e, em seguida, \"escreva os testes para essa função\". Tudo verde. O que esses testes provam?",
+          "opcoes": [
+            "Que a função implementa a regra de negócio corretamente",
+            "Que a função faz o que ela faz: os testes foram derivados da implementação, não da regra",
+            "Que a cobertura é suficiente para o merge",
+            "Nada, porque teste gerado por IA nunca executa de verdade"
+          ],
+          "correta": 1,
+          "explicacao": "Os valores esperados foram tirados do próprio código. Se ele arredonda errado, o teste espera o valor errado. Para provar a regra, os casos precisam vir da especificação, escritos por você ou antes do código. Os testes executam de verdade, e isso é o que os torna enganosos."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a IA já escreve o código e os testes, e passa tudo no CI. Por que eu ainda preciso revisar linha por linha?\"",
+          "pontos": [
+            "Reconheceu o ganho real de velocidade",
+            "Disse onde a IA erra sem o CI perceber (regra, caso de canto, o que falta)",
+            "Explicou por que o teste da mesma IA não prova a regra",
+            "Afirmou que quem abre o PR responde pelo código",
+            "Propôs uma prática concreta (casos escritos antes, controle negativo, PR pequeno)"
+          ],
+          "modelo": "Porque o CI só confere o que alguém mandou conferir. A IA é muito boa no caminho feliz e ruim justamente no que não está escrito: a nossa regra, o caso de canto, a checagem de permissão que faltou. E quando ela escreve o teste depois do código, o teste confirma o que o código faz, inclusive o erro. Fica verde e não prova a regra. Quem abre o PR responde por ele, do mesmo jeito que responderia se tivesse digitado. O que eu peço é simples: você escreve os casos de teste a partir da regra, antes de gerar, mantém o PR pequeno, e antes de mandar quebra a regra de propósito para ver o teste reprovar. Isso leva dez minutos e continua muito mais rápido que escrever tudo à mão."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Onde a IA rende mais ao gerar código?",
+          "verso": "Código repetitivo, testes a partir de casos que você listou, explicação de código e tradução entre linguagens que você domina."
+        },
+        {
+          "frente": "Onde a IA erra com mais frequência?",
+          "verso": "Regra de negócio, caso de canto, segurança (o que falta) e API inventada ou de outra versão."
+        },
+        {
+          "frente": "Por que o teste escrito pela mesma IA depois do código prova pouco?",
+          "verso": "Ele é derivado da implementação e confirma o que o código faz, inclusive o erro. Os casos têm que vir da regra."
+        },
+        {
+          "frente": "Quem responde por um código gerado por IA?",
+          "verso": "Quem abre o PR. Não envie para revisão o que você não entendeu."
+        },
+        {
+          "frente": "Qual erro da IA é mais perigoso: API inventada ou regra errada?",
+          "verso": "A regra errada. A API inventada o compilador pega; a regra errada compila, passa no lint e parece limpa."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP — Top 10 for Large Language Model Applications",
+          "url": "https://owasp.org/www-project-top-10-for-large-language-model-applications/"
+        },
+        {
+          "titulo": "Google Engineering Practices — The Standard of Code Review",
+          "url": "https://google.github.io/eng-practices/review/reviewer/standard.html"
+        },
+        {
+          "titulo": "MDN — Array.prototype.sort()",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort"
+        }
+      ]
+    },
+    {
+      "id": "lead-05",
+      "titulo": "Comunicar decisão técnica a quem não é técnico",
+      "minutos": 9,
+      "ponte": "Você já explicou para a área de negócio por que uma carga precisa rodar de madrugada ou por que uma mudança \"simples\" de tela leva duas semanas. Você sabe que falar de lock e de trigger não funciona. O princípio é o mesmo na stack nova. Onde a analogia quebra: o vocabulário novo (deploy, pipeline, migration, cache) é mais opaco ainda para quem ouve, e a tentação de se esconder atrás dele é maior.",
+      "texto": "Quem decide prioridade e orçamento não precisa entender a tecnologia. Precisa entender **o que muda para ele**: quanto custa, o que arrisca e quando fica pronto. A sua tarefa é traduzir, e uma boa tradução não é uma simplificação que esconde o problema.\n\n### As três moedas\n\nTodo *trade-off* (troca: ganhar uma coisa abrindo mão de outra) técnico se converte em três moedas que qualquer gestor usa:\n\n| Você pensa | Você diz |\n|---|---|\n| \"Sem teste automatizado nesse módulo\" | \"Cada mudança ali exige dois dias de conferência manual, e ainda assim pode passar erro\" (custo e risco) |\n| \"Precisamos refatorar antes\" | \"Uma semana agora reduz cada funcionalidade seguinte nesse módulo de cinco para três dias\" (prazo) |\n| \"A biblioteca está sem manutenção\" | \"Se aparecer uma falha de segurança, não haverá correção, e trocar com pressa custa o triplo\" (risco) |\n| \"A query não escala\" | \"Funciona com o volume de hoje. Com o dobro de usuários, a tela principal passa de um para oito segundos\" (risco com gatilho) |\n\nUse número sempre que tiver, mesmo aproximado e em faixa (lead-02). \"Mais lento\" não decide nada. \"De um para oito segundos\" decide.\n\n### A estrutura: veredito, custo, risco, próximo passo\n\nÉ a mesma forma que você viu em mig-02, e serve para qualquer resposta técnica dada a quem decide:\n\n1. **Veredito:** a resposta ou a recomendação, na primeira frase.\n2. **Custo:** tempo, gente, dinheiro, em faixa.\n3. **Risco:** o principal, com a probabilidade em palavras e o que o reduz.\n4. **Próximo passo:** o que você precisa da pessoa, e até quando.\n\nA ordem importa. O instinto técnico é contar a história cronológica (\"primeiro eu investiguei, aí descobri que...\") e chegar à conclusão no fim. Quem decide lê a primeira frase. Se ela não tem a conclusão, a mensagem falhou.\n\n### Escrever para decisão\n\nUma mensagem que pede decisão precisa de:\n\n- **A decisão pedida**, explícita: \"preciso que você escolha entre A e B até quinta\".\n- **Duas ou três opções**, cada uma com custo e risco. Uma opção só não é escolha, é comunicado.\n- **A sua recomendação** e o motivo em uma linha. Apresentar opções sem recomendar é devolver o seu trabalho para quem sabe menos do assunto.\n- **O que acontece se ninguém decidir.** Não decidir também é uma opção, e tem custo.\n\nO detalhe técnico fica num anexo ou num ADR (você viu em arq-12), para quem quiser conferir.\n\n### Armadilhas\n\n- **Jargão como escudo.** Se você não consegue dizer sem o termo técnico, ainda não entendeu o impacto.\n- **Certeza falsa.** \"Não tem risco nenhum\" destrói a sua credibilidade na primeira vez que der errado. Diga o que você sabe, o que supõe e o que ainda vai descobrir.\n- **Alarme para tudo.** Quem chama tudo de crítico não é ouvido quando é crítico.\n- **Analogia que promete demais.** \"É como trocar o motor com o carro andando\" ajuda a entender. Em seguida, volte para custo, risco e prazo.\n\n### Quando o detalhe técnico entra\n\nCom outro técnico, na revisão de arquitetura, o detalhe é o assunto. O erro é usar o mesmo texto para os dois públicos. Escreva duas versões: cinco linhas para quem decide, o documento completo para quem implementa.",
+      "naPratica": "Antes de enviar qualquer mensagem para gestor ou cliente, releia a primeira frase: ela tem o veredito? No Cockpit, treine escrevendo a descrição de cada PR em duas partes: o que muda para o usuário (duas linhas) e os detalhes técnicos.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Você precisa pedir uma semana para escrever testes num módulo antes de uma mudança grande. Qual mensagem tem mais chance de ser aprovada por um gestor não técnico?",
+          "opcoes": [
+            "\"O módulo está com cobertura de 12% e alto acoplamento, precisamos refatorar e subir os testes antes de mexer.\"",
+            "\"Recomendo uma semana de preparação antes da mudança. Sem ela, a mudança leva três semanas e cada erro só aparece em produção. Com ela, leva duas e os erros aparecem antes do deploy. Preciso do seu ok até sexta.\"",
+            "\"O código desse módulo está muito ruim, quem fez não seguiu boas práticas.\"",
+            "\"É melhor fazer do jeito certo. Confia em mim.\""
+          ],
+          "correta": 1,
+          "explicacao": "Começa pela recomendação, compara dois cenários em prazo e risco e termina com o pedido e a data. A primeira é correta para um técnico e opaca para o gestor. A terceira culpa alguém e não pede nada. A quarta pede fé em vez de dar dado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual a ordem mais eficaz numa resposta técnica para quem decide?",
+          "opcoes": [
+            "Histórico da investigação, opções, detalhes técnicos, conclusão",
+            "Detalhes técnicos, risco, custo, veredito",
+            "Veredito, custo, risco, próximo passo",
+            "Próximo passo, histórico, veredito"
+          ],
+          "correta": 2,
+          "explicacao": "Quem decide lê a primeira frase e, se tiver tempo, o resto. A conclusão vem primeiro e o que a sustenta vem depois. A ordem cronológica é natural para quem investigou, mas obriga o leitor a chegar ao fim para saber a resposta."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você apresenta ao diretor duas opções de arquitetura, com custo e risco de cada uma, e encerra com \"fica a seu critério\". Qual o problema?",
+          "opcoes": [
+            "Nenhum: decisão é papel do diretor",
+            "Faltou a sua recomendação: você é quem mais entende do assunto e devolveu a análise para quem entende menos",
+            "Deveriam ser pelo menos cinco opções",
+            "Não se apresenta risco a diretor, só solução"
+          ],
+          "correta": 1,
+          "explicacao": "A decisão é dele, mas a recomendação é sua obrigação. Sem ela, o diretor escolhe pelo critério que consegue avaliar, quase sempre o menor custo imediato. Recomende e diga o motivo em uma linha. Ele continua livre para discordar."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, me explica em um minuto por que a gente não pode simplesmente colocar a tela nova no ar na sexta. O que falta?\"",
+          "pontos": [
+            "Começou pelo veredito",
+            "Traduziu o motivo técnico em risco concreto para o negócio",
+            "Deu custo ou prazo em faixa",
+            "Ofereceu alternativa ou opção intermediária",
+            "Terminou com o que precisa do interlocutor"
+          ],
+          "modelo": "Dá para colocar na sexta, mas eu não recomendo. A tela funciona. O que falta é a parte que garante que um usuário não veja o dado de outro, e isso ainda não foi testado. Se der errado, é exposição de dado de cliente, que custa muito mais que alguns dias. Para fechar com segurança eu preciso de três a quatro dias úteis, então a data realista é quarta ou quinta da semana que vem. Se a sexta for inegociável, existe um meio-termo: liberar só para o time interno na sexta e abrir para todos na quinta. Qual das duas você prefere? Preciso saber até amanhã para organizar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Reescreva para quem decide",
+          "minutos": 15,
+          "passos": [
+            "Pegue uma explicação técnica que você escreveu recentemente (descrição de PR, e-mail, anotação), sem dados de empresa. Cole em `estudo/traducao.md`.",
+            "Reescreva em no máximo cinco linhas na estrutura veredito, custo, risco, próximo passo.",
+            "Sublinhe cada termo técnico que sobrou e troque pelo efeito dele em custo, risco ou prazo.",
+            "Leia em voz alta só a primeira frase. Se ela não responde à pergunta, reescreva."
+          ],
+          "prontoQuando": "A versão nova tem até cinco linhas, a primeira frase contém o veredito e nenhum termo técnico aparece sem tradução."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as 3 moedas em que todo trade-off técnico se traduz?",
+          "verso": "Custo, risco e prazo."
+        },
+        {
+          "frente": "Qual a estrutura de uma resposta técnica para quem decide?",
+          "verso": "Veredito, custo, risco, próximo passo. A conclusão vem na primeira frase."
+        },
+        {
+          "frente": "Por que apresentar opções sem recomendação é um erro?",
+          "verso": "Você devolve a análise para quem entende menos do assunto. A decisão é de quem decide, mas recomendar é obrigação sua."
+        },
+        {
+          "frente": "O que uma mensagem que pede decisão precisa ter?",
+          "verso": "A decisão pedida e o prazo, duas ou três opções com custo e risco, a recomendação, e o que acontece se ninguém decidir."
+        },
+        {
+          "frente": "Como dizer \"a query não escala\" para um gestor?",
+          "verso": "\"Funciona com o volume de hoje. Com o dobro de usuários, a tela principal passa de um para oito segundos.\""
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Is High Quality Software Worth the Cost?",
+          "url": "https://martinfowler.com/articles/is-quality-worth-cost.html"
+        },
+        {
+          "titulo": "Architectural Decision Records",
+          "url": "https://adr.github.io/"
+        }
+      ]
+    },
+    {
+      "id": "lead-06",
+      "titulo": "Ler um repositório desconhecido",
+      "minutos": 10,
+      "ponte": "Quando você herda um módulo PL/SQL desconhecido, você tem um método: descobre a tela ou o job que dispara, acha a package principal, segue as chamadas e confere nas tabelas. Você não lê todas as packages em ordem alfabética. Num repositório Node é a mesma estratégia com outros pontos de partida. Onde a analogia quebra: não existe um dicionário de dados central nem uma árvore de dependências pronta. O mapa está espalhado em arquivos de configuração, e quem diz a verdade sobre como rodar é o `package.json` e o CI.",
+      "texto": "Entrar num repositório novo é rotina de sênior: troca de time, revisão de PR de outro serviço, avaliação de um projeto, entrevista com exercício prático. O objetivo da primeira hora não é entender tudo. É construir um mapa suficiente para fazer uma pergunta boa ou uma mudança pequena.\n\n### O roteiro, do mais barato para o mais caro\n\n**1. README e scripts (10 minutos).** O `README.md` diz o que é o projeto e como subir. Em seguida abra o `package.json`: o bloco `scripts` é a documentação que não mente, porque é o que o time executa. Dali você tira como rodar (`dev`, `start`), como testar (`test`, `test:e2e`), como conferir (`lint`, `build`). As `dependencies` dizem a stack: qual framework, qual ORM, qual biblioteca de validação. O arquivo do CI (em `.github/workflows/`) mostra a sequência que o time considera obrigatória.\n\n**2. Estrutura (10 minutos).** Olhe a árvore de pastas sem abrir arquivos. É monorepo (`apps/`, `packages/`)? A organização é por funcionalidade (`tarefas/`, `plano/`) ou por tipo (`controllers/`, `services/`)? Onde ficam migrations, testes, configuração? O nome das pastas de negócio é o vocabulário do domínio.\n\n**3. Ponto de entrada (10 minutos).** Todo programa começa em algum lugar. Numa API Nest, é o `main.ts`, que cria o app a partir do módulo raiz; o módulo raiz importa os demais. Num front com Vite, é o `index.html`, que carrega o `main.tsx`, que monta o componente raiz e as rotas. Do ponto de entrada você enxerga a configuração global: prefixo de rota, autenticação, validação, tratamento de erro.\n\n**4. Seguir UMA requisição de ponta a ponta (20 a 30 minutos).** É o passo que mais rende. Escolha uma funcionalidade simples e visível, como listar tarefas, e siga o fio: o clique na tela, a chamada HTTP, a rota no controller, o service, a query, a resposta, a renderização. Anote os arquivos por onde passou. Como os projetos repetem o padrão, entender um fluxo inteiro explica oitenta por cento dos outros. Rode com o depurador ou com a aba Network aberta: ver acontecer é mais rápido que deduzir lendo.\n\n**5. Testes (10 minutos).** Os testes são a documentação executável: mostram como as peças devem ser usadas e quais regras o time achou importante proteger. A ausência deles também informa onde mexer é perigoso.\n\n### Ferramentas que encurtam o caminho\n\n- **Busca global** por um texto que aparece na tela ou por um trecho da URL. É o jeito mais rápido de achar onde uma coisa mora.\n- **Ir para a definição** e **achar referências** no editor. Com TypeScript, isso é confiável.\n- **`git log`** de um arquivo: mostra o que muda junto e por quê. O histórico explica decisões que o código não explica.\n- **IA para explicar** um trecho (lead-04). Confira o que ela disser rodando o código.\n\n### O que não fazer\n\n- Ler arquivo por arquivo, de cima para baixo. Você cansa antes de formar o mapa.\n- Começar pela pasta de utilitários. É onde há mais código e menos significado.\n- Criticar na primeira hora. Código estranho quase sempre tem uma razão histórica. Anote e pergunte: \"por que isto é assim?\" rende mais que \"isto está errado\".\n- Ficar só lendo. Suba o projeto, rode os testes, quebre algo de propósito e veja o que reclama.\n\n### O produto da primeira hora\n\nUm arquivo de notas com: como subir e testar, um desenho das pastas, o caminho de uma requisição e uma lista de perguntas. Essas notas costumam virar a melhoria do README, um primeiro PR bem recebido em qualquer time.",
+      "naPratica": "Em processo seletivo com exercício em repositório existente, esse roteiro é a diferença entre gastar a hora perdido e entregar. Treine em projetos de código aberto com Nest ou React: quarenta minutos de roteiro, depois uma mudança pequena.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Você acabou de clonar um repositório Node desconhecido. O README diz apenas \"API do projeto\". Onde você descobre mais rápido como rodar, testar e qual é a stack?",
+          "opcoes": [
+            "Lendo a pasta `src/utils` de cima para baixo",
+            "No `package.json` (scripts e dependências) e no arquivo de CI",
+            "No `node_modules`, conferindo os pacotes instalados",
+            "No arquivo de lockfile, que lista todas as versões"
+          ],
+          "correta": 1,
+          "explicacao": "Os scripts são o que o time realmente executa, as dependências diretas revelam a stack e o CI mostra a sequência obrigatória. O lockfile e o `node_modules` trazem também as dependências indiretas, centenas de pacotes que não dizem nada sobre o desenho. Utilitários têm muito código e pouco significado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Este é o bloco `scripts` de um `package.json`:\n\n```json\n{\n  \"dev\": \"nest start --watch\",\n  \"test\": \"vitest run\",\n  \"test:e2e\": \"vitest run --config ./vitest.config.e2e.ts\",\n  \"lint\": \"oxlint --type-aware src/ test/\",\n  \"postinstall\": \"prisma generate\"\n}\n```\n\nO que dá para afirmar só com isso?",
+          "opcoes": [
+            "É um front React com Vite",
+            "É uma API NestJS com Prisma, testes unitários e e2e separados em Vitest, e o cliente do banco é gerado ao instalar",
+            "O projeto não tem testes de integração",
+            "O banco de dados é Oracle"
+          ],
+          "correta": 1,
+          "explicacao": "`nest start` indica NestJS, `prisma generate` indica Prisma com cliente gerado no `postinstall`, e há duas suítes Vitest com configurações distintas. Nada ali fala de React nem de qual banco. Em trinta segundos você já sabe a stack e como rodar cada verificação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de olhar README, scripts e estrutura de pastas, qual o passo de maior retorno para entender o projeto?",
+          "opcoes": [
+            "Ler todos os services em ordem alfabética",
+            "Estudar a configuração do bundler em detalhe",
+            "Seguir uma requisição simples da tela até o banco e de volta, anotando os arquivos",
+            "Ler o histórico completo de commits desde o início"
+          ],
+          "correta": 2,
+          "explicacao": "Projetos repetem o mesmo padrão em cada funcionalidade. Um fluxo completo mostra as camadas, as convenções e onde cada tipo de código mora. Ler tudo em ordem cansa sem formar mapa, e configuração de build raramente é o que você precisa na primeira hora."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, você vai assumir a revisão dos PRs do serviço de notificações a partir da semana que vem. Você nunca viu esse código. Como pretende se preparar?\"",
+          "pontos": [
+            "Apresentou um roteiro com ordem e tempo, não \"vou ler o código\"",
+            "Incluiu subir e rodar os testes localmente",
+            "Incluiu seguir um fluxo de ponta a ponta",
+            "Citou o histórico (PRs e commits recentes) como fonte de contexto",
+            "Disse o que vai produzir e a quem vai perguntar"
+          ],
+          "modelo": "Reservo meio dia e sigo um roteiro. Primeiro subo o serviço na minha máquina e rodo os testes, que já mostra se a documentação está em dia. Depois olho os scripts, a estrutura de pastas e o ponto de entrada para ver a configuração global. A parte principal é seguir um envio de notificação de ponta a ponta, da chamada que chega até a saída, anotando os arquivos. Por fim leio os dez últimos PRs aprovados, para entender o padrão de revisão do time e o que costuma dar problema. Saio com uma página de notas e uma lista de perguntas, que eu tiro em meia hora com quem mais mexe no serviço. Nas duas primeiras semanas, peço um segundo revisor nos PRs maiores."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "A primeira hora num repositório",
+          "minutos": 30,
+          "passos": [
+            "Escolha um projeto de código aberto em NestJS ou React que você nunca abriu e clone.",
+            "Em `estudo/mapa-repo.md`, anote em 10 minutos: como subir, como testar, a stack (pelo `package.json`) e as pastas principais.",
+            "Ache o ponto de entrada e siga uma requisição ou uma tela simples até o fim, listando os arquivos na ordem.",
+            "Escreva três perguntas que você faria ao time e uma melhoria que proporia para o README."
+          ],
+          "prontoQuando": "O arquivo tem o comando para subir, o caminho de um fluxo com pelo menos quatro arquivos em ordem e três perguntas."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o roteiro para entrar num repositório desconhecido?",
+          "verso": "README e scripts, estrutura de pastas, ponto de entrada, seguir uma requisição de ponta a ponta, testes."
+        },
+        {
+          "frente": "Por que o bloco `scripts` do `package.json` é a melhor documentação inicial?",
+          "verso": "É o que o time realmente executa. Mostra como rodar, testar e conferir, e não fica desatualizado como o README."
+        },
+        {
+          "frente": "Qual o passo de maior retorno ao estudar um projeto novo?",
+          "verso": "Seguir uma requisição simples da tela ao banco e de volta. Os outros fluxos repetem o mesmo padrão."
+        },
+        {
+          "frente": "Onde fica o ponto de entrada de uma API Nest e de um front Vite?",
+          "verso": "API: `main.ts`, que cria o app a partir do módulo raiz. Front: `index.html`, que carrega o `main.tsx`."
+        },
+        {
+          "frente": "Por que não criticar o código na primeira hora?",
+          "verso": "Código estranho costuma ter razão histórica. Anotar e perguntar \"por que é assim?\" dá contexto e preserva a relação com o time."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "GitHub Docs — About READMEs",
+          "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes"
+        },
+        {
+          "titulo": "Git — git-log",
+          "url": "https://git-scm.com/docs/git-log"
+        },
+        {
+          "titulo": "NestJS — First steps",
+          "url": "https://docs.nestjs.com/first-steps"
+        }
+      ]
+    },
+    {
+      "id": "lead-07",
+      "titulo": "Entrevista técnica e de system design",
+      "minutos": 12,
+      "ponte": "Você já entrevistou gente e sabe o que procura: como a pessoa raciocina, não se decorou a sintaxe. Do outro lado da mesa a regra é a mesma. Onde a analogia quebra: no mundo PL/SQL a conversa costuma girar em torno do que você já fez. Em vaga de Node e React o processo tem etapas formais, com exercício ao vivo e desenho de sistema, e o silêncio enquanto você pensa conta contra.",
+      "texto": "### O formato\n\nOs processos variam, mas as etapas se repetem:\n\n| Etapa | O que avaliam |\n|---|---|\n| **Triagem** | trajetória, motivação, comunicação |\n| **Técnica de fundamentos** | JavaScript e TypeScript (assíncrono, closures, tipos), HTTP, banco, o framework da vaga |\n| **Codificação** | um problema ao vivo ou um desafio para casa, às vezes num repositório existente (lead-06) |\n| **System design** | desenhar um sistema e defender as escolhas. Pesa mais para pleno e sênior |\n| **Comportamental** | como você agiu em situações reais: conflito, incidente, prazo, erro |\n\nPergunte no início quais serão as etapas. É uma pergunta normal e mostra organização.\n\n### Pensar em voz alta\n\nNa codificação e no design, o entrevistador avalia o **processo**. Solução correta em silêncio vale menos que solução parcial bem explicada. A sequência:\n\n1. Repita o problema com as suas palavras e faça perguntas: tamanho da entrada, casos de canto, o que priorizar.\n2. Dê um exemplo pequeno e resolva na mão.\n3. Diga a abordagem antes de digitar. Comece pela simples e mencione o custo.\n4. Escreva narrando. Se travar, diga onde e por quê.\n5. Teste com o exemplo, incluindo vazio e limite.\n\nDizer \"não lembro a assinatura exata, eu consultaria a documentação; a ideia é esta\" é aceito. Inventar com confiança, não.\n\n### System design em 5 passos\n\nO roteiro foi detalhado em arq-11. O resumo para a hora da entrevista:\n\n1. **Requisitos.** O que o sistema faz e o que não faz. Funcionais e não funcionais (disponibilidade, latência, consistência). Pergunte antes de desenhar.\n2. **Números.** Usuários, requisições por segundo, volume de dados, proporção de leitura e escrita. Ordem de grandeza basta, e ela decide o desenho.\n3. **Desenho.** Os blocos principais: cliente, API, banco, e o que mais for preciso. Modelo de dados e os endpoints centrais.\n4. **Gargalos.** Onde quebra quando o volume cresce dez vezes. O que você acrescentaria: índice, cache, fila, réplica de leitura.\n5. **Trade-offs.** O que você escolheu, o que abriu mão e quando mudaria de ideia.\n\nO erro típico é pular para o passo 3 e desenhar uma arquitetura complexa sem saber o volume. Para a maioria dos enunciados, a resposta sênior começa com um monólito e um Postgres bem indexado, e explica **a partir de que número** entraria cada peça a mais.\n\n### STAR para o comportamental\n\n\"Conte uma vez em que...\" pede uma história com estrutura:\n\n- **S**ituação: o contexto, em duas frases.\n- **T**arefa: qual era a sua responsabilidade.\n- **A**ção: o que **você** fez, em primeira pessoa, com as decisões e os motivos.\n- **R**esultado: o que mudou, com número se houver, e o que você aprendeu.\n\nPrepare de cinco a sete histórias: um incidente (lead-03), um conflito técnico, uma estimativa que estourou (lead-02), uma decisão impopular, um erro seu. Como tech lead, você tem material de sobra. Falta dar forma.\n\n### A transição como força\n\nNão peça desculpas por vir do PL/SQL. Você traz o que costuma faltar em quem só conhece a stack moderna: modelagem de dados, transação e concorrência, leitura de plano de execução, regra de negócio crítica em produção, liderança de time, incidente real. Conte assim:\n\n1. O que você domina e continua valendo.\n2. O que você fez para aprender o resto: um projeto próprio, completo, com testes e CI, que você consegue abrir e explicar.\n3. O que você enxerga por ter os dois mundos: migração de legado, API que respeita o banco, o custo real de uma query.\n\nSeja honesto sobre o que ainda não fez em produção nessa stack. \"Usei em projeto próprio, não em produção com carga\" passa confiança. Inflar experiência cai na segunda pergunta.\n\n### O que não fazer\n\nFalar mal do legado ou de empregador, responder sem perguntar nada, e sair sem fazer perguntas. As suas perguntas (como é o fluxo de PR, como tratam incidente, como é o deploy) também são avaliadas.",
+      "naPratica": "O Cockpit é o seu portfólio: um projeto que você implementou à mão, com decisões registradas. Em entrevista, abrir o repositório e explicar por que cada peça está ali vale mais que qualquer certificado.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Na entrevista de system design, o enunciado é \"desenhe um encurtador de URL\". Qual o melhor primeiro movimento?",
+          "opcoes": [
+            "Desenhar balanceador, três instâncias da API, cache e fila",
+            "Perguntar o que o sistema precisa fazer, o volume esperado e os requisitos de disponibilidade e latência",
+            "Começar pelo esquema do banco de dados",
+            "Explicar a diferença entre SQL e NoSQL"
+          ],
+          "correta": 1,
+          "explicacao": "Requisitos e números decidem o desenho. Com mil acessos por dia, um servidor e um banco resolvem. Com cem mil por segundo, o desenho é outro. Sair desenhando caixas sem perguntar é o erro mais comum e mostra o contrário de senioridade."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Durante o exercício de código, você esquece o nome exato de um método de array. O que fazer?",
+          "opcoes": [
+            "Ficar em silêncio tentando lembrar",
+            "Escrever um nome qualquer com segurança e seguir",
+            "Dizer que não lembra a assinatura exata, descrever o que o método faz e seguir com a lógica",
+            "Pedir para trocar de exercício"
+          ],
+          "correta": 2,
+          "explicacao": "O entrevistador avalia raciocínio, não memória de API. Explicar a intenção e seguir mostra como você trabalha de verdade. Silêncio esconde o raciocínio. Inventar com confiança é o comportamento que ninguém quer num revisor."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Perguntam: \"conte uma situação em que você discordou de uma decisão técnica\". Qual resposta segue melhor o método STAR?",
+          "opcoes": [
+            "\"Eu sempre defendo o que acredito, mas sei trabalhar em equipe.\"",
+            "\"O time quis reescrever um módulo inteiro. Eu era o líder técnico e respondia pelo prazo. Propus migrar em três fatias, com um protótipo de dois dias para comparar. Fizemos em fatias, entregamos em seis semanas sem parada, e desde então uso protótipo para resolver esse tipo de impasse.\"",
+            "\"A gente discordava muito no time, era um ambiente difícil, o gerente não ouvia ninguém.\"",
+            "\"Nunca tive esse tipo de problema.\""
+          ],
+          "correta": 1,
+          "explicacao": "Tem situação, tarefa, ação em primeira pessoa e resultado com número e aprendizado. A primeira é uma afirmação genérica, sem história. A terceira reclama e não diz o que você fez. A quarta desperdiça a pergunta e soa pouco crível para quem lidera."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "Na entrevista: \"{{nome}}, você tem mais de dez anos de PL/SQL e Forms. Por que eu deveria te contratar para uma vaga de NestJS e React em vez de alguém que já trabalha com isso há cinco anos?\"",
+          "pontos": [
+            "Não pediu desculpas nem diminuiu o legado",
+            "Citou o que traz e que continua valendo (dados, transação, regra crítica, liderança, incidente)",
+            "Mostrou evidência concreta do aprendizado na stack nova",
+            "Foi honesto sobre o que ainda não fez em produção",
+            "Ligou o perfil à necessidade da vaga"
+          ],
+          "modelo": "Porque eu trago o que demora mais para formar. São mais de dez anos com regra de negócio crítica em produção, modelagem, transação, concorrência e plano de execução, e eu lidero time: reviso código, estimo, conduzo incidente. Isso não depende de linguagem. A stack eu aprendi construindo um aplicativo completo em NestJS, Prisma e React, com testes e CI, e posso abrir o repositório e explicar cada decisão. O que ainda não tenho é essa stack em produção com carga, e digo isso com clareza. Em troca, se vocês têm legado para modernizar ou API que sofre com banco, eu sou a pessoa que entende os dois lados da conversa."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Sua primeira história STAR",
+          "minutos": 20,
+          "passos": [
+            "Em `estudo/star.md`, liste cinco situações reais da sua carreira: um incidente, um conflito técnico, um prazo estourado, uma decisão impopular, um erro seu. Sem nomes de empresa, sistema ou pessoa.",
+            "Escolha uma e escreva no formato STAR, em até 150 palavras, com a ação em primeira pessoa.",
+            "Leia em voz alta cronometrando. Corte até caber em dois minutos.",
+            "Escreva em três frases a sua resposta para \"por que a mudança de stack?\"."
+          ],
+          "prontoQuando": "Há cinco situações listadas, uma história completa que cabe em dois minutos falada, e a resposta de três frases sobre a transição."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais os 5 passos de uma entrevista de system design?",
+          "verso": "Requisitos, números, desenho, gargalos, trade-offs."
+        },
+        {
+          "frente": "O que significa STAR?",
+          "verso": "Situação, Tarefa, Ação (o que você fez, em primeira pessoa), Resultado (com número e aprendizado)."
+        },
+        {
+          "frente": "Por que pensar em voz alta no exercício de código?",
+          "verso": "O entrevistador avalia o processo. Solução parcial bem explicada vale mais que solução correta em silêncio."
+        },
+        {
+          "frente": "Qual o erro mais comum em system design?",
+          "verso": "Desenhar uma arquitetura complexa antes de perguntar requisitos e volume."
+        },
+        {
+          "frente": "Como contar a transição PL/SQL para a stack moderna?",
+          "verso": "O que você domina e continua valendo, a evidência do aprendizado (projeto completo) e o que você enxerga por conhecer os dois mundos."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Software Architecture Guide",
+          "url": "https://martinfowler.com/architecture/"
+        },
+        {
+          "titulo": "Node.js — Learn",
+          "url": "https://nodejs.org/en/learn"
+        },
+        {
+          "titulo": "React — Learn",
+          "url": "https://react.dev/learn"
+        }
+      ]
+    },
+    {
+      "id": "lead-08",
+      "titulo": "Dívida técnica, qualidade e definição de pronto",
+      "minutos": 10,
+      "ponte": "Você conhece a package de oito mil linhas em que ninguém quer mexer, e conhece o ciclo em que o teste é uma fase no fim, espremida pelo prazo. As duas coisas têm nome e tratamento no fluxo moderno. Onde a analogia quebra: aqui a qualidade não é uma etapa depois do desenvolvimento. Ela é uma condição para o merge, verificada por máquina a cada PR.",
+      "texto": "### Dívida técnica\n\n*Technical debt* (dívida técnica) é uma metáfora financeira: um atalho no código funciona como empréstimo. Você ganha prazo agora e paga **juros** depois, na forma de cada mudança naquele trecho demorando mais e quebrando mais. Enquanto a dívida existe, os juros correm.\n\nA metáfora serve porque dívida nem sempre é ruim. Empréstimo para aproveitar uma oportunidade pode ser boa decisão. O problema é a dívida que ninguém sabe que tem.\n\n### Deliberada × acidental\n\nO quadrante de Martin Fowler cruza duas perguntas: foi de propósito? Foi com prudência?\n\n| | Prudente | Imprudente |\n|---|---|---|\n| **Deliberada** | \"Entregamos assim para cumprir a data e registramos o que falta\" | \"Não temos tempo para pensar em desenho\" |\n| **Acidental** | \"Agora sabemos como deveria ter sido feito\" | \"O que é separar em camadas?\" |\n\nA deliberada e prudente é uma ferramenta de gestão: tem motivo, tem registro (uma issue, um ADR) e tem plano de pagamento. A acidental e prudente é inevitável, porque você aprende sobre o problema enquanto constrói. As imprudentes são falta de critério, e é isso que revisão e padrão de time combatem.\n\nUm limite da metáfora: código feio em que ninguém mexe não cobra juros. Dívida só custa onde há mudança.\n\n### Como priorizar\n\nNão se paga tudo, e \"sprint de refatoração\" raramente é aprovada. O critério é **juros × frequência**:\n\n1. **Onde se mexe mais.** O histórico do git mostra os arquivos mais alterados. Dívida em arquivo quente cobra todo mês.\n2. **Onde dói mais.** Módulos que concentram defeitos e incidentes.\n3. **O que bloqueia.** A dívida que impede a próxima funcionalidade.\n\nA forma de pagar que funciona é embutida: ao mexer num trecho para uma funcionalidade, deixe-o um pouco melhor, com a refatoração em PR separado, antes (lead-01). Para dívida grande, traduza em custo, risco e prazo e peça a decisão (lead-05).\n\n### Definição de pronto\n\n*Definition of done* (definição de pronto) é a lista combinada do que precisa ser verdade para um item ser considerado concluído. Sem ela, \"pronto\" significa \"funcionou na minha máquina\" para um e \"está em produção\" para outro, e o trabalho escondido vira dívida. Um exemplo razoável:\n\n- Critérios de aceite da issue atendidos (lead-02).\n- Testes no nível certo, que falham sem a mudança (test-09).\n- CI verde: tipos, lint, testes, build.\n- PR revisado e aprovado.\n- Migration aplicável e reversível, quando houver.\n- Em produção, ou pronto para ir, conforme o combinado do time.\n\nA lista deve ser curta e cumprida sempre. Lista longa que é ignorada sob pressão é pior que lista curta respeitada.\n\n### Qualidade embutida no fluxo\n\nNo ciclo clássico, a qualidade é uma **fase**: desenvolve, depois testa, depois corrige. O defeito é achado semanas depois de ser criado, quando custa mais, e a fase de teste é a primeira a ser cortada.\n\nNo fluxo moderno, a qualidade é uma **propriedade do caminho**. Cada PR passa pelas mesmas verificações automáticas antes do merge, e o merge é bloqueado se alguma falha. O defeito aparece em minutos, na mão de quem o criou, com o contexto ainda fresco. O CI é a definição de pronto que ninguém consegue pular.\n\nIsso não elimina o teste exploratório nem a validação do usuário. Elimina a ideia de que alguém, no fim, vai conferir o que o autor não conferiu.\n\n### O argumento para quem duvida\n\nQualidade interna não é custo que atrasa. Código descuidado fica mais lento de mudar em poucas semanas, não em anos. Quem \"economiza\" em teste e revisão para entregar mais rápido fica mais lento a partir do segundo mês.",
+      "naPratica": "No Cockpit, escreva a definição de pronto em cinco linhas no README e faça o CI cobrar as que forem automatizáveis. Quando assumir dívida para cumprir uma meta, abra a issue na hora, com o motivo e o que falta: a dívida registrada é gerenciável, a esquecida não.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "O time decide entregar a exportação de relatório sem paginação para cumprir uma data, abre uma issue descrevendo o limite (\"trava acima de 50 mil linhas\") e agenda a correção para o mês seguinte. Que tipo de dívida é essa?",
+          "opcoes": [
+            "Acidental e imprudente",
+            "Deliberada e prudente",
+            "Deliberada e imprudente",
+            "Não é dívida, porque foi registrada"
+          ],
+          "correta": 1,
+          "explicacao": "Foi uma escolha consciente, com motivo, limite conhecido, registro e plano de pagamento. Continua sendo dívida: os juros existem enquanto a correção não entra. Registrar não quita, só torna gerenciável."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Há quatro pontos de dívida técnica e tempo para atacar um. Qual priorizar?",
+          "opcoes": [
+            "Um módulo antigo e confuso, que funciona e não é alterado há dois anos",
+            "O arquivo de regra do plano do dia, alterado quase toda semana, que concentrou os três últimos defeitos",
+            "A troca do formatador de código por um mais novo",
+            "A renomeação das pastas para um padrão mais elegante"
+          ],
+          "correta": 1,
+          "explicacao": "Dívida cobra juros onde há mudança. O arquivo alterado toda semana e que gera defeito cobra todo mês. O módulo confuso que ninguém toca não custa nada enquanto ficar quieto. As outras duas são preferência, com retorno baixo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um PR chega com esta descrição: \"Funcionalidade pronta. Testes ficam para o próximo PR, porque a entrega é hoje.\" A definição de pronto do time inclui testes. Qual comentário de review é o mais útil?",
+          "opcoes": [
+            "\"Aprovado, mas não esquece dos testes depois.\"",
+            "\"Sem teste eu não aprovo nunca. Regra é regra.\"",
+            "\"bloqueante: pela nossa definição de pronto, isso ainda não está pronto. Se a data é hoje, proponho reduzir o escopo: entra o caminho principal com os testes dele, e o filtro avançado vai em outro PR. Se preferir assumir a dívida, vamos decidir isso com o gestor e abrir a issue com prazo.\"",
+            "\"sugestão: adicionar testes quando possível.\""
+          ],
+          "correta": 2,
+          "explicacao": "Mantém o combinado sem travar a conversa: oferece reduzir escopo, que preserva a qualidade e a data, e deixa claro que assumir dívida é uma decisão explícita, com registro, e não um atalho dentro de um PR. Aprovar com lembrete cria a dívida esquecida. A recusa seca não ajuda o autor a resolver o prazo."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a gente está perdendo tempo com teste e revisão. Não dá para deixar a qualidade para uma fase de estabilização no final do projeto?\"",
+          "pontos": [
+            "Reconheceu a pressão de prazo como legítima",
+            "Explicou o custo de achar o defeito tarde",
+            "Explicou que a fase final é a primeira a ser cortada",
+            "Traduziu em prazo: descuido deixa o time mais lento em semanas",
+            "Ofereceu alternativa: reduzir escopo ou assumir dívida registrada"
+          ],
+          "modelo": "Eu entendo a pressão, mas essa troca sai mais cara. Defeito achado no mesmo dia custa minutos, porque quem escreveu ainda lembra o que fez. O mesmo defeito achado numa fase final custa dias, e ele aparece junto com outros cinquenta. Além disso, a fase de estabilização é sempre a primeira a ser encurtada quando o prazo aperta. E código sem teste fica lento de mudar em poucas semanas: a velocidade que a gente ganha agora some no segundo mês. Se o problema é a data, eu prefiro cortar escopo e entregar menos coisas prontas de verdade. Se houver um atalho específico que valha a pena, a gente assume como dívida, com issue e prazo para pagar."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Definição de pronto e inventário de dívida",
+          "minutos": 20,
+          "passos": [
+            "No README do Cockpit (ou em `estudo/pronto.md`), escreva a definição de pronto em no máximo seis itens verificáveis.",
+            "Marque quais itens o CI já verifica e quais dependem de pessoa.",
+            "Liste três dívidas que você sabe que existem no Cockpit. Classifique cada uma no quadrante (deliberada ou acidental, prudente ou imprudente).",
+            "Para cada dívida, escreva onde ela cobra juros e com que frequência você mexe ali. Ordene pela prioridade."
+          ],
+          "prontoQuando": "Há uma definição de pronto de até seis itens e três dívidas classificadas e ordenadas, cada uma com a justificativa da posição."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que são os \"juros\" da dívida técnica?",
+          "verso": "O tempo e os defeitos a mais em cada mudança feita no trecho com atalho. Correm enquanto a dívida existir."
+        },
+        {
+          "frente": "Dívida deliberada e prudente × acidental e prudente",
+          "verso": "Deliberada: atalho escolhido, com motivo, registro e plano. Acidental: você só descobriu depois como deveria ter sido feito."
+        },
+        {
+          "frente": "Como priorizar dívida técnica?",
+          "verso": "Juros × frequência: onde se mexe mais, onde há mais defeito e o que bloqueia a próxima funcionalidade."
+        },
+        {
+          "frente": "Por que qualidade embutida no fluxo, e não fase de teste no fim?",
+          "verso": "O defeito aparece em minutos, na mão de quem criou. A fase final acha tarde, custa mais e é a primeira a ser cortada."
+        },
+        {
+          "frente": "O que é definição de pronto?",
+          "verso": "A lista curta e combinada do que precisa ser verdade para um item estar concluído: aceite atendido, testes, CI verde, PR aprovado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Technical Debt Quadrant",
+          "url": "https://martinfowler.com/bliki/TechnicalDebtQuadrant.html"
+        },
+        {
+          "titulo": "Martin Fowler — Technical Debt",
+          "url": "https://martinfowler.com/bliki/TechnicalDebt.html"
+        },
+        {
+          "titulo": "Martin Fowler — Continuous Integration",
+          "url": "https://martinfowler.com/articles/continuousIntegration.html"
+        }
+      ]
+    }
+  ]
+}

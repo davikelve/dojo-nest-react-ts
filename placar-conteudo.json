@@ -1,0 +1,16 @@
+{
+  "licoes": 168,
+  "prever": 239,
+  "compila": 79,
+  "quiz": 310,
+  "corredor": 94,
+  "pratica": 81,
+  "cartoes": 798,
+  "palavras": 91447,
+  "esperadas": 168,
+  "faltando": 0,
+  "falhas": 0,
+  "executados": 318,
+  "ts": "6.0.3",
+  "node": "v24.19.0"
+}

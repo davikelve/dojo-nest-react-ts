@@ -1,0 +1,22 @@
+{
+  "name": "dojo-nest-react-ts",
+  "version": "2.0.0",
+  "description": "Curso autodidata de NestJS, React e TypeScript para quem vem de Oracle PL/SQL e Forms: lições com exercícios que rodam de verdade, revisão espaçada e um projeto para construir.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Davi Kelve",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node servidor.mjs",
+    "validar": "node validar.mjs --completo",
+    "test": "node testes/logica.test.mjs && node testes/servidor.test.mjs && node validar.mjs --completo",
+    "links": "node ferramentas/confere_links.mjs",
+    "guia": "node ferramentas/monta_guia.mjs"
+  },
+  "dependencies": {
+    "typescript": "6.0.3"
+  }
+}

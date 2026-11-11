@@ -1,0 +1,1116 @@
+{
+  "licoes": [
+    {
+      "id": "arq-01",
+      "titulo": "Monólito modular primeiro",
+      "minutos": 10,
+      "ponte": "Um schema bem dividido em *packages* já é um monólito modular: um banco, uma publicação, e cada package com *spec* (o que é público) e *body* (o que é privado). No Nest, o que um módulo põe em `exports` faz o papel da spec. Onde a analogia quebra: no Oracle o compilador barra quem chama o que não está na spec. No TypeScript qualquer arquivo importa qualquer arquivo, então a fronteira depende de convenção, lint e review. E o `GRANT SELECT` direto na tabela de outro schema é a mesma violação nos dois mundos.",
+      "texto": "Um **monólito modular** é um único processo, com um único *deploy* (publicação), dividido por dentro em módulos que têm fronteira. É o ponto de partida recomendado para quase todo sistema novo e para a maior parte dos legados em modernização.\n\n### O que é um módulo de verdade\n\nUm módulo não é uma pasta. É um pedaço do sistema com três propriedades:\n\n- **Um assunto de negócio** (pedidos, faturamento, cadastro), e não uma camada técnica (`controllers/`, `services/`).\n- **Uma API pública pequena:** o que os outros módulos podem chamar. No Nest, é o que aparece em `exports` do `@Module`.\n- **Dados com dono:** só o módulo grava nas suas tabelas. Os outros pedem a ele.\n\n```text\nsrc/\n  pedidos/       pedidos.module.ts      exporta PedidosService\n  faturamento/   faturamento.module.ts  importa PedidosModule\n  cadastro/      cadastro.module.ts\n```\n\n### Como a fronteira é violada\n\n1. **Import fundo.** `faturamento` importa `pedidos/interno/calculo.ts` em vez de usar o que `pedidos` exporta. O detalhe interno virou contrato sem ninguém decidir.\n2. **Tabela alheia.** `faturamento` grava direto na tabela de pedidos. Com um ORM isso é fácil demais: todo service enxerga todos os *models*.\n3. **Ciclo.** A importa B e B importa A. No Nest aparece como `forwardRef`. Trate como alarme: os dois são um módulo só, ou falta um terceiro.\n4. **O módulo `comum`.** Nasce com utilitários e vira depósito de regra de negócio que todo mundo importa.\n\nUma concessão honesta: **ler** dado de outro módulo com um JOIN para montar um relatório é um atalho comum e defensável quando o banco é um só. **Gravar** na tabela do outro não é. Quem grava é o dono, porque é ele que garante a regra.\n\n### O que compra e o que cobra\n\n| Compra | Cobra |\n|---|---|\n| Uma transação de banco cobre a operação inteira | Disciplina: a fronteira não é imposta pela rede |\n| Chamada de função no lugar de chamada de rede | Um deploy para todos: time grande faz fila |\n| Um log, um depurador, um ambiente local | Escala tudo junto, mesmo que só uma parte precise |\n| Mover uma fronteira é refatorar, não migrar dado | Uma falha grave derruba o processo inteiro |\n\n### Por que primeiro\n\nVocê só descobre onde estão as fronteiras certas operando o sistema. Fronteira errada dentro de um monólito custa uma refatoração de tarde. Fronteira errada entre dois serviços custa migração de dados, contrato versionado e coordenação de deploy. Começar modular mantém a decisão **reversível**: um módulo com API pequena e dados próprios pode virar serviço depois, se aparecer motivo medido (arq-07).\n\n### Sinal de exagero\n\nUm sistema de três telas com um desenvolvedor não precisa de regra de lint de fronteira nem de um módulo por tabela. Pastas por assunto bastam. A formalidade cresce com o número de pessoas e de assuntos, não antes.",
+      "naPratica": "O `apps/api` do Cockpit é um monólito modular: tarefas, plano do dia, foco e 1:1 são módulos Nest. No review, procure o import que entra na pasta de outro módulo sem passar pelo que ele exporta, e o service que grava em tabela que não é do módulo dele.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "O módulo de faturamento quer o total de um pedido e vai direto na estrutura interna do módulo de pedidos. O compilador deixa?",
+          "codigo": "class ModuloPedidos {\n  private itens = new Map<string, number>();\n  registrar(id: string, valor: number): void {\n    this.itens.set(id, valor);\n  }\n  totalDe(id: string): number {\n    return this.itens.get(id) ?? 0;\n  }\n}\n\nclass ModuloFaturamento {\n  pedidos: ModuloPedidos;\n  constructor(pedidos: ModuloPedidos) {\n    this.pedidos = pedidos;\n  }\n  faturar(id: string): number {\n    return this.pedidos.itens.get(id) ?? 0;\n  }\n}\n",
+          "compila": false,
+          "erro": "TS2341",
+          "linha": 17,
+          "explicacao": "`itens` é `private`: só `ModuloPedidos` pode tocar. O caminho certo é `this.pedidos.totalDe(id)`, a API pública. Dentro de uma classe o compilador guarda a fronteira para você. Entre pastas de um projeto ele não guarda: ali quem segura é o `exports` do módulo Nest, o lint e o review."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No review, você vê `forwardRef(() => PedidosModule)` dentro de `FaturamentoModule`, e o inverso em `PedidosModule`. Qual é a leitura de arquitetura?",
+          "opcoes": [
+            "É o uso normal do Nest para módulos que colaboram",
+            "Os dois módulos dependem um do outro: a fronteira está errada ou falta extrair o que é comum aos dois",
+            "É um problema de desempenho na inicialização, sem efeito no desenho",
+            "Sinal de que os dois precisam virar microsserviços separados"
+          ],
+          "correta": 1,
+          "explicacao": "`forwardRef` faz o ciclo funcionar, mas o ciclo continua lá: nenhum dos dois pode ser entendido, testado ou extraído sozinho. A saída costuma ser juntar os dois, extrair um terceiro módulo ou trocar uma das direções por evento. Separar em serviços com ciclo só leva o problema para a rede."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas situações é violação de fronteira de módulo mesmo com o código compilando e os testes passando?",
+          "opcoes": [
+            "O módulo de faturamento chama `PedidosService.totalDe(id)`, que `PedidosModule` exporta",
+            "O módulo de pedidos tem três services internos que ninguém de fora usa",
+            "O service de faturamento faz `prisma.pedido.update(...)` para marcar o pedido como faturado",
+            "Os dois módulos usam a mesma instância do banco"
+          ],
+          "correta": 2,
+          "explicacao": "Gravar na tabela do outro módulo passa por fora de toda regra que o dono aplica ao mudar um pedido. O certo é pedir ao dono: `pedidos.marcarComoFaturado(id)`. Compartilhar o mesmo banco é normal num monólito. O que não se compartilha é o direito de escrita."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o sistema novo já não devia nascer em microsserviços? Assim a gente não precisa quebrar depois.\"",
+          "pontos": [
+            "Veredito claro: começar com monólito modular",
+            "Critério: ainda não se sabe onde ficam as fronteiras, e errar fronteira entre serviços custa muito mais",
+            "Custo do que propõe: exige disciplina de fronteira (exports, dono dos dados, lint)",
+            "Deixou a porta aberta: módulo bem isolado pode ser extraído com motivo medido",
+            "Próximo passo concreto"
+          ],
+          "modelo": "Eu começaria com um monólito modular. O motivo: a gente ainda não sabe onde ficam as fronteiras certas, e fronteira errada dentro de um processo eu corrijo com refatoração. Entre serviços, corrigir é migrar dado e renegociar contrato. O custo do meu caminho é disciplina: cada módulo com API pequena, dono das suas tabelas, e uma regra de lint que barra import por fora. Se fizermos isso, extrair um módulo depois é possível, e a gente só extrai quando houver motivo medido, como um time travando o deploy do outro. Proponho desenhar os módulos e as dependências entre eles nesta semana e revisar em três meses."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "O mapa de dependências do Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Abra `apps/api/src` e liste os módulos (um arquivo `*.module.ts` por módulo).",
+            "Para cada um, anote o que está em `imports` e em `exports`.",
+            "Desenhe as setas em `estudo/mapa-modulos.md`, uma linha por dependência (`plano -> tarefas`).",
+            "Procure ciclos e imports que entram na pasta de outro módulo sem passar pelo `exports`."
+          ],
+          "prontoQuando": "O arquivo tem todas as setas, e você escreveu uma frase dizendo se há ciclo e qual módulo é o mais importado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as três propriedades de um módulo de verdade?",
+          "verso": "Um assunto de negócio, uma API pública pequena e dados com dono (só ele grava nas suas tabelas)."
+        },
+        {
+          "frente": "Por que começar pelo monólito modular e não por microsserviços?",
+          "verso": "A fronteira certa só aparece com o uso. Errar dentro de um processo custa uma refatoração. Errar entre serviços custa migração de dados e contrato."
+        },
+        {
+          "frente": "Cite três formas de violar a fronteira de um módulo.",
+          "verso": "Import fundo em arquivo interno, gravar na tabela do outro, ciclo entre módulos (`forwardRef`), módulo `comum` com regra de negócio."
+        },
+        {
+          "frente": "Ler e gravar dado de outro módulo: qual a diferença de gravidade?",
+          "verso": "Ler com JOIN é um atalho defensável quando o banco é um só. Gravar passa por fora da regra do dono e não é aceitável."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — MonolithFirst",
+          "url": "https://martinfowler.com/bliki/MonolithFirst.html"
+        },
+        {
+          "titulo": "NestJS — Modules",
+          "url": "https://docs.nestjs.com/modules"
+        }
+      ]
+    },
+    {
+      "id": "arq-02",
+      "titulo": "Camadas e a direção da dependência",
+      "minutos": 10,
+      "ponte": "Você já viu o custo de regra presa na trigger da tela: ela só vale para quem entra por aquela tela. O job, a carga e a outra tela passam por fora. A regra que foi para um package vale para todos. Camadas são a mesma decisão com nomes novos: o controller é a tela, o service é o package. Onde a analogia quebra: no banco a regra e o dado moram juntos. Aqui a regra fica numa camada que **não sabe** qual banco existe, e isso é de propósito.",
+      "texto": "Camadas respondem a uma pergunta de review: **onde este código deveria morar?** O desenho clássico tem quatro.\n\n| Camada | Responde | No Nest |\n|---|---|---|\n| **Apresentação** | Como o pedido chega e como a resposta sai | controller, DTO, pipe, guard |\n| **Aplicação** | O que o caso de uso faz, passo a passo | service de caso de uso, limite da transação |\n| **Domínio** | O que a regra de negócio decide | entidades, funções puras, interfaces de repositório |\n| **Infraestrutura** | Como falar com o mundo de fora | Prisma, node-oracledb, cliente HTTP, fila |\n\n### A regra de dependência\n\n**As dependências apontam para dentro.** O domínio não importa ninguém. A aplicação importa o domínio. Apresentação e infraestrutura importam aplicação e domínio. Nunca o contrário.\n\nO teste é mecânico: abra o arquivo da regra e leia os `import`. Se aparece `@nestjs/common`, o cliente do Prisma ou um tipo de requisição HTTP, a regra passou a depender de um detalhe que muda por motivos que não são de negócio.\n\nIsso parece impossível: o caso de uso precisa do banco. A saída é o caso de uso depender de uma **interface** de repositório, declarada do lado de dentro, e a infraestrutura implementar essa interface. A seta do código aponta para dentro mesmo com a chamada indo para fora em tempo de execução. O detalhe fica para arq-04.\n\n### Controller fino\n\nO controller traduz HTTP em chamada e resultado em HTTP. Não tem `if` de negócio.\n\n```ts\n@Post(':id/concluir')\nconcluir(@Param('id') id: string) {\n  return this.concluirTarefa.executar(id);\n}\n```\n\nO anti-padrão é a regra no controller: \"tarefa concluída não pode ser concluída de novo\" escrito dentro do método da rota. Funciona até o dia em que um job, um consumidor de fila ou uma segunda rota precisa concluir tarefa. Aí a regra é copiada, ou esquecida.\n\n### O custo\n\nCamadas cobram em arquivos, em mapeamento (DTO vira entidade, entidade vira linha) e em indireção na leitura: para seguir uma requisição você abre quatro arquivos. Para um cadastro sem regra, isso é cerimônia. Controller mais um service que usa o Prisma direto resolve, e é o que a maior parte do código de um sistema deve ser.\n\n### Sinal de que precisa e sinal de exagero\n\n- **Precisa:** a mesma regra é chamada por duas entradas (rota e job). Testar a regra exige subir HTTP ou banco. O service passou de 300 linhas misturando consulta, decisão e formatação.\n- **Exagero:** a camada de passagem. Um service cujo método só chama o repositório, cujo método só chama o Prisma, com o mesmo nome e os mesmos parâmetros. Três arquivos, zero decisão.\n\nO critério de sênior: **camadas na proporção da regra**. Um mesmo sistema pode ter módulos com as quatro camadas e módulos com duas. Uniformidade não é virtude quando custa o dobro de código.",
+      "naPratica": "No review de um PR do Cockpit, abra o controller e procure `if` que decide negócio, e abra o arquivo da regra e leia os imports. Esses dois olhares pegam a maior parte dos vazamentos de camada em menos de um minuto.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A regra está no service. Duas entradas diferentes (controller e job) chamam o mesmo caso de uso. O que sai?",
+          "codigo": "const tarefas = new Map([['t1', { titulo: 'Deploy', feita: false }]]);\n\nconst servico = {\n  concluir(id: string) {\n    const t = tarefas.get(id);\n    if (!t) return 'não encontrada';\n    if (t.feita) return 'já estava concluída';\n    t.feita = true;\n    return 'concluída';\n  },\n};\n\nconst controller = (corpo: { id: string }) => ({ status: 200, corpo: servico.concluir(corpo.id) });\nconst job = () => servico.concluir('t1');\n\nconsole.log(controller({ id: 't1' }).corpo);\nconsole.log(job());\nconsole.log(controller({ id: 't9' }).corpo);\n",
+          "saida": "concluída\njá estava concluída\nnão encontrada\n",
+          "explicacao": "O controller só traduz o corpo em chamada. Quando o job chega depois, encontra a mesma regra e recebe `já estava concluída`. Se o `if (t.feita)` estivesse dentro do controller, o job concluiria a tarefa de novo sem ninguém perceber. É a regra presa na trigger da tela, com outro nome."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O caso de uso depende da interface do repositório. Dentro dele, alguém tenta usar um detalhe da implementação SQL. Compila?",
+          "codigo": "interface RepositorioDeTarefas {\n  buscar(id: string): { id: string; feita: boolean } | undefined;\n}\n\nclass RepositorioSql implements RepositorioDeTarefas {\n  tabela = 'tarefa';\n  buscar(id: string) {\n    return { id, feita: false };\n  }\n}\n\nclass ConcluirTarefa {\n  repo: RepositorioDeTarefas;\n  constructor(repo: RepositorioDeTarefas) {\n    this.repo = repo;\n  }\n  executar(id: string) {\n    console.log(this.repo.tabela);\n    return this.repo.buscar(id);\n  }\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 18,
+          "explicacao": "Para o caso de uso, `repo` é um `RepositorioDeTarefas`, e essa interface não tem `tabela`. O tipo é o que impede a camada de dentro de enxergar o detalhe da camada de fora. Se o campo fosse declarado como `RepositorioSql`, compilaria, e a regra de dependência estaria quebrada sem nenhum aviso."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você abre `calcula-prazo.ts`, um arquivo de regra de negócio, e vê `import { BadRequestException } from '@nestjs/common'`. O que isso indica?",
+          "opcoes": [
+            "Nada: é a forma padrão de sinalizar erro em qualquer camada de um projeto Nest",
+            "A regra passou a depender da camada de apresentação: ela fala em status HTTP e não pode ser reaproveitada num job sem carregar esse significado",
+            "Um problema de desempenho, porque o pacote do Nest é grande",
+            "Um erro de compilação em projetos ESM"
+          ],
+          "correta": 1,
+          "explicacao": "`BadRequestException` significa \"responda 400\". Uma regra de domínio deve dizer o que está errado no negócio (um erro de domínio próprio) e deixar a tradução para 400 ou 422 com a camada de fora, num filtro de exceção. A primeira opção é tentadora porque funciona, e é assim que o vazamento começa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um módulo de cadastro de categorias tem controller, service, repositório e mapper. Cada método do service só repassa a chamada ao repositório, que só repassa ao Prisma. Qual a avaliação?",
+          "opcoes": [
+            "Correto: toda funcionalidade deve ter as quatro camadas para manter o padrão",
+            "Faltam mais camadas: deveria haver também um caso de uso por operação",
+            "Camada de passagem: sem regra para proteger, as camadas extras só custam. Controller e service com Prisma direto bastam aqui",
+            "Errado: o controller deveria chamar o Prisma direto e o service deveria ser removido"
+          ],
+          "correta": 2,
+          "explicacao": "Camada existe para isolar decisão. Onde não há decisão, ela vira repasse. Manter o service é razoável (é onde a regra vai morar se aparecer), mas repositório e mapper para um cadastro simples são cerimônia. A primeira opção confunde uniformidade com qualidade."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, precisa mesmo dessa camada de caso de uso? O controller podia chamar o Prisma direto e a gente entregava hoje.\"",
+          "pontos": [
+            "Veredito que depende do caso, dito com o critério",
+            "Critério: existe regra de negócio? Mais de uma entrada vai chamar?",
+            "Custo dos dois lados: cerimônia de um, regra duplicada do outro",
+            "Próximo passo: decidir por módulo, não pelo sistema inteiro"
+          ],
+          "modelo": "Depende do que essa rota faz. Se é um cadastro sem regra, concordo: controller e um service enxuto com Prisma, e entregamos hoje. Se tem decisão de negócio, eu mantenho o caso de uso fora do controller, por dois motivos: daqui a pouco um job ou outra rota vai precisar da mesma regra, e eu quero testar essa regra sem subir HTTP. O custo é um arquivo a mais e uma indireção na leitura. O custo de não fazer é a regra copiada em dois lugares e divergindo. Me mostra a rota: se não tiver `if` de negócio, vai direto. Se tiver, a gente separa só esse pedaço."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual é a regra de dependência entre camadas?",
+          "verso": "As dependências apontam para dentro: o domínio não importa ninguém. Apresentação e infraestrutura conhecem o domínio, nunca o contrário."
+        },
+        {
+          "frente": "Por que regra de negócio no controller é um defeito?",
+          "verso": "Ela só vale para quem entra por aquela rota. Job, fila e outra rota passam por fora. É a regra presa na trigger da tela."
+        },
+        {
+          "frente": "Como testar em 10 segundos se a regra vazou de camada?",
+          "verso": "Leia os imports do arquivo de regra. Framework, ORM ou tipo HTTP ali indicam vazamento."
+        },
+        {
+          "frente": "O que é uma camada de passagem?",
+          "verso": "Service que só repassa ao repositório, que só repassa ao ORM. Arquivos sem decisão. Sinal de camadas em excesso para aquele módulo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — PresentationDomainDataLayering",
+          "url": "https://martinfowler.com/bliki/PresentationDomainDataLayering.html"
+        },
+        {
+          "titulo": "NestJS — Controllers",
+          "url": "https://docs.nestjs.com/controllers"
+        }
+      ]
+    },
+    {
+      "id": "arq-03",
+      "titulo": "SOLID sem dogma",
+      "minutos": 12,
+      "ponte": "Você já aplica metade disso sem dar nome. Um package que mistura cálculo de imposto com formatação de relatório incomoda porque muda por dois motivos. Um `IF tipo = 'A' ... ELSIF tipo = 'B'` repetido em dez procedures dói a cada tipo novo. Onde a analogia quebra: PL/SQL não tem interface nem injeção, então a troca de implementação que SOLID pede (o **D**) lá se resolve com parâmetro ou SQL dinâmico. Aqui é mecanismo da linguagem e do framework.",
+      "texto": "SOLID são cinco princípios de desenho de classes. Decorados, viram catecismo. Lidos como **sintomas**, viram ferramenta de review: cada letra nomeia uma dor que você reconhece no código.\n\n| Letra | Princípio | O sintoma no código |\n|---|---|---|\n| **S** | Responsabilidade única | A classe muda por dois motivos: um pedido do fiscal e um pedido de layout mexem no mesmo arquivo |\n| **O** | Aberto/fechado | Cada tipo novo obriga a editar um `if (tipo === ...)` em cinco arquivos |\n| **L** | Substituição de Liskov | A subclasse lança \"não suportado\", ou quem chama precisa de `instanceof` para saber com quem fala |\n| **I** | Segregação de interface | Interface gorda: implementações com método vazio, e o *fake* de teste tem doze métodos para usar um |\n| **D** | Inversão de dependência | A regra faz `new ClienteHttp()` ou importa o banco: não dá para testar sem o mundo real |\n\n### O D é o que a injeção do Nest entrega\n\nInversão de dependência diz: a regra depende de uma abstração, e o detalhe se encaixa nela. Em vez de a classe **criar** o que precisa, ela **declara** no construtor, e alguém de fora entrega.\n\n```ts\n// antes: a regra escolhe o detalhe\nclass Lembrete {\n  enviar() { return new ClienteSmtp().mandar('...'); }\n}\n\n// depois: a regra declara o que precisa\nclass Lembrete {\n  constructor(private readonly correio: Correio) {}\n  enviar() { return this.correio.mandar('...'); }\n}\n```\n\nO contêiner do Nest (nest-02) é quem faz a entrega. No teste, você entrega um objeto falso. Um detalhe de TypeScript: interface some na execução, então o Nest não injeta \"pela interface\". Injeta pela classe ou por um *token* (uma constante usada como chave em `provide`).\n\n### O `if` de tipo: nem sempre é pecado\n\nUm `switch` sobre o tipo em **um** lugar é código claro. O problema do **O** é o mesmo `switch` espalhado. Duas saídas: um mapa de estratégias (um objeto que leva do tipo à função) ou a união discriminada com `switch` exaustivo (ts-04), em que o compilador aponta todos os lugares que faltam quando nasce um tipo novo. A segunda costuma ser mais barata que uma hierarquia de classes.\n\n### Quando NÃO abstrair\n\n- **Interface com uma implementação e nenhum fake** é indireção sem retorno. Crie quando a segunda implementação existir, ou quando o teste precisar dela.\n- **Regra de três:** duplicou uma vez, tolere. Na terceira, você conhece o padrão o bastante para abstrair certo.\n- **Abstração errada custa mais que duplicação.** Código duplicado se junta depois. Abstração errada se espalha, e todo mundo passa a contorná-la com parâmetros e exceções.\n- **Uma classe por método** em nome do **S** troca um arquivo de 200 linhas por vinte de 10, e a regra fica impossível de ler de uma vez. \"Um motivo para mudar\" não é \"uma função\".\n\nO critério: aplique o princípio quando o **sintoma** apareceu, ou quando você tem evidência de que vai aparecer. Aplicar por prevenção é pagar hoje, com juros de leitura, por um problema que talvez nunca chegue.",
+      "naPratica": "No review, troque \"isso fere o SOLID\" por descrever o sintoma: \"este arquivo mudou nos últimos três PRs por motivos diferentes\". O sintoma convence, a sigla gera discussão. E recuse a interface criada só porque \"é boa prática\".",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "Um repositório de relatório só lê. A única interface disponível é a completa. Compila?",
+          "codigo": "interface Repositorio {\n  buscar(id: string): string | undefined;\n  salvar(id: string, valor: string): void;\n  excluir(id: string): void;\n}\n\nclass RepositorioDeRelatorio implements Repositorio {\n  buscar(id: string) {\n    return 'linha ' + id;\n  }\n}\n",
+          "compila": false,
+          "erro": "TS2420",
+          "linha": 7,
+          "explicacao": "A classe promete `Repositorio` e não tem `salvar` nem `excluir`. A tentação é escrever os dois lançando erro, o que cria uma violação de Liskov para silenciar a de interface gorda. A correção de desenho é separar: `Leitor` com `buscar` e `Escritor` com o resto. Quem só lê depende só de `Leitor`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A união `Pagamento` ganhou o tipo `cartao`, mas a função não foi atualizada. O compilador avisa?",
+          "codigo": "type Pagamento =\n  | { tipo: 'pix'; chave: string }\n  | { tipo: 'boleto'; linha: string }\n  | { tipo: 'cartao'; final: string };\n\nfunction descrever(p: Pagamento): string {\n  switch (p.tipo) {\n    case 'pix':\n      return 'Pix ' + p.chave;\n    case 'boleto':\n      return 'Boleto ' + p.linha;\n    default: {\n      const nunca: never = p;\n      return nunca;\n    }\n  }\n}\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 13,
+          "explicacao": "No `default`, `p` ainda pode ser o pagamento `cartao`, que não cabe em `never`. O erro aparece em todo `switch` que esqueceu o tipo novo. É a resposta barata ao **O**: você ainda edita cada lugar, mas o compilador entrega a lista e nenhum fica para trás."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A classe depende de uma abstração de relógio. O teste entrega um relógio fixo. O que sai?",
+          "codigo": "interface Relogio {\n  hoje(): string;\n}\n\nclass Saudacao {\n  relogio: Relogio;\n  constructor(relogio: Relogio) {\n    this.relogio = relogio;\n  }\n  texto() {\n    return this.relogio.hoje() === 'sábado' ? 'Bom descanso' : 'Bom trabalho';\n  }\n}\n\nconst fixo = (dia: string): Relogio => ({ hoje: () => dia });\n\nconsole.log(new Saudacao(fixo('sábado')).texto());\nconsole.log(new Saudacao(fixo('terça')).texto());\n",
+          "saida": "Bom descanso\nBom trabalho\n",
+          "explicacao": "`Saudacao` não sabe de onde vem o dia. Com `new Date()` dentro dela, o teste só passaria em certos dias da semana. Declarando a dependência, o teste controla o tempo. Aqui a abstração se paga porque existe uma segunda implementação de verdade: o relógio falso do teste."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um PR cria `ITarefaService` com uma única implementação, `TarefaService`. Nenhum teste usa fake. A justificativa é \"seguir o princípio da inversão de dependência\". Qual a melhor resposta de review?",
+          "opcoes": [
+            "Aprovar: toda classe deve ter uma interface para ficar desacoplada",
+            "Pedir também uma fábrica abstrata para criar o service",
+            "Perguntar qual segunda implementação ou qual teste precisa da interface. Sem um dos dois, ela é indireção e pode esperar",
+            "Reprovar: interface é proibida em projeto Nest porque some na execução"
+          ],
+          "correta": 2,
+          "explicacao": "A abstração se paga quando há variação real: outro adaptador, um fake de teste, uma fronteira de módulo. Sem isso, cada leitura do código ganha um salto a mais e nada em troca. A primeira opção é o catecismo. A última erra o motivo: interface pode ser usada, só não serve de chave de injeção sem um token."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, no review me pediram para criar uma interface para cada service. Faz sentido?\"",
+          "pontos": [
+            "Veredito: como regra geral, não",
+            "Critério: abstrair onde há variação real (segunda implementação, fake de teste, fronteira com serviço externo)",
+            "Custo da abstração precoce: indireção e abstração errada difícil de desfazer",
+            "Próximo passo: apontar onde vale no código em questão"
+          ],
+          "modelo": "Como regra para todo service, não. Interface se paga quando existe variação de verdade: uma segunda implementação, um fake que o teste precisa, ou a borda com algo externo como o banco legado e uma API de terceiros. Fora disso, é um salto a mais em cada leitura, e a gente corre o risco de congelar uma abstração errada antes de conhecer o problema. Eu faria assim: interface nas dependências que saem do processo e nas que queremos trocar na migração. Service chamando service dentro do mesmo módulo fica concreto. Se quiser, a gente olha o PR junto e marca quais das interfaces têm um segundo uso real."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o sintoma de violação do princípio da responsabilidade única?",
+          "verso": "A classe muda por dois motivos diferentes: pedidos de áreas distintas mexem no mesmo arquivo."
+        },
+        {
+          "frente": "O que a injeção de dependência do Nest tem a ver com o D do SOLID?",
+          "verso": "A classe declara no construtor o que precisa e o contêiner entrega. A regra depende da abstração, e o detalhe é trocável (fake no teste)."
+        },
+        {
+          "frente": "Por que não criar interface para toda classe?",
+          "verso": "Sem segunda implementação nem fake de teste, é indireção sem retorno. E abstração errada custa mais para desfazer do que duplicação."
+        },
+        {
+          "frente": "Qual a alternativa barata a uma hierarquia de classes para o `if` de tipo espalhado?",
+          "verso": "União discriminada com `switch` exaustivo (`never` no default): o compilador lista todo lugar que esqueceu o tipo novo."
+        },
+        {
+          "frente": "O que é a regra de três?",
+          "verso": "Tolere a primeira duplicação. Abstraia na terceira ocorrência, quando o padrão já está claro."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Inversion of Control Containers and the Dependency Injection pattern",
+          "url": "https://martinfowler.com/articles/injection.html"
+        },
+        {
+          "titulo": "Martin Fowler — Yagni",
+          "url": "https://martinfowler.com/bliki/Yagni.html"
+        },
+        {
+          "titulo": "NestJS — Custom providers",
+          "url": "https://docs.nestjs.com/fundamentals/custom-providers"
+        }
+      ]
+    },
+    {
+      "id": "arq-04",
+      "titulo": "Arquitetura hexagonal (portas e adaptadores): quando vale",
+      "minutos": 12,
+      "ponte": "A *spec* de um package é uma porta: diz o que se pode pedir, sem dizer como é feito. O *body* é o adaptador. Você já trocou um body inteiro sem recompilar quem chama. Onde a analogia quebra: no Oracle a spec é escrita por quem **fornece** o serviço. Na arquitetura hexagonal a porta é escrita por quem **consome**, o domínio, no vocabulário dele. E pode haver vários adaptadores vivos ao mesmo tempo: Oracle em produção, memória no teste.",
+      "texto": "A arquitetura hexagonal, ou *ports and adapters* (portas e adaptadores), leva a regra de dependência de arq-02 até o fim: **o domínio não importa nenhuma tecnologia**. Nem framework, nem ORM, nem cliente HTTP.\n\n- **Porta:** uma interface declarada pelo domínio, com as palavras do domínio. `FonteDeLimite.limiteDe(cliente)`, e não `executarProcedure(nome, binds)`.\n- **Adaptador:** uma implementação da porta para uma tecnologia. `LimiteViaPackageOracle`, `LimiteViaPrisma`, `LimiteEmMemoria`.\n\nHá dois lados. Adaptadores de **entrada** chamam a aplicação: controller, consumidor de fila, job. Adaptadores de **saída** são chamados por ela: repositório, cliente de outra API, envio de e-mail.\n\n```ts\n// domínio: a porta\nexport interface FonteDeLimite {\n  limiteDe(cliente: string): Promise<number>;\n}\nexport const FONTE_DE_LIMITE = Symbol('FonteDeLimite');\n\n// módulo Nest: a escolha do adaptador fica em um lugar só\n{ provide: FONTE_DE_LIMITE, useClass: LimiteViaPackageOracle }\n```\n\n### O ganho que interessa à sua migração\n\nHoje a regra de limite mora num package Oracle. O adaptador chama esse package com node-oracledb (dados-12). O caso de uso `aprovarPedido` só conhece a porta. No dia em que a regra for reescrita e o dado for para o Postgres, nasce outro adaptador e muda **uma linha** no módulo. O caso de uso e os testes dele não mudam.\n\nO segundo ganho é testar regra rica em milissegundos, com um adaptador em memória, sem banco e sem rede.\n\nUma honestidade: a porta não torna a troca de banco gratuita. A regra que estava no package precisa ser reescrita e provada igual, e a semântica de transação muda. O que a porta faz é **conter o raio da mudança**: você sabe exatamente quais arquivos tocam o Oracle.\n\n### O custo\n\n- **Mais arquivos:** porta, adaptador, token, registro no módulo, muitas vezes um *mapper* entre a linha do banco e o objeto do domínio.\n- **Indireção:** \"ir para a definição\" cai na interface, não no código que roda.\n- **Risco de porta vazada:** uma porta com `buscarMuitos(where, include)` é o Prisma com outro nome. Ela não isola nada e ainda impede usar o ORM direito.\n\n### Sinal de que precisa\n\n- Regra com muitas decisões, que você quer testar exaustivamente e rápido.\n- Uma dependência que você **sabe** que vai trocar, com data: o banco legado numa migração, um fornecedor em fim de contrato.\n- Integração externa instável, que você quer simular com falhas no teste.\n\n### Sinal de exagero\n\n- Cadastro simples. A porta `RepositorioDeCategoria` com cinco métodos que repetem o ORM é a camada de passagem de arq-02.\n- \"Um dia a gente pode trocar de banco\", sem plano nem data. Troca de banco sem motivo é rara, e a porta genérica feita por precaução costuma não servir no dia.\n- Hexagonal no sistema inteiro por uniformidade. Aplique **por módulo**, onde a regra é rica ou a troca é certa.",
+      "naPratica": "Na modernização, o primeiro lugar que merece porta é a borda com o legado: toda chamada a package Oracle atrás de uma interface escrita em termos de negócio. É o que permite migrar regra por regra sem reescrever quem chama, e é o inventário pronto do que ainda depende do Oracle.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O mesmo caso de uso roda com dois adaptadores. O código de `aprovarPedido` não muda. O que sai?",
+          "codigo": "interface FonteDeLimite {\n  limiteDe(cliente: string): Promise<number>;\n}\n\nclass LimiteViaPackage implements FonteDeLimite {\n  async limiteDe(cliente: string) {\n    console.log('chamou o package para ' + cliente);\n    return 1000;\n  }\n}\n\nclass LimiteEmMemoria implements FonteDeLimite {\n  async limiteDe() {\n    return 50;\n  }\n}\n\nasync function aprovarPedido(valor: number, cliente: string, fonte: FonteDeLimite) {\n  const limite = await fonte.limiteDe(cliente);\n  return valor <= limite ? 'aprovado' : 'recusado';\n}\n\nconsole.log(await aprovarPedido(200, 'c1', new LimiteViaPackage()));\nconsole.log(await aprovarPedido(200, 'c1', new LimiteEmMemoria()));\n",
+          "saida": "chamou o package para c1\naprovado\nrecusado\n",
+          "explicacao": "Na primeira chamada o adaptador \"de produção\" registra a ida ao package e devolve 1000: 200 cabe, `aprovado`. Na segunda, o adaptador em memória devolve 50 sem registrar nada: `recusado`. A regra (`valor <= limite`) é a mesma nas duas. Trocar a origem do limite não tocou o caso de uso."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "No teste, o fake é um objeto literal, sem classe e sem `implements`. A porta aceita?",
+          "codigo": "interface FonteDeLimite {\n  limiteDe(cliente: string): Promise<number>;\n}\n\nasync function aprovar(valor: number, cliente: string, fonte: FonteDeLimite): Promise<boolean> {\n  return valor <= (await fonte.limiteDe(cliente));\n}\n\nconst fake: FonteDeLimite = { limiteDe: async () => 50 };\n\naprovar(200, 'c1', fake).then((ok) => console.log(ok));\n",
+          "compila": true,
+          "explicacao": "A tipagem do TypeScript é estrutural (ts-05): qualquer objeto com um `limiteDe` compatível é uma `FonteDeLimite`. A função do fake recebe menos parâmetros que a porta declara, o que é permitido. Por isso fake de porta pequena custa uma linha, e porta gorda custa um arquivo."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Um adaptador antigo devolve o limite de forma síncrona. Ele serve na porta?",
+          "codigo": "interface FonteDeLimite {\n  limiteDe(cliente: string): Promise<number>;\n}\n\nasync function aprovar(valor: number, cliente: string, fonte: FonteDeLimite) {\n  return valor <= (await fonte.limiteDe(cliente));\n}\n\nconst adaptadorAntigo = {\n  limiteDe(cliente: string): number {\n    return cliente === 'vip' ? 5000 : 1000;\n  },\n};\n\naprovar(200, 'c1', adaptadorAntigo);\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 15,
+          "explicacao": "A porta promete `Promise<number>` e o adaptador devolve `number`. Na execução o `await` até funcionaria, mas o contrato é da porta: outro caso de uso pode chamar `.then` no resultado. O compilador cobra do adaptador o que o domínio pediu, e é isso que deixa a troca segura."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas portas está bem desenhada para um caso de uso de aprovação de pedido?",
+          "opcoes": [
+            "`executarSql(texto: string, binds: unknown[]): Promise<unknown[]>`",
+            "`buscarMuitos(where: object, include: object): Promise<object[]>`",
+            "`limiteDisponivel(clienteId: string): Promise<number>`",
+            "`chamarPackage(nome: string, parametros: object): Promise<object>`"
+          ],
+          "correta": 2,
+          "explicacao": "A porta fala a língua do domínio e diz **o que** ele precisa. As outras três falam a língua da tecnologia (SQL, ORM, package). Com elas, o caso de uso continua sabendo como o dado é guardado, e trocar o adaptador obriga a reescrever quem chama. É a porta vazada."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vale usar arquitetura hexagonal aqui?\" O módulo é a aprovação de crédito do pedido: hoje a regra está num package Oracle, e o plano é levar para o Postgres no ano que vem.",
+          "pontos": [
+            "Veredito: sim, neste módulo",
+            "Critério: regra rica e troca de dependência com data marcada",
+            "Custo: mais arquivos, indireção, mapeamento",
+            "Limite: não estender ao sistema inteiro, e a porta não torna a reescrita da regra gratuita",
+            "Próximo passo concreto"
+          ],
+          "modelo": "Neste módulo, sim. Ele junta os dois critérios que justificam: a regra é rica e a dependência vai trocar com data marcada. Com a porta, o caso de uso chama `limiteDisponivel` sem saber que hoje é um package Oracle. Quando formos para o Postgres, escrevemos outro adaptador e os testes do caso de uso continuam valendo. O custo é real: porta, adaptador, registro no módulo e uma indireção na leitura. Por isso eu não aplicaria nos cadastros em volta. E a porta não dispensa reescrever a regra do package e provar que decide igual. Próximo passo: eu listo as chamadas ao Oracle desse módulo e proponho as portas, em termos de negócio, para a gente revisar."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Porta e adaptador: quem é quem?",
+          "verso": "Porta: interface declarada pelo domínio, no vocabulário do negócio. Adaptador: a implementação para uma tecnologia (Oracle, Prisma, HTTP, memória)."
+        },
+        {
+          "frente": "Por que a arquitetura hexagonal ajuda numa migração de Oracle para outro banco?",
+          "verso": "O caso de uso só conhece a porta. Trocar o banco é escrever outro adaptador e mudar o registro no módulo. Ela contém o raio da mudança."
+        },
+        {
+          "frente": "O que é uma porta vazada?",
+          "verso": "Uma porta que fala a língua da tecnologia (`executarSql`, `buscarMuitos(where)`). Não isola nada: quem chama continua sabendo como o dado é guardado."
+        },
+        {
+          "frente": "Quando hexagonal é exagero?",
+          "verso": "Em cadastro sem regra, em \"um dia trocamos de banco\" sem data, e quando é aplicada no sistema inteiro por uniformidade."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Alistair Cockburn — Hexagonal Architecture",
+          "url": "https://alistair.cockburn.us/hexagonal-architecture/"
+        },
+        {
+          "titulo": "NestJS — Custom providers",
+          "url": "https://docs.nestjs.com/fundamentals/custom-providers"
+        }
+      ]
+    },
+    {
+      "id": "arq-05",
+      "titulo": "DDD tático: entidade, objeto de valor e agregado",
+      "minutos": 12,
+      "ponte": "Você modela agregado há anos: pedido e itens gravados no mesmo `COMMIT`, o bloco mestre-detalhe do Forms. O mestre é a raiz, e ninguém grava um item sem passar pelo pedido. Objeto de valor lembra um tipo com *check constraint*: um valor que não existe em estado inválido. Onde a analogia quebra: no banco a consistência é garantida por constraint e trigger sobre linhas. No DDD ela é garantida por **métodos** do objeto raiz, antes de chegar ao banco, e o objeto de valor é comparado pelo conteúdo, não por uma chave.",
+      "texto": "*Domain-Driven Design* (DDD, desenho guiado pelo domínio) tem uma parte tática, com peças de código, e uma estratégica, com fronteiras. Três peças táticas resolvem a maior parte dos casos.\n\n### Entidade\n\nTem **identidade** e muda ao longo do tempo. O pedido 123 continua sendo o pedido 123 depois de ganhar um item. Duas entidades são a mesma se o id é o mesmo, ainda que os outros campos sejam diferentes.\n\n### Objeto de valor\n\nO *value object* não tem identidade: é definido pelos valores e é **imutável**. `Dinheiro(1000, 'BRL')`, um período, um CPF, um endereço. Dois ganhos:\n\n- **Valida na construção.** Se um `Email` existe, ele é válido. A validação deixa de se repetir em cada função que recebe uma `string`.\n- **Carrega a regra do conceito.** `dinheiro.somar(outro)` recusa moedas diferentes. Com `number` solto, nada impede somar reais com dólares.\n\nEm JavaScript, `===` entre objetos compara referência (js-01). Por isso o objeto de valor ganha um método de igualdade próprio.\n\n### Agregado\n\nUm grupo de objetos tratado como uma unidade, com uma **raiz**. É a fronteira de consistência:\n\n- Tudo dentro do agregado vale junto e é gravado na **mesma transação**.\n- De fora, só se fala com a raiz: `pedido.adicionarItem(...)`, nunca `item.quantidade = 0` direto.\n- Outro agregado é referenciado **por id**, não por objeto: o pedido guarda `clienteId`.\n\nA raiz protege as regras que envolvem o conjunto (invariantes): \"pedido fechado não recebe item\", \"o total não passa do limite\". Regra prática: **um agregado por transação**. Se uma operação precisa mudar dois, o segundo costuma ser atualizado por evento (arq-08). Num monólito com um banco, gravar dois na mesma transação é uma concessão aceitável, desde que seja decisão e não acidente.\n\n### As duas ideias estratégicas, em um parágrafo\n\n**Linguagem ubíqua:** o código usa as palavras do negócio. Se o usuário diz \"faturar\", o método é `faturar`, não `atualizarStatus(3)`. ***Bounded context*** (contexto delimitado): a mesma palavra muda de sentido entre áreas. \"Cliente\" em vendas é quem compra, e em cobrança é quem deve. Cada contexto tem o seu modelo, e a tradução entre eles é explícita. É a origem das fronteiras de módulo de arq-01.\n\n### O custo\n\n- Mais classes, e **mapeamento**: o ORM devolve objetos simples, não as suas entidades. Alguém converte a linha em agregado e de volta.\n- Agregado grande demais carrega cinco mil itens para mudar um status. Agregado deve ser pequeno: só o que precisa ser consistente **no mesmo instante**.\n- Curva de aprendizado do time.\n\n### Sinal de que precisa e sinal de exagero\n\n- **Precisa:** regras que cruzam vários campos e linhas, estados com transições proibidas, o mesmo conceito validado em dez lugares.\n- **Exagero:** cadastro. Uma tabela de categorias não tem invariante para proteger. E objeto de valor para toda `string` do sistema: comece por dinheiro, período e documentos, onde o erro custa caro.",
+      "naPratica": "No Cockpit, o plano do dia com suas tarefas escolhidas é um agregado pequeno: regras como \"no máximo N tarefas no plano\" pertencem à raiz, não ao controller. Na migração, o mestre-detalhe do Forms dá a primeira pista de onde ficam os agregados.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Dois objetos de valor com o mesmo conteúdo. O que cada comparação diz? E `somar` altera o original?",
+          "codigo": "class Dinheiro {\n  readonly centavos: number;\n  readonly moeda: string;\n  constructor(centavos: number, moeda: string) {\n    this.centavos = centavos;\n    this.moeda = moeda;\n  }\n  igual(o: Dinheiro) {\n    return this.centavos === o.centavos && this.moeda === o.moeda;\n  }\n  somar(o: Dinheiro) {\n    return new Dinheiro(this.centavos + o.centavos, this.moeda);\n  }\n}\n\nconst a = new Dinheiro(1000, 'BRL');\nconst b = new Dinheiro(1000, 'BRL');\nconsole.log(a === b);\nconsole.log(a.igual(b));\nconst c = a.somar(b);\nconsole.log(a.centavos, c.centavos);\n",
+          "saida": "false\ntrue\n1000 2000\n",
+          "explicacao": "`===` compara referência: são dois objetos, então `false`. `igual` compara o conteúdo: `true`. `somar` devolve um objeto **novo** e deixa `a` com 1000. Imutabilidade é o que permite passar um objeto de valor adiante sem medo de alguém alterá-lo."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A raiz do agregado protege as regras do conjunto. Quais mensagens saem, e qual o estado final?",
+          "codigo": "class Pedido {\n  #itens: { produto: string; qtd: number }[] = [];\n  fechado = false;\n  adicionar(produto: string, qtd: number) {\n    if (this.fechado) throw new Error('pedido fechado');\n    this.#itens.push({ produto, qtd });\n  }\n  fechar() {\n    if (this.#itens.length === 0) throw new Error('pedido sem itens');\n    this.fechado = true;\n  }\n  get quantidade() {\n    return this.#itens.reduce((s, i) => s + i.qtd, 0);\n  }\n}\n\nconst p = new Pedido();\ntry { p.fechar(); } catch (e) { console.log((e as Error).message); }\np.adicionar('caneta', 3);\np.fechar();\ntry { p.adicionar('lápis', 1); } catch (e) { console.log((e as Error).message); }\nconsole.log(p.quantidade, p.fechado);\n",
+          "saida": "pedido sem itens\npedido fechado\n3 true\n",
+          "explicacao": "Fechar vazio é recusado. Depois de um item, fecha. O segundo item é recusado porque o pedido já fechou, então a quantidade fica em 3. `#itens` é privado de verdade: não existe caminho de fora para empurrar um item sem passar pela regra. É o papel da raiz."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Alguém tenta dar um desconto alterando o objeto de valor. Compila?",
+          "codigo": "class Dinheiro {\n  readonly centavos: number;\n  constructor(centavos: number) {\n    this.centavos = centavos;\n  }\n}\n\nconst preco = new Dinheiro(1000);\npreco.centavos = 900;\n",
+          "compila": false,
+          "erro": "TS2540",
+          "linha": 9,
+          "explicacao": "`readonly` só permite atribuição no construtor. O desconto certo é criar outro valor: `new Dinheiro(900)`. Lembre que `readonly` é checagem de compilação (os tipos somem na execução, ts-09). Para garantia em tempo de execução existe `Object.freeze` ou campo privado com `#`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um pedido tem itens e pertence a um cliente. Como o agregado `Pedido` deve se relacionar com `Cliente`?",
+          "opcoes": [
+            "Guardar o objeto `Cliente` completo dentro do pedido, para ter tudo à mão",
+            "Guardar só o `clienteId`: cliente é outro agregado, com o seu próprio ciclo de vida e a sua transação",
+            "Fazer `Cliente` ser a raiz e `Pedido` um objeto interno dele",
+            "Copiar todos os campos do cliente para dentro do pedido e mantê-los sincronizados"
+          ],
+          "correta": 1,
+          "explicacao": "Agregados se referenciam por id. Cliente muda por motivos que não são do pedido, e não precisa estar consistente com ele no mesmo instante. Pôr o pedido dentro do cliente criaria um agregado que carrega todos os pedidos para mudar um telefone. Copiar um **retrato** de alguns campos (o endereço de entrega no momento da compra) é legítimo, mas é um valor do pedido, sem sincronização."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a gente devia adotar DDD no projeto novo? Todo mundo fala que é o jeito certo de fazer.\"",
+          "pontos": [
+            "Veredito: sim onde a regra é rica, não como padrão do sistema inteiro",
+            "Separou o estratégico (barato, vale sempre) do tático (caro, vale em parte)",
+            "Custo: classes, mapeamento com o ORM, curva do time",
+            "Próximo passo concreto e pequeno"
+          ],
+          "modelo": "Em parte. A parte estratégica eu adotaria no sistema todo, porque é barata: usar no código as palavras que o negócio usa e desenhar os módulos pelos contextos em que essas palavras mudam de sentido. A parte tática, com agregado e objeto de valor, eu aplicaria só onde a regra é rica, como pedido, crédito e faturamento. Ela cobra em classes, em mapeamento entre o ORM e o domínio e em curva de aprendizado do time. Num cadastro, isso é custo sem retorno. Próximo passo: escolher um módulo com regra pesada, modelar o agregado principal e dois objetos de valor, e avaliar em um mês se o código ficou mais fácil de testar e de explicar."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Entidade × objeto de valor: qual a diferença?",
+          "verso": "Entidade tem identidade e muda no tempo (igual se o id é igual). Objeto de valor é definido pelos valores, é imutável e se compara pelo conteúdo."
+        },
+        {
+          "frente": "O que é um agregado?",
+          "verso": "Um grupo de objetos com uma raiz, gravado na mesma transação. De fora só se fala com a raiz. É a fronteira de consistência."
+        },
+        {
+          "frente": "Por que um objeto de valor precisa de método de igualdade em JavaScript?",
+          "verso": "`===` entre objetos compara referência. Dois `Dinheiro(1000, 'BRL')` são objetos diferentes, embora sejam o mesmo valor."
+        },
+        {
+          "frente": "Como um agregado referencia outro?",
+          "verso": "Por id (`clienteId`), nunca guardando o objeto. Cada agregado tem a sua transação."
+        },
+        {
+          "frente": "O que é bounded context?",
+          "verso": "A fronteira dentro da qual uma palavra do negócio tem um sentido só. \"Cliente\" em vendas e em cobrança são modelos diferentes."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — ValueObject",
+          "url": "https://martinfowler.com/bliki/ValueObject.html"
+        },
+        {
+          "titulo": "Martin Fowler — DDD Aggregate",
+          "url": "https://martinfowler.com/bliki/DDD_Aggregate.html"
+        },
+        {
+          "titulo": "Martin Fowler — BoundedContext",
+          "url": "https://martinfowler.com/bliki/BoundedContext.html"
+        }
+      ]
+    },
+    {
+      "id": "arq-06",
+      "titulo": "CQRS e event sourcing: quando NÃO usar",
+      "minutos": 11,
+      "ponte": "Uma *materialized view* é um modelo de leitura separado do de escrita: você grava nas tabelas normalizadas e consulta um formato pronto, que pode estar atrasado. Isso é a ideia do CQRS. Event sourcing lembra o razão contábil ou o movimento de estoque: o saldo é a soma dos lançamentos. Onde a analogia quebra: a sua tabela de auditoria **acompanha** o estado, e a verdade continua na tabela principal. No event sourcing não existe tabela principal. Os eventos são a verdade, e o estado é calculado.",
+      "texto": "Dois padrões que andam juntos nas palestras e que quase nunca são necessários juntos. Um sênior precisa saber explicá-los e, na maior parte das vezes, recusá-los.\n\n### CQRS\n\n*Command Query Responsibility Segregation* (separar a responsabilidade de comando e de consulta): um modelo para **escrever** e outro para **ler**. Faz sentido quando os dois divergem: a escrita quer agregados pequenos e regra, a leitura quer uma tela com dado de seis tabelas, filtros e totais.\n\nHá dois degraus, com custos muito diferentes:\n\n1. **Separar o código, mesmo banco.** Comandos passam pelo domínio. Consultas vão direto ao SQL e devolvem o formato da tela, sem montar agregado. Custa pouco e resolve o problema comum de entidade inchada por causa de relatório.\n2. **Separar o armazenamento.** A escrita publica eventos e uma **projeção** atualiza um banco de leitura. Aqui entra a **consistência eventual**: o usuário salva, volta para a lista e o item ainda não está lá.\n\n### Event sourcing\n\nEm vez de guardar o estado atual, guarda-se a sequência de **eventos** que levou até ele. O estado é um `reduce` sobre os eventos.\n\n```ts\nconst saldo = eventos.reduce((s, e) => (e.tipo === 'depositou' ? s + e.valor : s - e.valor), 0);\n```\n\nO que compra: histórico completo por construção, reconstruir o estado de qualquer data, criar uma projeção nova a partir do passado.\n\n### O custo real\n\n- **Consistência eventual** nas leituras, com todo o trabalho de tela que isso pede.\n- **Evento é contrato para sempre.** Um evento gravado há três anos precisa ser lido pelo código de hoje. Mudar o formato exige versionar e converter.\n- **Depuração.** Não existe a linha para dar `SELECT` e ver o estado. Você reprocessa eventos para entender um caso.\n- **Operação:** *snapshots* (retratos) para não reler um milhão de eventos, projeções idempotentes, reprocessamento que leva horas.\n- **Consulta simples vira projeto.** \"Quantos pedidos abertos por cliente\" exige uma projeção pensada antes.\n- **O time.** Poucos já operaram isso. O primeiro incidente ensina caro.\n\n### Sinal de que precisa\n\n- O domínio **já é** um razão: conta corrente, estoque, pontuação. O negócio fala em lançamentos, não em saldo.\n- Auditoria total é requisito legal, e \"como era em tal data\" é pergunta frequente.\n- Leitura e escrita têm cargas e formatos tão diferentes que um modelo só prejudica os dois, **com medição**.\n\n### As alternativas baratas\n\n| Você quer | Tente antes |\n|---|---|\n| Saber quem mudou o quê | Tabela de histórico gravada na mesma transação |\n| Tela de leitura rápida | Consulta dedicada, view ou materialized view |\n| Aliviar o banco das leituras | Réplica de leitura |\n| Avisar outros módulos | Evento de integração com outbox (arq-08), sem abandonar a tabela de estado |\n\nA regra de bolso: o primeiro degrau do CQRS é quase sempre bem-vindo. O segundo e o event sourcing pedem um motivo que caiba numa frase com número. Sem a frase, a resposta é não.",
+      "naPratica": "No Cockpit, a tela de resumo do dia é uma consulta de leitura dedicada: não monta agregado, só devolve o formato da tela. É o primeiro degrau do CQRS, e é tudo de que um sistema desse porte precisa.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O estado é reconstruído a partir dos eventos. O que sai em cada linha?",
+          "codigo": "type Evento =\n  | { tipo: 'depositou'; valor: number }\n  | { tipo: 'sacou'; valor: number }\n  | { tipo: 'bloqueou' };\ntype Conta = { saldo: number; bloqueada: boolean };\n\nconst aplicar = (c: Conta, e: Evento): Conta => {\n  switch (e.tipo) {\n    case 'depositou': return { ...c, saldo: c.saldo + e.valor };\n    case 'sacou': return { ...c, saldo: c.saldo - e.valor };\n    case 'bloqueou': return { ...c, bloqueada: true };\n  }\n};\n\nconst eventos: Evento[] = [\n  { tipo: 'depositou', valor: 100 },\n  { tipo: 'sacou', valor: 30 },\n  { tipo: 'depositou', valor: 5 },\n  { tipo: 'bloqueou' },\n];\nconst inicial: Conta = { saldo: 0, bloqueada: false };\n\nconsole.log(eventos.reduce(aplicar, inicial));\nconsole.log(eventos.slice(0, 2).reduce(aplicar, inicial));\n",
+          "saida": "{ saldo: 75, bloqueada: true }\n{ saldo: 70, bloqueada: false }\n",
+          "explicacao": "Os quatro eventos dão 100 - 30 + 5 = 75 e a conta bloqueada. Aplicando só os dois primeiros, você tem o estado **naquele ponto do passado**: 70, sem bloqueio. Nenhuma variável guarda o saldo: ele é sempre calculado. É o ganho do padrão, e também o custo: com um milhão de eventos, esse `reduce` precisa de snapshot."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Escrita e leitura em modelos separados, com a projeção rodando depois. O que o painel mostra antes e depois?",
+          "codigo": "const pedidos = new Map<string, number>(); // modelo de escrita\nconst painel = { total: 0 }; // modelo de leitura\nconst pendentes: number[] = [];\n\nfunction registrar(id: string, valor: number) {\n  pedidos.set(id, valor);\n  pendentes.push(valor);\n}\n\nfunction projetar() {\n  while (pendentes.length > 0) painel.total += pendentes.shift()!;\n}\n\nregistrar('p1', 100);\nregistrar('p2', 50);\nconsole.log(pedidos.size, painel.total);\nprojetar();\nconsole.log(pedidos.size, painel.total);\n",
+          "saida": "2 0\n2 150\n",
+          "explicacao": "Logo depois de gravar, a escrita já tem os dois pedidos e o painel ainda mostra 0: a projeção não rodou. Só depois de `projetar()` o total chega a 150. Esse intervalo é a consistência eventual. Em produção ele dura milissegundos ou minutos, e a tela precisa ser desenhada sabendo que ele existe."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A área pede: \"precisamos saber quem alterou cada campo do cadastro de fornecedor e quando\". Qual a proposta proporcional?",
+          "opcoes": [
+            "Event sourcing no cadastro: é a única forma de ter histórico completo",
+            "CQRS com banco de leitura separado para as consultas de auditoria",
+            "Uma tabela de histórico gravada na mesma transação da alteração, com usuário, data e valores",
+            "Guardar o histórico só no log da aplicação"
+          ],
+          "correta": 2,
+          "explicacao": "O requisito é rastrear alterações, e a tabela de histórico na mesma transação atende com o custo de uma tabela. Event sourcing também atenderia, cobrando consistência eventual, versionamento de eventos e depuração mais difícil num cadastro que não precisa de nada disso. Log de aplicação não é dado de negócio: gira, perde-se e não participa da transação."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas frases descreve corretamente o primeiro degrau do CQRS?",
+          "opcoes": [
+            "Dois bancos de dados, um para escrita e outro para leitura, sincronizados por eventos",
+            "No mesmo banco, comandos passam pelo domínio e consultas vão direto ao SQL devolvendo o formato da tela",
+            "Guardar todos os eventos e reconstruir o estado com reduce",
+            "Um microsserviço para comandos e outro para consultas"
+          ],
+          "correta": 1,
+          "explicacao": "Separar os caminhos de código já é CQRS e não traz consistência eventual: a consulta lê as mesmas tabelas que o comando gravou. As opções com dois bancos ou eventos descrevem o segundo degrau e o event sourcing, que são decisões separadas e muito mais caras."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vi uma palestra sobre event sourcing. Não seria bom para a auditoria do nosso cadastro de clientes?\"",
+          "pontos": [
+            "Veredito: não para este caso",
+            "Critério: o requisito é auditoria, e há solução mais barata que atende",
+            "Custo do event sourcing nomeado (consistência eventual, evento como contrato, depuração)",
+            "Disse quando mudaria de ideia",
+            "Próximo passo"
+          ],
+          "modelo": "Para esse caso eu não usaria. O que a gente precisa é saber quem mudou o quê e quando, e uma tabela de histórico gravada na mesma transação entrega isso com o custo de uma tabela. Event sourcing também entregaria, mas cobra caro: a leitura passa a ser eventual, cada formato de evento vira contrato para sempre e depurar um caso deixa de ser um `SELECT`. Eu mudaria de ideia se o domínio fosse um razão de verdade, como conta corrente ou estoque, ou se reconstruir o estado de qualquer data fosse exigência legal frequente. Próximo passo: eu desenho a tabela de histórico e mostro as três consultas de auditoria que ela responde."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que o event sourcing guarda no lugar do estado atual?",
+          "verso": "A sequência de eventos. O estado é calculado com um reduce sobre eles."
+        },
+        {
+          "frente": "Por que event sourcing é caro de manter?",
+          "verso": "Evento vira contrato para sempre, a leitura é eventual, não há linha para dar SELECT e a operação exige snapshot e reprocessamento."
+        },
+        {
+          "frente": "Qual o primeiro degrau do CQRS, barato e quase sempre útil?",
+          "verso": "Mesmo banco: comandos passam pelo domínio, consultas vão direto ao SQL no formato da tela."
+        },
+        {
+          "frente": "Tabela de auditoria × event sourcing: onde está a verdade em cada um?",
+          "verso": "Auditoria: na tabela de estado, e o histórico acompanha. Event sourcing: nos eventos, e o estado é derivado."
+        },
+        {
+          "frente": "O que é consistência eventual?",
+          "verso": "A leitura fica atrasada em relação à escrita por um intervalo. O usuário salva e a lista ainda não mostra."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — CQRS",
+          "url": "https://martinfowler.com/bliki/CQRS.html"
+        },
+        {
+          "titulo": "Martin Fowler — Event Sourcing",
+          "url": "https://martinfowler.com/eaaDev/EventSourcing.html"
+        }
+      ]
+    },
+    {
+      "id": "arq-07",
+      "titulo": "Microsserviços × monólito: os custos reais",
+      "minutos": 11,
+      "ponte": "Você já operou um sistema distribuído: o *DB link*. Uma consulta que parece local, até a rede oscilar ou o banco remoto ficar lento, e aí a sua sessão fica presa esperando. Microsserviços são isso em toda chamada entre partes do sistema. Onde a analogia quebra: no DB link o Oracle ainda oferece *commit* em duas fases para manter os dois lados consistentes. Entre serviços HTTP não existe transação que cubra os dois: se o segundo falhar, o primeiro já gravou.",
+      "texto": "Microsserviços são serviços pequenos, cada um com **o seu deploy e o seu banco**, que conversam pela rede. A pergunta de sênior não é \"é moderno?\". É: **o que isso compra, o que cobra, e eu tenho o problema que ele resolve?**\n\n### O que compra\n\n- **Deploy independente por time.** O time de faturamento publica sem esperar o de cadastro. É o benefício principal, e é organizacional.\n- **Escala independente.** Só a parte que recebe carga ganha mais instâncias.\n- **Isolamento de falha,** se bem feito: um serviço fora do ar não derruba os outros.\n\n### O que cobra\n\n| Custo | O que significa na prática |\n|---|---|\n| **Rede** | Toda chamada pode demorar, falhar ou dar *timeout* sem você saber se o outro lado executou. Exige timeout, repetição e idempotência |\n| **Consistência distribuída** | Não há transação entre serviços. Uma operação que antes era um `COMMIT` vira saga com compensação (arq-08) |\n| **Observabilidade** | Um erro atravessa cinco serviços. Sem *trace* distribuído (prod-05), você não encontra onde começou |\n| **Operação** | N esteiras de publicação, N bancos, N conjuntos de alertas, versão de contrato entre todos |\n| **Teste e ambiente local** | Subir o sistema na sua máquina deixa de ser um comando |\n| **Relatório** | O JOIN entre dados de dois serviços não existe mais. Vira chamada, cópia de dado ou banco analítico |\n\n### O monólito distribuído\n\nO pior resultado: serviços separados que **precisam ser publicados juntos**, compartilham o mesmo banco ou se chamam em cadeia síncrona para atender uma requisição. Paga todos os custos da distribuição e não recebe a independência. Os sinais: uma mudança de campo exige PR em três repositórios, e um serviço fora do ar para todos.\n\nNa modernização de um legado isso é o risco número um: quebrar a aplicação em serviços que continuam lendo e gravando no **mesmo schema**. O acoplamento estava nos dados, e ali ficou.\n\n### O critério\n\nMicrosserviço resolve problema de **gente e de domínio**, não de código:\n\n- **Tamanho de time.** Vários times tropeçando no mesmo deploy, com fila para publicar. Um time de seis pessoas com dez serviços gasta mais tempo operando do que entregando.\n- **Fronteira de domínio estável.** Você sabe onde cortar porque o monólito modular já mostrou (arq-01). Fronteira que ainda muda todo mês não vai para a rede.\n- **Uma parte com necessidade muito diferente,** medida: carga, disponibilidade ou tecnologia.\n\nSem pelo menos um desses, o monólito modular entrega mais com menos. E a ordem que funciona é **extrair um** módulo quando ele tiver motivo, começando pelos dados dele, e não desenhar vinte serviços no quadro.",
+      "naPratica": "Quando a proposta de microsserviços aparecer, pergunte primeiro pelo banco: cada serviço vai ter os seus dados, ou todos vão ao mesmo schema? Se for o mesmo schema, o que está sendo proposto é um monólito distribuído, e vale dizer isso com esse nome.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O serviço de pedidos grava o pedido e chama o serviço de estoque, que falha. Como fica o estado dos dois?",
+          "codigo": "const pedidos: string[] = [];\nconst estoque = { caneta: 5 };\n\nconst servicoDeEstoque = {\n  async baixar(produto: string, qtd: number): Promise<void> {\n    throw new Error('timeout ao baixar ' + qtd + ' de ' + produto);\n  },\n};\n\nasync function criarPedido(id: string) {\n  pedidos.push(id); // gravado no banco do serviço de pedidos\n  await servicoDeEstoque.baixar('caneta', 2);\n}\n\ntry {\n  await criarPedido('p1');\n} catch (e) {\n  console.log('erro: ' + (e as Error).message);\n}\nconsole.log(pedidos.length, estoque.caneta);\n",
+          "saida": "erro: timeout ao baixar 2 de caneta\n1 5\n",
+          "explicacao": "O pedido ficou gravado (1) e o estoque não baixou (5). Num monólito, as duas gravações estariam na mesma transação e o erro desfaria tudo. Entre serviços não há `ROLLBACK` que alcance o outro lado: alguém precisa compensar, cancelando o pedido. E com timeout de verdade é pior: você nem sabe se o estoque baixou."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma requisição atravessa serviços em cadeia síncrona. Se cada um está disponível 99% do tempo, qual a disponibilidade do conjunto?",
+          "codigo": "const cadeia = (cadaUm: number, saltos: number) => (cadaUm ** saltos * 100).toFixed(1) + '%';\n\nconsole.log(cadeia(0.99, 1));\nconsole.log(cadeia(0.99, 5));\nconsole.log(cadeia(0.999, 5));\n",
+          "saida": "99.0%\n95.1%\n99.5%\n",
+          "explicacao": "As disponibilidades se multiplicam. Cinco serviços de 99% em cadeia entregam 95,1%: de 3,6 dias fora por ano para quase 18. Para voltar perto do que um processo só entregava, cada serviço precisa de 99,9%. Cadeia síncrona longa é o que transforma microsserviços em monólito distribuído."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A empresa dividiu o sistema em oito serviços Nest. Todos leem e gravam no mesmo schema Oracle do legado. Qual o diagnóstico?",
+          "opcoes": [
+            "Microsserviços bem feitos: cada serviço tem o seu repositório e o seu deploy",
+            "Monólito distribuído: o acoplamento continua nos dados, e agora há custo de rede e de operação por cima",
+            "Arquitetura hexagonal: o banco é um adaptador compartilhado",
+            "CQRS: vários serviços leem e gravam no mesmo banco"
+          ],
+          "correta": 1,
+          "explicacao": "Com o schema compartilhado, mudar uma coluna afeta oito serviços e nenhum publica sozinho. A independência, que é o que justifica o custo, não existe. A primeira opção é tentadora porque repositório e esteira separados **parecem** independência. O teste é: dá para mudar a tabela de um sem avisar os outros?"
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes é o melhor motivo para extrair um módulo do monólito para um serviço separado?",
+          "opcoes": [
+            "O código do monólito passou de 100 mil linhas",
+            "O mercado está contratando para microsserviços",
+            "Três times disputam a mesma janela de publicação, e o módulo de faturamento tem fronteira e dados próprios há um ano",
+            "O módulo usa uma biblioteca diferente das outras"
+          ],
+          "correta": 2,
+          "explicacao": "Há um problema organizacional medido (fila de deploy entre times) e uma fronteira que já se provou estável dentro do monólito. Tamanho de código sozinho se resolve com módulos. Moda e biblioteca não são problema que a rede resolva."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vamos quebrar isso em microsserviços? Já que estamos saindo do Forms, é a hora de fazer direito.\"",
+          "pontos": [
+            "Veredito: agora não, monólito modular primeiro",
+            "Critério: tamanho de time e fronteira de domínio conhecida, não a ocasião",
+            "Custo: rede, consistência sem transação, observabilidade, operação",
+            "Risco específico do legado: serviços sobre o mesmo schema viram monólito distribuído",
+            "Próximo passo que mantém a porta aberta"
+          ],
+          "modelo": "Agora eu não quebraria. Microsserviço compra deploy independente entre times, e hoje a gente é um time só, com fronteiras que ainda estamos descobrindo. O que ele cobra é pesado: toda chamada vira rede com timeout, o que era um commit vira compensação, e a operação multiplica por serviço. E temos um risco próprio: enquanto tudo gravar no mesmo schema do legado, separar a aplicação nos dá um monólito distribuído, com o custo dos dois modelos. Minha proposta é um monólito modular, com cada módulo dono das suas tabelas. Se daqui a um ano um módulo tiver time próprio e fronteira estável, a gente extrai esse, com número na mão."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o principal benefício de microsserviços?",
+          "verso": "Deploy independente por time. É um ganho organizacional, não de código."
+        },
+        {
+          "frente": "O que é um monólito distribuído?",
+          "verso": "Serviços separados que precisam ser publicados juntos, compartilham banco ou se chamam em cadeia síncrona. Custo dos dois modelos, benefício de nenhum."
+        },
+        {
+          "frente": "Por que uma operação entre dois microsserviços não pode simplesmente dar rollback?",
+          "verso": "Cada serviço tem o seu banco e a sua transação. Se o segundo falha, o primeiro já gravou. É preciso compensar (saga)."
+        },
+        {
+          "frente": "Quais critérios justificam extrair um microsserviço?",
+          "verso": "Vários times disputando o deploy, fronteira de domínio estável e já provada, ou uma parte com carga ou disponibilidade muito diferente, medida."
+        },
+        {
+          "frente": "Cinco serviços de 99% em cadeia síncrona dão que disponibilidade?",
+          "verso": "Cerca de 95%. As disponibilidades se multiplicam."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler e James Lewis — Microservices",
+          "url": "https://martinfowler.com/articles/microservices.html"
+        },
+        {
+          "titulo": "Martin Fowler — MicroservicePremium",
+          "url": "https://martinfowler.com/bliki/MicroservicePremium.html"
+        }
+      ]
+    },
+    {
+      "id": "arq-08",
+      "titulo": "Mensageria: fila, pub/sub, outbox e idempotência",
+      "minutos": 12,
+      "ponte": "Quem usou Oracle AQ conhece um conforto: o `ENQUEUE` participa da transação, porque a fila mora no banco. O `COMMIT` grava o pedido e a mensagem juntos, e o `ROLLBACK` desfaz os dois. Com um *broker* (servidor de mensagens) fora do banco, esse conforto some: gravar no banco e publicar na fila são dois sistemas, sem transação comum. O padrão *outbox* reconstrói o que o AQ dava de graça. Onde a analogia quebra: mesmo assim a mensagem pode chegar **duas vezes** ao consumidor, e você precisa projetar para isso.",
+      "texto": "Mensageria troca \"chamar e esperar\" por \"avisar e seguir\". Serve para trabalho lento, para trabalho que pode falhar e ser repetido, e para avisar outras partes do sistema sem depender delas.\n\n### Fila × pub/sub\n\n| | Fila | Pub/sub (publicar e assinar) |\n|---|---|---|\n| Quem recebe | **Um** consumidor por mensagem | **Todos** os assinantes |\n| O que carrega | Um trabalho: \"envie este e-mail\" | Um fato: \"pedido criado\" |\n| Quem publica sabe quem consome? | Sim, em geral | Não |\n\n### Entrega pelo menos uma vez\n\nO broker só apaga a mensagem quando o consumidor confirma (*ack*). Se o consumidor processou e caiu antes de confirmar, o broker **entrega de novo**. Isso é *at-least-once* (pelo menos uma vez), e é a garantia realista. \"Exatamente uma vez\" na prática é entrega repetida mais consumidor que tolera repetição.\n\nPor isso o consumidor é **idempotente**: processar a mesma mensagem duas vezes dá o mesmo resultado que uma. As duas formas comuns:\n\n- Guardar o id das mensagens processadas (tabela com chave única) e ignorar a repetida, **na mesma transação** do efeito.\n- Usar operação naturalmente idempotente: \"defina o status como pago\" em vez de \"some 100 ao saldo\".\n\n### Ordem\n\nCom vários consumidores e repetição, a ordem de chegada não é garantida. Projete para não depender dela (o evento carrega a versão do registro, e o consumidor ignora versão antiga) ou use um recurso do broker que ordena por chave, aceitando menos paralelismo.\n\n### Outbox transacional\n\nO problema da escrita dupla:\n\n```ts\nawait banco.gravar(pedido);\nawait broker.publicar('pedido.criado'); // e se cair entre as duas linhas?\n```\n\nSe cair no meio, o pedido existe e ninguém foi avisado. Invertendo a ordem, avisa-se de um pedido que não existe. A solução: na **mesma transação** do pedido, gravar o evento numa tabela `outbox`. Um processo separado lê a tabela, publica e marca como enviado. Se ele cair depois de publicar e antes de marcar, publica de novo. Outra vez, pelo menos uma vez, e outra vez o consumidor idempotente resolve.\n\n### Saga, em noção\n\nUma operação que cruza serviços vira uma sequência de transações locais ligadas por eventos. Se um passo falha, executam-se **compensações** dos anteriores (cancelar o pedido, devolver o estoque). Não há isolamento: outros veem o estado intermediário. É cara de desenhar e de testar.\n\n### O custo e os sinais\n\nAssíncrono é mais difícil de depurar, pede fila de mortos (nest-15), monitoração de atraso e tela que sabe mostrar \"em processamento\".\n\n- **Precisa:** envio de e-mail, integração com sistema externo lento, processamento pesado, avisar vários interessados.\n- **Exagero:** evento entre dois módulos do mesmo processo quando uma chamada de função na mesma transação resolve. E fila para um fluxo em que o usuário espera a resposta na tela.",
+      "naPratica": "No review de qualquer consumidor de fila, a primeira pergunta é: \"o que acontece se esta mensagem chegar duas vezes?\". Se a resposta for \"não chega\", o defeito já está escrito. Na migração, jobs que hoje leem uma tabela de pendências do banco já são uma outbox: reconheça e mantenha o desenho.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O broker entrega a mensagem `m1` duas vezes. Um saldo é atualizado sem proteção e o outro com consumidor idempotente. O que sai?",
+          "codigo": "type Msg = { id: string; valor: number };\n\nlet saldoIngenuo = 0;\nlet saldo = 0;\nconst processadas = new Set<string>();\n\nfunction consumir(m: Msg) {\n  saldoIngenuo += m.valor;\n  if (processadas.has(m.id)) return 'ignorada';\n  processadas.add(m.id);\n  saldo += m.valor;\n  return 'aplicada';\n}\n\nconst entregas: Msg[] = [\n  { id: 'm1', valor: 100 },\n  { id: 'm2', valor: 50 },\n  { id: 'm1', valor: 100 },\n];\nfor (const m of entregas) console.log(m.id, consumir(m));\nconsole.log(saldoIngenuo, saldo);\n",
+          "saida": "m1 aplicada\nm2 aplicada\nm1 ignorada\n250 150\n",
+          "explicacao": "A terceira entrega repete `m1`. O saldo sem proteção soma de novo e chega a 250. O idempotente consulta o registro de ids processados, ignora a repetida e fica em 150, o valor certo. No sistema real, o `Set` é uma tabela com chave única, gravada na mesma transação do saldo."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Outbox em memória: pedido e evento são gravados na mesma \"transação\", e um publicador roda depois, duas vezes. O que sai?",
+          "codigo": "const pedidos: string[] = [];\nconst outbox: { evento: string; enviado: boolean }[] = [];\nconst broker: string[] = [];\n\nfunction criarPedido(id: string, falhar = false) {\n  const marca = [pedidos.length, outbox.length] as const;\n  try {\n    pedidos.push(id);\n    outbox.push({ evento: 'pedido.criado:' + id, enviado: false });\n    if (falhar) throw new Error('violou uma constraint');\n  } catch {\n    pedidos.length = marca[0];\n    outbox.length = marca[1];\n    console.log('rollback de ' + id);\n  }\n}\n\nfunction publicarPendentes() {\n  for (const linha of outbox.filter((l) => !l.enviado)) {\n    broker.push(linha.evento);\n    linha.enviado = true;\n  }\n}\n\ncriarPedido('p1');\ncriarPedido('p2', true);\nconsole.log(pedidos.length, outbox.length, broker.length);\npublicarPendentes();\npublicarPendentes();\nconsole.log(broker);\n",
+          "saida": "rollback de p2\n1 1 0\n[ 'pedido.criado:p1' ]\n",
+          "explicacao": "`p2` falha e o rollback desfaz o pedido **e** o evento: não sobra aviso de pedido inexistente. Depois das duas criações há 1 pedido, 1 linha na outbox e nada no broker, porque publicar é outro passo. O publicador roda duas vezes e envia uma só, porque marca a linha. Se ele caísse entre publicar e marcar, enviaria de novo: por isso o consumidor continua precisando ser idempotente."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um consumidor recebe `pagamento.aprovado` e executa `UPDATE conta SET saldo = saldo + :valor`. O broker garante entrega pelo menos uma vez. Qual a avaliação?",
+          "opcoes": [
+            "Correto: o broker não repete mensagem que já foi entregue",
+            "Defeito: uma reentrega soma o valor duas vezes. Falta registrar o id da mensagem na mesma transação ou usar operação idempotente",
+            "Correto, desde que o consumidor confirme (ack) antes de processar",
+            "Defeito de desempenho apenas: o UPDATE deveria ser em lote"
+          ],
+          "correta": 1,
+          "explicacao": "Pelo menos uma vez significa que a repetição vai acontecer, cedo ou tarde. Somar não é idempotente. Confirmar antes de processar troca o problema: se o consumidor cair depois do ack, a mensagem se perde e o saldo nunca é somado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que o padrão outbox grava o evento numa tabela em vez de publicar direto no broker depois do commit?",
+          "opcoes": [
+            "Porque tabela é mais rápida que broker",
+            "Porque o banco e o broker não compartilham transação: gravando o evento na mesma transação do dado, ou os dois existem ou nenhum existe",
+            "Porque o broker não aceita mensagens grandes",
+            "Para garantir que o consumidor receba cada mensagem exatamente uma vez"
+          ],
+          "correta": 1,
+          "explicacao": "O problema é a escrita dupla em dois sistemas. A tabela outbox usa a transação do banco para tornar \"gravar o dado\" e \"registrar a intenção de avisar\" uma coisa só. Ela não entrega exatamente uma vez: o publicador pode repetir, e a idempotência do consumidor cobre isso."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, no meu service eu gravo o pedido e, na linha seguinte, publico o evento na fila. Está funcionando nos testes. Tem algum problema?\"",
+          "pontos": [
+            "Veredito: funciona até o dia em que o processo cai entre as duas linhas",
+            "Nomeou o problema: escrita dupla, sem transação comum",
+            "Solução proporcional: outbox na mesma transação, mais consumidor idempotente",
+            "Custo da solução: tabela, publicador, pequeno atraso",
+            "Critério para não fazer: se perder o aviso não tem consequência"
+          ],
+          "modelo": "Tem um, que os testes não mostram: se o processo cair entre gravar e publicar, o pedido existe e ninguém é avisado. Banco e fila não dividem transação. Se perder esse aviso de vez em quando não tiver consequência, pode ficar como está, e a gente registra a decisão. Se tiver, e para pedido costuma ter, a saída é a outbox: você grava o evento numa tabela na mesma transação do pedido, e um publicador lê essa tabela e manda para a fila. O custo é uma tabela, um processo pequeno e um atraso de segundos. Como o publicador pode repetir, confere também se o consumidor aguenta receber a mesma mensagem duas vezes."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Fila × pub/sub: quem recebe a mensagem?",
+          "verso": "Fila: um consumidor por mensagem (um trabalho). Pub/sub: todos os assinantes (um fato)."
+        },
+        {
+          "frente": "Por que todo consumidor de mensagem precisa ser idempotente?",
+          "verso": "A entrega é pelo menos uma vez: se o consumidor cai antes do ack, o broker reentrega. A repetição é certa."
+        },
+        {
+          "frente": "O que é o padrão outbox?",
+          "verso": "Gravar o evento numa tabela na mesma transação do dado. Um publicador separado lê a tabela e envia ao broker."
+        },
+        {
+          "frente": "Qual problema a outbox resolve?",
+          "verso": "A escrita dupla: banco e broker não compartilham transação, então gravar e publicar em sequência pode deixar um sem o outro."
+        },
+        {
+          "frente": "O que é uma saga?",
+          "verso": "Uma sequência de transações locais ligadas por eventos, com compensações para desfazer os passos anteriores se um falhar."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — What do you mean by \"Event-Driven\"?",
+          "url": "https://martinfowler.com/articles/201701-event-driven.html"
+        },
+        {
+          "titulo": "BullMQ — Documentação",
+          "url": "https://docs.bullmq.io/"
+        }
+      ]
+    },
+    {
+      "id": "arq-09",
+      "titulo": "Cache: estratégias e invalidação",
+      "minutos": 12,
+      "ponte": "O *result cache* do Oracle e a *materialized view* são caches que o banco administra: ele conhece as tabelas de origem e sabe quando o resultado ficou velho. Onde a analogia quebra: num cache de aplicação (um `Map` em memória, um Redis) ninguém conhece as dependências. **Você** decide quando o dado guardado deixou de valer, e se esquecer, o sistema responde errado com toda a rapidez.",
+      "texto": "Cache é guardar uma resposta para não calcular de novo. O ganho é óbvio. O custo é uma classe nova de defeito: **dado velho servido como se fosse atual**.\n\n### A pergunta antes de pôr cache\n\n**A consulta está certa e indexada?** Um cache na frente de uma consulta sem índice, ou de um N+1 (dados-07), esconde o problema e adiciona outro. Meça primeiro (dados-08). Muitas vezes o `EXPLAIN` resolve o que o cache ia disfarçar.\n\nDepois, três perguntas que são de negócio, não de técnica:\n\n1. **Por quanto tempo este dado pode estar velho?** Lista de estados: um dia. Preço: talvez minutos. Saldo: zero.\n2. **Quem invalida,** e em que momento?\n3. **Se o cache cair, o banco aguenta a carga inteira?** Se não aguenta, o cache virou parte crítica do sistema, e precisa ser tratado assim.\n\n### As estratégias\n\n- ***Cache-aside*** (cache ao lado): a aplicação olha o cache. Achou, devolve. Não achou, vai ao banco, guarda e devolve. É a mais comum.\n- ***Write-through*** (escrita atravessando): toda escrita atualiza o banco e o cache juntos. Leitura sempre fresca, ao custo de escrever em dois lugares.\n- **TTL** (*time to live*, prazo de validade): a entrada expira sozinha. Limita por quanto tempo um dado errado sobrevive, mesmo que a invalidação falhe.\n- **Invalidação por evento:** quem altera o dado **apaga** a chave. Apagar é mais seguro que atualizar: duas escritas concorrentes podem gravar o cache fora de ordem.\n\nA combinação que funciona na maior parte dos casos: cache-aside, invalidação ao gravar e um TTL como rede de segurança.\n\n```ts\nasync function buscarCliente(id: string) {\n  const guardado = await cache.get('cliente:' + id);\n  if (guardado) return guardado;\n  const cliente = await repo.buscar(id);\n  await cache.set('cliente:' + id, cliente, { ttl: 300 });\n  return cliente;\n}\n```\n\n### Stampede\n\nUma chave muito consultada expira. No mesmo instante, duzentas requisições não a encontram e vão **todas** ao banco fazer a mesma consulta. É o *cache stampede* (estouro da manada). Mitigações: compartilhar a mesma Promise entre quem pediu a mesma chave, variar o TTL para as chaves não vencerem juntas, renovar antes de expirar.\n\n### As armadilhas\n\n- **Chave incompleta.** Se a resposta depende do usuário ou do perfil e a chave não inclui isso, um usuário recebe o dado de outro. É falha de segurança, não de desempenho.\n- **Cache em memória com várias instâncias.** Cada instância tem a sua cópia, e invalidar numa não invalida nas outras. Com mais de uma instância, o cache vai para o Redis (dados-13).\n- **Guardar erro ou vazio** sem intenção: um `null` por falha momentânea fica servido pelo TTL inteiro.\n\n### Sinal de que precisa e sinal de exagero\n\n- **Precisa:** muita leitura e pouca escrita, dado que tolera atraso, consulta já otimizada e ainda cara, ou chamada lenta a um sistema externo.\n- **Exagero:** dado que muda a cada requisição, dado que não pode estar velho, e cache posto \"para garantir\" sem medição que mostre o gargalo.",
+      "naPratica": "Quando alguém propuser cache, peça o plano de execução da consulta e a resposta para \"quanto tempo esse dado pode estar velho?\". Na maioria das vezes a conversa termina em um índice. No Cockpit, o cache que vale é o do front (TanStack Query), não um no servidor.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Cache-aside com um contador de idas ao \"banco\". Quanto vale o contador em cada ponto?",
+          "codigo": "let idas = 0;\nconst banco = (id: string) => {\n  idas++;\n  return 'cliente ' + id;\n};\nconst cache = new Map<string, string>();\n\nfunction buscar(id: string) {\n  const guardado = cache.get(id);\n  if (guardado !== undefined) return guardado;\n  const valor = banco(id);\n  cache.set(id, valor);\n  return valor;\n}\n\nbuscar('1');\nbuscar('1');\nbuscar('2');\nbuscar('1');\nconsole.log(idas);\ncache.delete('1');\nbuscar('1');\nconsole.log(idas);\n",
+          "saida": "2\n3\n",
+          "explicacao": "Quatro buscas, duas idas ao banco: uma para cada id novo. As repetições de `'1'` saem do cache. Depois de `cache.delete('1')` (a invalidação que uma escrita faria), a próxima busca não encontra a chave e vai ao banco de novo: 3."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "TTL de 60 com relógio falso. O preço muda no banco logo depois da primeira leitura. O que cada chamada devolve?",
+          "codigo": "let agora = 0;\nlet idas = 0;\nlet precoNoBanco = 10;\nconst cache = new Map<string, { valor: number; expira: number }>();\n\nfunction preco(id: string) {\n  const guardado = cache.get(id);\n  if (guardado && guardado.expira > agora) return guardado.valor;\n  idas++;\n  cache.set(id, { valor: precoNoBanco, expira: agora + 60 });\n  return precoNoBanco;\n}\n\nconsole.log(preco('a'));\nprecoNoBanco = 12;\nagora = 30;\nconsole.log(preco('a'));\nagora = 60;\nconsole.log(preco('a'));\nconsole.log(idas);\n",
+          "saida": "10\n10\n12\n2\n",
+          "explicacao": "No instante 0 busca 10 e guarda com validade até 60. No instante 30 o banco já diz 12, mas a entrada ainda vale e o cache devolve **10**: é o dado velho que o TTL tolera. No instante 60 a condição `expira > agora` é falsa, a entrada venceu, e a segunda ida ao banco traz 12. O TTL é a resposta para \"quanto tempo este dado pode estar errado?\"."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Três requisições simultâneas pedem a mesma chave com o cache vazio. Quantas idas ao banco sem proteção, e quantas compartilhando a Promise?",
+          "codigo": "let idas = 0;\nconst banco = async () => {\n  idas++;\n  await new Promise((r) => setTimeout(r, 20));\n  return 42;\n};\n\nlet cache: number | undefined;\nasync function semProtecao() {\n  if (cache !== undefined) return cache;\n  cache = await banco();\n  return cache;\n}\nawait Promise.all([semProtecao(), semProtecao(), semProtecao()]);\nconsole.log(idas);\n\nidas = 0;\nlet emVoo: Promise<number> | undefined;\nfunction comProtecao() {\n  emVoo ??= banco();\n  return emVoo;\n}\nawait Promise.all([comProtecao(), comProtecao(), comProtecao()]);\nconsole.log(idas);\n",
+          "saida": "3\n1\n",
+          "explicacao": "Sem proteção, as três chamadas checam o cache antes de qualquer uma terminar: todas veem vazio e todas vão ao banco. É o stampede em miniatura. Com proteção, a primeira cria a Promise e as outras duas recebem **a mesma**: uma ida só. Em produção, a Promise guardada é removida quando resolve e o resultado vai para o cache com TTL."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma rota `GET /pedidos` devolve os pedidos do usuário logado. Alguém põe cache com a chave `'pedidos'`. O que acontece?",
+          "opcoes": [
+            "Nada de errado: a rota fica mais rápida para todos",
+            "O primeiro usuário a consultar define a resposta, e os outros recebem os pedidos dele até a chave expirar",
+            "O cache nunca é usado, porque a rota exige autenticação",
+            "Só há problema se o TTL for maior que uma hora"
+          ],
+          "correta": 1,
+          "explicacao": "A resposta depende do usuário e a chave não. É vazamento de dado entre usuários, um defeito de segurança. A chave precisa conter tudo de que a resposta depende: `'pedidos:' + usuarioId`, mais filtros e página. TTL curto só diminui a duração do vazamento."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a tela de consulta de pedidos está levando oito segundos. Por que não pôr um cache na frente?\"",
+          "pontos": [
+            "Veredito: ainda não, primeiro medir a consulta",
+            "Critério: cache é para consulta já certa e ainda cara, em dado que tolera atraso",
+            "Custo do cache: invalidação, dado velho, mais uma peça para operar",
+            "Pergunta de negócio: quanto tempo o dado pode estar velho",
+            "Próximo passo com prazo curto"
+          ],
+          "modelo": "Antes do cache eu quero ver a consulta. Oito segundos numa consulta de pedidos costuma ser índice faltando, N+1 ou falta de paginação, e cache em cima disso só esconde: a primeira consulta de cada usuário continua lenta e a gente ganha o problema de invalidar. Cache vale quando a consulta já está certa, continua cara e o dado pode ficar alguns minutos velho, e para pedido o usuário espera ver o que acabou de gravar. Me dá meio dia: eu pego o plano de execução e o número de consultas por requisição. Se depois disso ainda estiver caro, a gente define juntos o prazo de validade aceitável e quem invalida."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a pergunta antes de pôr cache?",
+          "verso": "A consulta está certa e indexada? Cache sobre consulta ruim esconde o problema e adiciona o de invalidação."
+        },
+        {
+          "frente": "Como funciona o cache-aside?",
+          "verso": "A aplicação olha o cache. Achou, devolve. Não achou, busca no banco, guarda e devolve."
+        },
+        {
+          "frente": "Por que invalidar apagando a chave e não atualizando?",
+          "verso": "Duas escritas concorrentes podem atualizar o cache fora de ordem e deixar o valor antigo. Apagando, a próxima leitura busca o valor atual."
+        },
+        {
+          "frente": "O que é cache stampede e como reduzir?",
+          "verso": "Uma chave quente expira e muitas requisições vão ao banco juntas. Compartilhar a Promise em voo, variar o TTL, renovar antes de expirar."
+        },
+        {
+          "frente": "Por que cache em memória do processo é problema com várias instâncias?",
+          "verso": "Cada instância tem a sua cópia. Invalidar em uma não invalida nas outras, e cada uma responde uma versão."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "NestJS — Caching",
+          "url": "https://docs.nestjs.com/techniques/caching"
+        },
+        {
+          "titulo": "Redis — Documentação",
+          "url": "https://redis.io/docs/latest/"
+        },
+        {
+          "titulo": "Martin Fowler — TwoHardThings",
+          "url": "https://martinfowler.com/bliki/TwoHardThings.html"
+        }
+      ]
+    },
+    {
+      "id": "arq-10",
+      "titulo": "BFF, API gateway e micro-frontends",
+      "minutos": 10,
+      "ponte": "Uma *view* ou um package escrito para alimentar uma tela específica é um BFF: uma interface sob medida para um consumidor. O Forms, com cada `.fmx` compilado e publicado em separado e um menu juntando tudo, é o parente mais próximo de micro-frontends. Onde a analogia quebra: cada tela do Forms roda isolada. No navegador, as partes dividem a mesma página, o mesmo CSS e a mesma memória, e é daí que vem o custo.",
+      "texto": "Três padrões de borda, que respondem a perguntas diferentes. Os três são úteis em algum tamanho de organização e peso morto abaixo dele.\n\n### BFF\n\n*Backend for Frontend* (back-end para um front): uma API feita **sob medida para uma interface**. Ela agrega chamadas, devolve o formato exato da tela e esconde o que a tela não usa. Em geral pertence ao time do front que ela serve.\n\nResolve dois problemas:\n\n- **A tela tagarela:** para montar uma página, o navegador faz sete chamadas e junta tudo (mig-14). O BFF faz isso do lado do servidor e devolve uma resposta.\n- **Clientes com necessidades diferentes:** o app de celular quer resposta pequena, a web quer a completa. Uma API genérica vira um acordo ruim para os dois.\n\nO sinal de exagero é o mais comum: você tem **um** front e **uma** API, mantidos pelo mesmo time. Essa API **já é** o BFF. Criar outra camada no meio duplica contrato e deploy.\n\n### API gateway\n\nUm ponto único de entrada na frente de vários serviços. Cuida do que é **transversal**: autenticação, limite de requisições (*rate limit*), roteamento, TLS, log de acesso.\n\n```text\nnavegador --> gateway --> serviço de pedidos\n                     \\--> serviço de cadastro\n                     \\--> serviço de relatórios\n```\n\nA regra de ouro: **gateway não tem regra de negócio**. Quando uma transformação de dado ou uma decisão de negócio vai parar na configuração do gateway, ela sai do código, do teste e do review. É a regra na trigger da tela, um andar acima.\n\nCom um monólito, o que o gateway faria cabe num proxy reverso mais os guards e o limitador do próprio Nest (seg-11). Ele se paga quando há vários serviços atrás do mesmo endereço.\n\n### Micro-frontends\n\nA tela é montada com partes **publicadas separadamente por times diferentes**: o cabeçalho de um, o carrinho de outro. É microsserviço aplicado ao front, e compra a mesma coisa: deploy independente entre times.\n\nO custo é alto:\n\n- **Peso:** cada parte pode trazer a sua cópia de biblioteca, ou todos precisam combinar versões.\n- **Consistência:** visual, navegação, autenticação e estado compartilhado viram contrato entre times.\n- **Depuração:** um erro na tela pode estar em qualquer uma das partes, cada uma com a sua versão.\n\nA alternativa que resolve a maior parte dos casos é o **monorepo modular** (ferr-07): um front, um deploy, pastas por domínio com dono e fronteira de import checada por lint. Micro-frontends só entram quando vários times autônomos **precisam** publicar sem coordenar, e a fila de deploy já é um problema medido.\n\n### O critério comum\n\n| Padrão | Pergunta que justifica |\n|---|---|\n| BFF | Tenho mais de um tipo de cliente, ou uma tela que faz chamadas demais? |\n| Gateway | Tenho vários serviços que precisam da mesma política de borda? |\n| Micro-frontends | Tenho vários times que não conseguem publicar o front sem se bloquear? |\n\nSe a resposta é não, o padrão é uma camada a mais para manter.",
+      "naPratica": "No Cockpit, `apps/api` já é o BFF de `apps/web`: uma rota como \"resumo do dia\" devolve exatamente o que a tela mostra. Na modernização, desconfie de desenho que traz os três padrões no primeiro slide para um sistema com um time e um front.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma função de BFF monta a resposta da tela \"Hoje\" a partir de dois recursos internos. O que a tela recebe?",
+          "codigo": "const tarefas = [\n  { id: 1, titulo: 'Revisar PR', feita: false, notaInterna: 'prioridade do líder' },\n  { id: 2, titulo: 'Publicar versão', feita: true, notaInterna: 'aguardou janela' },\n];\nconst foco = { minutosHoje: 50, metaMinutos: 120 };\n\nfunction telaHoje() {\n  const abertas = tarefas.filter((t) => !t.feita);\n  return {\n    abertas: abertas.map((t) => t.titulo),\n    progresso: Math.round((foco.minutosHoje / foco.metaMinutos) * 100) + '%',\n  };\n}\n\nconsole.log(JSON.stringify(telaHoje()));\n",
+          "saida": "{\"abertas\":[\"Revisar PR\"],\"progresso\":\"42%\"}\n",
+          "explicacao": "A resposta junta dois recursos, traz só a tarefa aberta, só o título dela e o percentual já calculado (50 de 120 dá 41,67, arredondado para 42). `notaInterna` e os ids não saem: o BFF entrega o formato da tela e nada além. O navegador fez uma chamada em vez de duas e não precisou calcular nada."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um time de cinco pessoas mantém um front React e uma API Nest. Alguém propõe criar um BFF entre os dois \"para seguir a arquitetura de referência\". Qual a melhor avaliação?",
+          "opcoes": [
+            "Boa ideia: BFF é sempre recomendado entre front e back",
+            "A API já é o BFF desse front. Outra camada duplicaria contrato e deploy sem resolver problema existente",
+            "Boa ideia, desde que o BFF seja escrito em outra linguagem para isolar os times",
+            "Má ideia: BFF só serve para aplicativos de celular"
+          ],
+          "correta": 1,
+          "explicacao": "BFF existe para dar a um front uma API sob medida. Com um front e uma API do mesmo time, a API pode ser moldada direto para a tela. O padrão passa a valer quando surge um segundo tipo de cliente ou quando a API é de outro time e genérica demais. A última opção erra por restringir: BFF serve a qualquer front."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No gateway da empresa, alguém configurou uma regra: \"se o pedido for acima de R$ 10 mil, encaminhar para aprovação\". Qual o problema?",
+          "opcoes": [
+            "Nenhum: o gateway é o lugar certo para regras que valem para todos os serviços",
+            "Desempenho: o gateway fica mais lento ao ler o corpo da requisição",
+            "É regra de negócio fora do código do domínio: sem teste, sem review de quem conhece a regra, invisível para quem lê o serviço",
+            "O gateway não consegue ler valores numéricos"
+          ],
+          "correta": 2,
+          "explicacao": "Gateway cuida do transversal: autenticar, limitar, rotear. Uma decisão sobre valor de pedido pertence ao domínio. Na configuração do gateway ela não tem teste, e quem chegar ao serviço por outro caminho (um job, uma fila) passa por fora. A primeira opção confunde \"vale para todos\" com \"transversal\"."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o time do aplicativo de celular quer uma API própria, diferente da que a web usa. Criamos um BFF para eles?\"",
+          "pontos": [
+            "Veredito condicionado a um critério verificável",
+            "Critério: as necessidades do celular divergem de verdade (formato, tamanho, número de chamadas)?",
+            "Custo: mais um serviço para publicar e operar, risco de regra duplicada",
+            "Salvaguarda: BFF só agrega e molda, a regra fica na API de domínio",
+            "Próximo passo: comparar telas antes de decidir"
+          ],
+          "modelo": "Pode fazer sentido, e eu quero confirmar um ponto antes. BFF vale quando o cliente precisa de coisas diferentes de verdade: resposta menor, menos chamadas por tela, outro ritmo de versão. Se o celular só quer dois campos a mais, a gente ajusta a API atual. O custo de um BFF é mais um serviço para publicar e monitorar, e o risco de a regra de negócio começar a ser copiada nele. Se formos criar, a condição é que ele só agregue e molde, e a regra continue na API de domínio. Próximo passo: o time do celular lista as três telas principais e as chamadas que cada uma faria hoje. Com isso a gente decide em uma reunião."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é um BFF?",
+          "verso": "Uma API sob medida para uma interface: agrega chamadas e devolve o formato exato da tela."
+        },
+        {
+          "frente": "O que um API gateway faz, e o que não deve fazer?",
+          "verso": "Faz o transversal da borda: autenticação, rate limit, roteamento, TLS. Não deve conter regra de negócio."
+        },
+        {
+          "frente": "Por que regra de negócio no gateway é um problema?",
+          "verso": "Ela sai do código, do teste e do review do domínio, e quem entra por outro caminho passa por fora."
+        },
+        {
+          "frente": "Quando micro-frontends se justificam, e qual a alternativa?",
+          "verso": "Quando vários times autônomos precisam publicar partes da tela sem coordenar. A alternativa mais barata é o monorepo modular com um deploy."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Sam Newman — Backends For Frontends",
+          "url": "https://samnewman.io/patterns/architectural/bff/"
+        },
+        {
+          "titulo": "Cam Jackson (martinfowler.com) — Micro Frontends",
+          "url": "https://martinfowler.com/articles/micro-frontends.html"
+        }
+      ]
+    },
+    {
+      "id": "arq-11",
+      "titulo": "System design: o roteiro de 5 passos",
+      "minutos": 12,
+      "ponte": "Você já faz *system design* quando dimensiona uma tabela: quantas linhas por mês, qual o crescimento, onde particionar, qual índice a consulta principal usa. E quando lê um relatório de desempenho do banco atrás do gargalo. O roteiro é o mesmo raciocínio, com números antes do desenho. Onde a analogia quebra: aqui o desenho inclui o que está fora do banco, e o gargalo muitas vezes é o pool de conexões, a rede ou um serviço externo.",
+      "texto": "*System design* (desenho de sistema) é responder \"como você construiria isso?\" sem pular para a solução. O erro de pleno é começar desenhando caixas. O sênior começa perguntando. O roteiro tem cinco passos, e serve para entrevista, para reunião de arquitetura e para avaliar a proposta de outra pessoa.\n\n### 1. Requisitos\n\n- **Funcionais:** o que o sistema faz. Três a cinco casos de uso principais, e o que fica **fora**.\n- **Não funcionais:** disponibilidade (pode parar à noite?), tempo de resposta aceitável, consistência (o usuário precisa ver na hora o que gravou?), segurança, auditoria.\n\n### 2. Números\n\nEstimativa de ordem de grandeza. Não precisa ser exata, precisa existir.\n\n| Pergunta | Exemplo |\n|---|---|\n| Quantos usuários, e em que horário? | 2.000 internos, horário comercial |\n| Quantas requisições? | 300 por usuário por dia: 600 mil por dia |\n| Por segundo? | 600.000 / 28.800 s (8 horas): cerca de 21 por segundo |\n| No pico? | 3 vezes a média: cerca de 63 por segundo |\n| Quanto dado? | 5 mil pedidos por dia, 4 itens cada: uns 5 milhões de linhas de item por ano |\n\nA conta decide muita coisa. Sessenta requisições por segundo e cinco milhões de linhas por ano cabem em uma API com duas instâncias e um banco relacional bem indexado. Quem propõe fila distribuída e dez serviços para esse número precisa de outro argumento.\n\n### 3. Desenho de alto nível\n\nAs caixas e as setas: cliente, API, banco, e só então o que os requisitos **pediram**: fila para o trabalho lento, cache para a leitura cara, armazenamento de arquivo. Cada caixa nasce com a frase \"está aqui porque...\".\n\n### 4. Gargalos\n\nPercorra o caminho da requisição mais frequente e da mais pesada. Onde satura primeiro? Em sistemas de negócio, quase sempre no banco (consulta sem índice, pool de conexões esgotado, dados-10) ou numa integração síncrona lenta. Depois pergunte o que acontece quando cada caixa cai.\n\n### 5. Trade-offs\n\nDiga em voz alta o que você escolheu **e o que abriu mão**: \"um banco só, porque quero transação simples. Abro mão de escalar a escrita, que pelos números não vou precisar\". E o gatilho de revisão: \"se o volume passar de dez vezes isso, eu revisito\".\n\n### Um caso para treinar\n\nPortal de consulta de pedidos, migrado de uma tela Forms.\n\n1. **Requisitos:** consultar e filtrar pedidos, ver detalhe, exportar. Leitura na maior parte. Pode ficar um minuto atrasado em relação ao sistema que grava.\n2. **Números:** os da tabela acima.\n3. **Desenho:** front React, API Nest em duas instâncias (por disponibilidade, não por carga), o banco existente.\n4. **Gargalo:** a consulta com filtros livres sobre a tabela de pedidos. A exportação grande segurando conexão.\n5. **Trade-off:** paginação obrigatória e exportação assíncrona por fila, que troca a resposta imediata por não derrubar a consulta dos outros. Sem cache por enquanto.\n\nA marca do sênior nesse exercício é o que **não** entra no desenho, com o motivo.",
+      "naPratica": "Leve o roteiro para a próxima reunião em que alguém apresentar uma arquitetura. Se o passo 2 estiver vazio, a pergunta \"quantos usuários e quantas requisições por segundo?\" costuma reorganizar a conversa inteira.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A conta de guardanapo do passo 2. Quais números saem?",
+          "codigo": "const usuarios = 20_000;\nconst requisicoesPorUsuarioDia = 50;\nconst segundosDeUso = 8 * 3600;\n\nconst porDia = usuarios * requisicoesPorUsuarioDia;\nconst media = porDia / segundosDeUso;\nconst pico = media * 3;\nconsole.log(porDia, Math.round(media), Math.round(pico));\n\nconst pedidosPorDia = 40_000;\nconst diasUteis = 250;\nconsole.log((pedidosPorDia * diasUteis) / 1e6 + ' milhões de pedidos por ano');\n",
+          "saida": "1000000 35 104\n10 milhões de pedidos por ano\n",
+          "explicacao": "Um milhão de requisições por dia parece muito. Dividido pelos 28.800 segundos de um dia útil de 8 horas, são 35 por segundo, e 104 no pico de três vezes a média. Dez milhões de linhas por ano é volume comum para um banco relacional com índice. A conta transforma um número assustador em um desenho simples."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Numa entrevista, pedem: \"desenhe um sistema de agendamento de consultas\". Qual o melhor primeiro movimento?",
+          "opcoes": [
+            "Desenhar a API, o banco e uma fila, e explicar cada caixa",
+            "Escolher as tecnologias: Nest, Postgres e Redis",
+            "Perguntar quem usa, quais as três operações principais, o volume esperado e o que pode ou não ficar inconsistente",
+            "Começar pelo modelo de dados completo, com todas as tabelas"
+          ],
+          "correta": 2,
+          "explicacao": "Sem requisitos e números, qualquer desenho é chute. A primeira opção é o erro típico de quem sabe a parte técnica: sai desenhando o que conhece. O modelo de dados é o seu ponto forte e entra no passo 3, depois de saber o que o sistema precisa garantir."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Os números de um sistema interno dão 40 requisições por segundo no pico e 8 milhões de linhas novas por ano. Qual desenho é proporcional?",
+          "opcoes": [
+            "Microsserviços com um banco por serviço e mensageria entre todos",
+            "Uma API com duas instâncias e um banco relacional indexado, com fila só para o que for lento",
+            "Banco particionado em vários servidores (sharding) desde o início",
+            "Cache distribuído na frente de todas as consultas"
+          ],
+          "correta": 1,
+          "explicacao": "Esse volume cabe com folga em um banco relacional e em poucas instâncias. As outras opções resolvem problemas que os números não mostram e cobram em operação e complexidade desde o primeiro dia. Duas instâncias aqui são por disponibilidade, não por carga."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, quantas instâncias e que tamanho de servidor a gente precisa para o sistema novo?\"",
+          "pontos": [
+            "Não chutou um número sem dado",
+            "Pediu ou estimou os números: usuários, requisições no pico, volume",
+            "Deu uma resposta inicial em ordem de grandeza, com a premissa declarada",
+            "Apontou o gargalo provável (banco, pool) em vez do número de instâncias",
+            "Próximo passo: medir"
+          ],
+          "modelo": "Depende de dois números que eu preciso confirmar: quantos usuários ao mesmo tempo no pico e o que a requisição mais pesada faz. Com a premissa de dois mil usuários em horário comercial, a conta dá algumas dezenas de requisições por segundo. Isso cabe em duas instâncias pequenas, e são duas por disponibilidade, não por carga. O que costuma limitar primeiro não é a API, é o banco: a consulta mais pesada e o tamanho do pool de conexões. O custo de errar para menos é baixo, porque subir instância é rápido. Próximo passo: eu confirmo os números de uso com a área e a gente faz um teste de carga na rota principal antes de fechar o tamanho."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Os 5 passos para um caso seu",
+          "minutos": 20,
+          "passos": [
+            "Escolha um módulo genérico que você conhece bem (por exemplo, pedido e itens) e crie `estudo/design-5-passos.md`.",
+            "Passo 1: escreva três requisitos funcionais, dois não funcionais e um item que fica fora.",
+            "Passo 2: estime usuários, requisições por segundo na média e no pico, e linhas por ano. Mostre a conta.",
+            "Passos 3 e 4: liste as caixas com uma frase de motivo para cada uma, e aponte os dois gargalos prováveis.",
+            "Passo 5: escreva dois trade-offs no formato \"escolhi X, abro mão de Y, revisito se Z\"."
+          ],
+          "prontoQuando": "O arquivo tem os cinco passos preenchidos, a conta do passo 2 aparece por extenso, e pelo menos uma tecnologia foi deixada de fora com o motivo escrito."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os 5 passos do roteiro de system design?",
+          "verso": "Requisitos (funcionais e não funcionais), números, desenho de alto nível, gargalos, trade-offs."
+        },
+        {
+          "frente": "Por que estimar números antes de desenhar?",
+          "verso": "A ordem de grandeza decide o desenho. Dezenas de requisições por segundo cabem em um banco e poucas instâncias, e dispensam a maior parte da complexidade."
+        },
+        {
+          "frente": "Como converter requisições por dia em requisições por segundo?",
+          "verso": "Divida pelos segundos de uso real (8 h = 28.800 s), não por 86.400. Multiplique por 3 a 5 para o pico."
+        },
+        {
+          "frente": "Qual o formato de um trade-off bem dito?",
+          "verso": "\"Escolhi X porque A. Abro mão de Y. Revisito se Z acontecer.\""
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Martin Fowler — Software Architecture Guide",
+          "url": "https://martinfowler.com/architecture/"
+        },
+        {
+          "titulo": "Martin Fowler — Yagni",
+          "url": "https://martinfowler.com/bliki/Yagni.html"
+        }
+      ]
+    },
+    {
+      "id": "arq-12",
+      "titulo": "ADR e trade-off: como decidir e registrar",
+      "minutos": 9,
+      "ponte": "O cabeçalho de um package com o histórico de alterações diz **o que** mudou, quem mudou e quando. Falta sempre a mesma coisa: **por que** foi feito assim e o que foi descartado. Daqui a dois anos alguém encontra a decisão, não entende, e desfaz. O ADR guarda exatamente essa parte. Onde a analogia quebra: o cabeçalho é editado a cada alteração. O ADR não se edita: uma decisão nova substitui a antiga, e as duas ficam no histórico.",
+      "texto": "Um ADR (*Architecture Decision Record*, registro de decisão de arquitetura) é um texto curto que registra **uma** decisão que custa caro para mudar. Uma página, em Markdown, versionada junto do código, em algo como `docs/adr/0007-banco-do-modulo-de-pedidos.md`.\n\n### As partes\n\n```text\n# 7. Banco do módulo de pedidos\n\nStatus: aceito (substitui o ADR 3)\n\n## Contexto\nO que está acontecendo, quais as forças e as restrições. Fatos e números.\n\n## Decisão\n\"Vamos usar X.\" Uma frase afirmativa.\n\n## Alternativas consideradas\nY e Z, e por que perderam. Inclua \"não fazer nada\".\n\n## Consequências\nO que fica mais fácil, o que fica mais difícil, o que passamos a dever.\n```\n\nA seção que mais vale é **Consequências**, com as ruins escritas. Um ADR só com vantagens é propaganda, e ninguém confia nele depois.\n\n### Reversível × irreversível\n\nNem toda decisão merece ADR. A pergunta que separa: **quanto custa voltar atrás?**\n\n| | Reversível | Irreversível (ou cara de desfazer) |\n|---|---|---|\n| Exemplos | Biblioteca de datas, nome de pasta, formato de log | Banco de dados, modelo de dados, contrato público de API, fronteira entre serviços, linguagem |\n| Como decidir | Rápido, por quem está fazendo | Devagar, com alternativas, com mais gente |\n| Registro | Mensagem de commit ou PR | ADR |\n\nO erro nos dois sentidos custa caro: semanas discutindo o que se troca em uma tarde, ou cinco minutos decidindo o que vai durar dez anos. Um bom movimento de sênior é **tornar a decisão mais reversível**: uma porta na frente do banco legado (arq-04) transforma \"qual banco\" de aposta em escolha que se pode rever.\n\n### Como apresentar um trade-off\n\nQuem decide raramente quer a aula. Quer isto, nesta ordem:\n\n1. **A decisão que precisa ser tomada,** em uma frase, e até quando.\n2. **Duas ou três opções,** incluindo a de não fazer nada.\n3. **O critério:** o que importa neste caso (prazo, risco, custo de operação, conhecimento do time).\n4. **O custo de cada opção** nesse critério. Uma tabela pequena basta.\n5. **A sua recomendação,** e o que faria você mudar de ideia.\n\nO item 5 é o que separa opinião de análise. \"Recomendo o monólito modular. Eu mudaria de ideia se tivéssemos três times independentes.\" Quem ouve sabe a decisão e o prazo de validade dela.\n\n### Sinal de exagero\n\nADR para tudo vira burocracia e para de ser lido. Um sistema médio acumula uma ou duas dezenas ao longo de anos. Se a decisão cabe numa mensagem de commit e se desfaz em um dia, ela não é arquitetura.",
+      "naPratica": "O Cockpit já tem decisões que merecem ADR: monorepo, Postgres com Prisma, projeto em ESM. Escrever esses três é treino e vira material de entrevista. No trabalho, quando uma discussão de arquitetura andar em círculos, ofereça-se para escrever o ADR: quem escreve organiza a decisão.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas decisões merece um ADR?",
+          "opcoes": [
+            "Trocar a biblioteca de formatação de datas do front",
+            "Renomear a pasta `utils` para `comum`",
+            "Manter a regra de crédito no package Oracle e chamá-la pela API, em vez de reescrever em TypeScript agora",
+            "Aumentar o tamanho da fonte dos títulos"
+          ],
+          "correta": 2,
+          "explicacao": "Onde mora a regra de negócio é cara de mudar, tem alternativas reais e alguém vai perguntar o motivo daqui a um ano. As outras se desfazem em uma tarde e cabem numa mensagem de commit. A troca de biblioteca tenta porque \"parece técnica\", mas o que define o ADR é o custo de voltar atrás."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um ADR aceito há um ano escolheu REST. Agora o time decidiu usar outra abordagem em um módulo. O que fazer com o ADR antigo?",
+          "opcoes": [
+            "Editar o texto dele para refletir a decisão nova",
+            "Apagar: decisão superada só confunde",
+            "Escrever um ADR novo, que referencia o antigo, e marcar o antigo como substituído ou complementado",
+            "Nada: ADR só vale para o momento em que foi escrito"
+          ],
+          "correta": 2,
+          "explicacao": "ADR é um registro histórico: o valor está em mostrar o que se sabia e por que se decidiu na época. Editar ou apagar destrói esse contexto, e a pergunta \"por que isso foi feito assim?\" fica sem resposta para o código que ainda segue a decisão antiga."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual trecho está melhor como seção \"Consequências\" de um ADR que adota um ORM?",
+          "opcoes": [
+            "\"O ORM é moderno, produtivo e amplamente adotado pelo mercado.\"",
+            "\"Ganhamos tipagem das consultas e migrations versionadas. Perdemos controle fino do SQL: consultas pesadas vão exigir SQL puro, e o time precisa aprender a enxergar N+1.\"",
+            "\"Não há consequências negativas relevantes.\"",
+            "\"Todos os desenvolvedores concordaram com a escolha.\""
+          ],
+          "correta": 1,
+          "explicacao": "Consequências listam o que melhora **e** o que piora, em termos que alguém consegue verificar depois. A primeira é propaganda. A terceira quase nunca é verdade, e tira a credibilidade do documento. A última registra um consenso, não uma consequência."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, Postgres ou continua no Oracle para o módulo novo? Decide aí, você é o técnico.\"",
+          "pontos": [
+            "Reconheceu que é decisão cara de desfazer e não decidiu no corredor",
+            "Deu uma inclinação inicial com o critério",
+            "Nomeou os custos de cada lado",
+            "Mostrou como tornar a decisão mais reversível",
+            "Próximo passo com prazo: um ADR com alternativas"
+          ],
+          "modelo": "Essa é das decisões caras de desfazer, então eu não fecho no corredor, mas te dou a inclinação. Se o módulo novo precisa ler e gravar junto com dados que ficam no Oracle, eu começaria no Oracle: uma transação só, sem sincronizar dois bancos. Se os dados são dele e isolados, Postgres reduz licença e dependência, ao custo de o time operar dois bancos por um bom tempo. Nos dois casos eu poria o acesso atrás de uma interface, para a escolha poder ser revista. Em dois dias eu trago um registro de decisão de uma página com as três opções, o custo de cada uma e a minha recomendação, e a gente decide com a equipe."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "O primeiro ADR do Cockpit",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/adr-0001-monolito-modular.md` com as seções Status, Contexto, Decisão, Alternativas consideradas e Consequências.",
+            "Em Contexto, escreva só fatos: um desenvolvedor, um banco, os módulos que existem.",
+            "Em Alternativas, inclua pelo menos duas (por exemplo, serviços separados e um módulo único sem fronteiras) e por que perderam.",
+            "Em Consequências, escreva pelo menos duas negativas.",
+            "Termine com uma frase: \"eu revisitaria esta decisão se...\"."
+          ],
+          "prontoQuando": "O ADR cabe em uma página, tem ao menos duas alternativas rejeitadas com motivo, duas consequências negativas e o gatilho de revisão."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as partes de um ADR?",
+          "verso": "Status, contexto, decisão, alternativas consideradas e consequências (boas e ruins)."
+        },
+        {
+          "frente": "Por que um ADR não é editado quando a decisão muda?",
+          "verso": "Ele é registro histórico do que se sabia e por que se decidiu. Uma decisão nova ganha um ADR novo que substitui o antigo."
+        },
+        {
+          "frente": "Que pergunta separa a decisão que merece ADR da que não merece?",
+          "verso": "Quanto custa voltar atrás? Cara de desfazer: decidir devagar e registrar. Barata: decidir rápido e seguir."
+        },
+        {
+          "frente": "Qual a ordem para apresentar um trade-off a quem decide?",
+          "verso": "A decisão e o prazo, duas ou três opções (com \"não fazer nada\"), o critério, o custo de cada uma, a recomendação e o que faria mudar de ideia."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Architectural Decision Records (adr.github.io)",
+          "url": "https://adr.github.io/"
+        },
+        {
+          "titulo": "Martin Fowler — Architecture Decision Record",
+          "url": "https://martinfowler.com/bliki/ArchitectureDecisionRecord.html"
+        }
+      ]
+    }
+  ]
+}

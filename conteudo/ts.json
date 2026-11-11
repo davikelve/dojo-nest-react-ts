@@ -1,0 +1,1280 @@
+{
+  "licoes": [
+    {
+      "id": "ts-01",
+      "titulo": "Tipos básicos e inferência: o compilador como revisor",
+      "minutos": 8,
+      "ponte": "No PL/SQL você declara o tipo de tudo (`v_total NUMBER;`) e o banco recusa a package que não fecha. O TypeScript faz a mesma conferência antes de rodar, mas quase nunca pede que você escreva o tipo: ele **infere** a partir do valor, como um `%TYPE` automático. Onde a analogia quebra: no banco o tipo continua valendo em execução (a coluna `NUMBER` recusa texto de qualquer origem). No TypeScript o tipo só existe durante a compilação e é apagado depois.",
+      "texto": "TypeScript é JavaScript com uma camada a mais: anotações de tipo que um programa, o **compilador** (`tsc`, e o mesmo motor dentro do editor), confere antes de o código rodar. Pense nele como um revisor que lê cada linha e pergunta \"esse valor cabe aqui?\". Ele não muda o que o programa faz. Só aponta o que não fecha.\n\n### Inferência: o tipo sai do valor\n\n```ts\nlet quantidade = 3;        // number\nconst titulo = 'Estudar';  // o literal 'Estudar'\nconst feita = false;       // o literal false\nconst tags = ['ts', 'nest']; // string[]\n```\n\nVocê não escreveu nenhum tipo e todos estão definidos. Com `let` o compilador guarda o tipo geral (`number`), porque o valor pode mudar. Com `const` ele guarda o **tipo literal** (o próprio valor), porque não muda. Essa diferença volta em ts-11.\n\n### Os tipos do dia a dia\n\n| Tipo | Observação |\n|---|---|\n| `string`, `boolean` | sempre em minúsculas (`String` com maiúscula é outra coisa, não use) |\n| `number` | um só para inteiro e decimal, como o `NUMBER` |\n| `null` e `undefined` | dois \"vazios\" diferentes: `null` é posto de propósito, `undefined` é o que nunca foi preenchido |\n| `string[]` | lista de textos (também escrito `Array<string>`) |\n| `{ id: number; titulo: string }` | o formato de um objeto |\n\nCampo opcional leva `?`:\n\n```ts\ntype Tarefa = { id: number; titulo: string; prazo?: string };\n```\n\n`prazo?: string` quer dizer \"pode não existir\". Ao ler, o tipo é `string | undefined`, e o compilador obriga você a tratar o caso vazio antes de usar. É o `NVL` que deixa de ser opcional.\n\n### Onde anotar\n\nA regra de quem escreve TypeScript há anos: **anote as fronteiras, deixe o miolo para a inferência**.\n\n- **Parâmetros de função:** sempre. O compilador não tem de onde inferir.\n- **Retorno de função exportada:** vale a pena. Vira contrato: se alguém mexer no corpo e mudar o que sai, o erro aparece na própria função, não em quem chama.\n- **Variável local com valor inicial:** não anote. `const total: number = 0` repete o que o compilador já sabe e é ruído no review.\n- **Variável que nasce vazia:** anote. `const tags: string[] = []` e `let atual: Tarefa | undefined`.\n\nO custo de anotar demais é manutenção: cada tipo escrito à mão é mais um lugar para ficar desatualizado. O custo de anotar de menos aparece nas fronteiras, onde o erro passa a ser reportado longe da causa.\n\n### A armadilha clássica\n\nAchar que o tipo protege em execução. O compilador confere o **seu código**. O que chega de fora (corpo de requisição, linha do banco, arquivo) entra com o tipo que você declarou, verdadeiro ou não. Esse é o assunto de ts-09. Por enquanto guarde: tipo é revisão de código, não é constraint.",
+      "naPratica": "No Cockpit, passe o mouse sobre qualquer variável no editor: o tipo que aparece é o inferido. No review, tipo anotado em variável local é sinal de quem ainda não confia na inferência. Parâmetro sem tipo é erro de compilação no modo `strict`.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "O tipo de `total` não foi escrito em lugar nenhum. Compila?",
+          "codigo": "let total = 0;\ntotal = total + 10;\ntotal = 'dez';\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 3,
+          "explicacao": "Não compila: `TS2322` na linha 3. Na linha 1 o compilador inferiu `number` a partir do valor `0`, e esse tipo vale para a vida toda da variável. Em JavaScript puro a linha 3 passaria e o erro apareceria longe dali."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`prazo` é opcional. Compila? Se não, em que linha quebra?",
+          "codigo": "type Tarefa = { id: number; titulo: string; prazo?: string };\n\nconst t: Tarefa = { id: 1, titulo: 'Revisar PR' };\nconst tamanho = t.prazo.length;\n",
+          "compila": false,
+          "erro": "TS18048",
+          "linha": 4,
+          "explicacao": "A linha 3 está certa: campo opcional pode faltar. A linha 4 não compila (`TS18048`: `t.prazo` pode ser `undefined`). O compilador exige o tratamento do vazio: `t.prazo?.length`, ou um `if (t.prazo)` antes."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Os tipos somem antes de rodar. O que o `typeof` do JavaScript enxerga em execução?",
+          "codigo": "let quantidade = 3;\nconst nome = 'Ana';\nconst tags: string[] = [];\nconst tarefa = { id: 1, feita: false };\n\nconsole.log(typeof quantidade, typeof nome);\nconsole.log(typeof tags, Array.isArray(tags));\nconsole.log(typeof tarefa, typeof tarefa.feita);\nconsole.log(typeof undefined, typeof null);\n",
+          "saida": "number string\nobject true\nobject boolean\nundefined object\n",
+          "explicacao": "Em execução só existem os tipos do JavaScript. Array é `object` (por isso existe `Array.isArray`), e `typeof null` também devolve `object`, um defeito histórico da linguagem que você vai reencontrar em ts-03. O `string[]` da linha 3 não deixou rastro nenhum."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Só os parâmetros de `soma` e a variável `total` têm tipo escrito. O resto compila?",
+          "codigo": "function soma(a: number, b: number) {\n  return a + b;\n}\nconst itens = [1, 2, 3];\nconst dobrados = itens.map((n) => n * 2);\nconst total: number = soma(dobrados.length, 1);\n",
+          "compila": true,
+          "explicacao": "Compila. O retorno de `soma` é inferido (`number`), `itens` é `number[]`, e o `n` dentro do `map` ganha tipo pelo contexto: o compilador sabe que o `map` de um `number[]` entrega `number`. A anotação em `total` é a única dispensável do trecho."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas anotações de tipo mais agrega num review?",
+          "opcoes": [
+            "`const limite: number = 10;`",
+            "`const nome: string = usuario.nome;`",
+            "`export function calculaPrazo(tarefa: Tarefa): Date { ... }`",
+            "`const ativos: Tarefa[] = tarefas.filter((t) => !t.feita);`"
+          ],
+          "correta": 2,
+          "explicacao": "Parâmetro precisa de tipo porque não há de onde inferir, e o retorno anotado de uma função exportada é contrato: se o corpo mudar o que devolve, o erro aparece ali. Nas outras três o compilador já infere exatamente o que foi escrito, e a anotação só repete."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Onde vale anotar tipo em TypeScript e onde não vale?",
+          "verso": "Vale nas fronteiras: parâmetros (sempre), retorno de função exportada, variável que nasce vazia. Não vale em variável local com valor inicial: o compilador infere."
+        },
+        {
+          "frente": "`let s = 'a'` e `const s = 'a'`: que tipo o compilador infere em cada um?",
+          "verso": "`let`: `string` (pode mudar). `const`: o tipo literal `'a'` (não muda)."
+        },
+        {
+          "frente": "O que `prazo?: string` significa ao ler o campo?",
+          "verso": "O tipo é `string | undefined`. O compilador obriga a tratar o vazio (`?.`, `??` ou `if`) antes de usar."
+        },
+        {
+          "frente": "Por que o tipo do TypeScript não substitui uma constraint do banco?",
+          "verso": "O tipo é conferido só na compilação e depois é apagado. Ele revisa o seu código, não o dado que chega de fora em execução."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Everyday Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — The Basics",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/basic-types.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-02",
+      "titulo": "any, unknown e never",
+      "minutos": 8,
+      "ponte": "`any` é o `EXECUTE IMMEDIATE` com texto montado na hora: o compilador para de olhar e o erro só aparece rodando. `unknown` é o valor lido de um arquivo de carga: você tem o dado na mão, mas confere antes de converter. `never` é o trecho depois de um `RAISE_APPLICATION_ERROR`: nenhum valor chega ali. Onde quebra: o SQL dinâmico fica isolado numa linha, e o `any` **contagia** tudo o que encosta nele.",
+      "texto": "Três tipos especiais marcam os extremos do sistema. Entender os três separa quem usa TypeScript de quem só cala o compilador.\n\n### `any`: o revisor sai da sala\n\nUm valor `any` aceita qualquer operação: ler qualquer campo, chamar como função, atribuir a qualquer outro tipo. O compilador não confere nada.\n\n```ts\nlet dado: any = 'texto';\ndado.naoExiste.tambemNao(); // compila. Explode em execução.\nconst n: number = dado;     // compila. Agora `n` mente.\n```\n\nO problema maior está na última linha: o `any` se espalha. Tudo o que recebe um `any` perde a garantia sem aviso. Ele entra no projeto por três portas: escrito à mão, vindo de biblioteca (`JSON.parse` devolve `any`) e por parâmetro sem tipo quando o projeto não é `strict`.\n\n### `unknown`: prove antes de usar\n\n`unknown` também aceita qualquer valor na entrada. A diferença está na saída: **o compilador não deixa fazer nada com ele até você estreitar o tipo**. Dizer que `unknown` é \"tipo desconhecido\" conta só metade. A metade que importa: ele **obriga** quem vai usar a provar o que tem na mão.\n\n```ts\nfunction tamanho(valor: unknown): number {\n  if (typeof valor === 'string') return valor.length; // aqui é string\n  return 0;\n}\n```\n\nDentro do `if`, o compilador sabe que é `string`. Fora, continua `unknown`. Esse mecanismo é o estreitamento, assunto de ts-03. No modo `strict`, o `e` de um `catch (e)` é `unknown`, porque em JavaScript se pode lançar qualquer coisa, não só `Error`.\n\n### `never`: o tipo sem valores\n\n`never` é o tipo de algo que não acontece. Aparece em dois lugares:\n\n- Função que **nunca devolve**: sempre lança erro ou entra em laço eterno.\n- O que **sobra** depois que você tratou todos os casos de uma união.\n\nO segundo uso é o valioso. Se você tratou todos os casos, o que resta é `never`. Se alguém acrescentar um caso novo e esquecer de tratar, o que resta deixa de ser `never` e a atribuição não compila:\n\n```ts\ntype Status = 'aberta' | 'feita';\nfunction rotulo(s: Status): string {\n  if (s === 'aberta') return 'Aberta';\n  if (s === 'feita') return 'Feita';\n  const resto: never = s; // só compila se não sobrou nada\n  return resto;\n}\n```\n\nÉ a **checagem de exaustividade**: o compilador avisa todos os lugares que precisam mudar quando o domínio cresce. No PL/SQL, um `CASE` sem o `WHEN` novo só reclama em execução (`CASE_NOT_FOUND`) ou cai calado no `ELSE`.\n\n### Critério\n\n- Dado de fora entra como `unknown`, nunca como `any`.\n- `any` é aceitável por pouco tempo, em migração de código legado ou para contornar tipo quebrado de biblioteca, isolado numa função pequena e com comentário dizendo por quê.\n- `any` em código novo num review merece uma pergunta. Quase sempre a resposta certa era `unknown` ou um genérico (ts-06).",
+      "naPratica": "Na API do Cockpit, o corpo da requisição e o resultado de um `JSON.parse` são os pontos onde o `any` entra sem ser digitado. Receba em uma variável `unknown` e valide antes de usar (ts-09).",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`valor` é `any`, então o compilador aceita tudo. O que sai em execução?",
+          "codigo": "function tamanho(valor: any) {\n  return valor.length;\n}\nconsole.log(tamanho('abc'));\nconsole.log(tamanho([1, 2]));\nconsole.log(tamanho(42));\ntry {\n  console.log(tamanho(null));\n} catch (e) {\n  console.log(e instanceof TypeError);\n}\n",
+          "saida": "3\n2\nundefined\ntrue\n",
+          "explicacao": "Texto e array têm `length`. O número 42 não tem: ler campo inexistente devolve `undefined`, sem erro, e esse `undefined` segue viagem pelo sistema. Com `null` não há objeto para ler e o JavaScript lança `TypeError`. O compilador não avisou de nenhum dos dois casos porque `any` desliga a conferência."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A mesma função, agora com `unknown`. Compila?",
+          "codigo": "function tamanho(valor: unknown) {\n  return valor.length;\n}\n",
+          "compila": false,
+          "erro": "TS18046",
+          "linha": 2,
+          "explicacao": "Não compila: `TS18046`, `valor` é do tipo `unknown`. Receber `unknown` é sempre permitido. Usar, só depois de provar o que ele é."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "E esta versão, com duas conferências antes de usar?",
+          "codigo": "function tamanho(valor: unknown): number {\n  if (typeof valor === 'string') return valor.length;\n  if (Array.isArray(valor)) return valor.length;\n  return 0;\n}\n",
+          "compila": true,
+          "explicacao": "Compila. Em cada `if` o compilador estreita `valor` para o tipo provado (`string`, depois array) e libera o `.length`. O caso do 42 e o do `null`, que no exercício com `any` viravam `undefined` e exceção, agora têm resposta definida."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`Status` ganhou o valor `'cancelada'` e ninguém mexeu em `rotulo`. Compila? Em que linha quebra?",
+          "codigo": "type Status = 'aberta' | 'feita' | 'cancelada';\n\nfunction rotulo(s: Status): string {\n  if (s === 'aberta') return 'Aberta';\n  if (s === 'feita') return 'Feita';\n  const resto: never = s;\n  return resto;\n}\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 6,
+          "explicacao": "Não compila: `TS2322` na linha 6. Depois dos dois `if`, sobra `'cancelada'`, e um valor real não cabe em `never`. O erro aparece exatamente na função que esqueceu o caso novo, e a mensagem cita o valor que sobrou."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma função recebe o resultado de `JSON.parse(texto)`. Qual é o melhor tipo para a variável que guarda esse resultado?",
+          "opcoes": [
+            "`any`, porque não dá para saber o formato em tempo de compilação",
+            "`unknown`, porque obriga o código seguinte a conferir o formato antes de usar",
+            "`object`, porque todo JSON é um objeto",
+            "`never`, porque o valor ainda não foi validado"
+          ],
+          "correta": 1,
+          "explicacao": "`unknown` aceita qualquer valor e só libera o uso depois do estreitamento. `any` também aceita tudo, mas desliga a conferência e contagia o resto do código. `object` é falso (JSON pode ser número, texto, `null`). `never` é o tipo sem valores: nada pode ser atribuído a ele."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a diferença prática entre `any` e `unknown`?",
+          "verso": "Os dois aceitam qualquer valor. `any` deixa fazer tudo sem conferência. `unknown` não deixa fazer nada até você estreitar o tipo (`typeof`, `in`, validador)."
+        },
+        {
+          "frente": "Por que o `any` é pior do que parece?",
+          "verso": "Ele contagia: tudo o que recebe um `any` perde a conferência sem aviso. Um `any` na borda apaga garantias no sistema inteiro."
+        },
+        {
+          "frente": "Como fazer o compilador avisar quando uma união ganha um caso novo?",
+          "verso": "Depois de tratar todos os casos, atribua o que sobrou a uma variável `never`. Caso novo não tratado deixa de caber em `never` e a compilação falha."
+        },
+        {
+          "frente": "No modo `strict`, qual é o tipo do `e` em `catch (e)`?",
+          "verso": "`unknown`. Em JavaScript dá para lançar qualquer valor. Use `e instanceof Error` antes de ler `e.message`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Everyday Types (any)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Narrowing (never e exaustividade)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — More on Functions (unknown, never)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/functions.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-03",
+      "titulo": "Uniões e estreitamento (narrowing)",
+      "minutos": 9,
+      "ponte": "Pense num parâmetro que pode vir como código numérico ou como descrição: no PL/SQL você faria duas procedures, ou um `VARCHAR2` com `IF` e `TO_NUMBER` dentro. No TypeScript isso é uma **união** (`string | number`), e a cada `if` o compilador acompanha qual das possibilidades restou. Onde quebra: o banco converte por baixo dos panos (conversão implícita). O TypeScript não converte nada. Ele só rastreia o que o seu código provou.",
+      "texto": "Uma **união** (*union type*) diz que o valor é de um tipo **ou** de outro: `string | number`, `Tarefa | undefined`. Com uma união na mão, o compilador só permite o que vale para **todos** os membros. Para usar o que é específico de um deles, você precisa do **estreitamento** (*narrowing*): uma conferência no código que elimina possibilidades.\n\n```ts\nfunction formata(id: string | number) {\n  if (typeof id === 'string') {\n    return id.toUpperCase(); // aqui: string\n  }\n  return id.toFixed(0);      // aqui: number, o que sobrou\n}\n```\n\n### Quem estreita\n\nQuem faz isso é o **compilador TypeScript**, por análise de fluxo: ele lê os seus `if`, `return` e `throw` e recalcula o tipo em cada linha. Não é o NestJS, nem o React, nem o Node. Nenhum framework está rodando nesse momento, porque isso acontece antes de o programa existir. Em execução só resta o `typeof` comum do JavaScript, que faz a conferência de verdade. O compilador apenas entende o que essa conferência garante.\n\n### As conferências que ele entende\n\n| Conferência | Serve para | Exemplo |\n|---|---|---|\n| `typeof x === '...'` | primitivos | `typeof id === 'string'` |\n| veracidade (*truthiness*) | tirar `null` e `undefined` | `if (tarefa) { ... }` |\n| igualdade | literais, `null`, `undefined` | `if (x === null)`, `if (s === 'feita')` |\n| `'campo' in x` | objetos de formatos diferentes | `if ('permissoes' in pessoa)` |\n| `x instanceof Classe` | instâncias de classe | `if (erro instanceof Error)` |\n| `Array.isArray(x)` | arrays | `if (Array.isArray(v))` |\n\nRetorno antecipado também estreita: depois de `if (!tarefa) return;`, a variável é `Tarefa` até o fim da função.\n\n### *Type predicate*: a conferência com nome\n\nQuando a conferência é grande, ela vai para uma função. Para o compilador aproveitar o resultado, o retorno é declarado como *type predicate* (predicado de tipo):\n\n```ts\nfunction ehTexto(v: unknown): v is string {\n  return typeof v === 'string';\n}\n```\n\n`v is string` quer dizer: \"se eu devolver `true`, trate `v` como `string`\". O ponto de atenção: **o compilador confia na sua palavra**. Ele não confere se o corpo da função prova de fato o que o retorno promete. Um predicado que confere de menos é uma mentira com assinatura.\n\n### Duas armadilhas\n\n- **Veracidade descarta mais do que o vazio.** `if (valor)` é falso para `null` e `undefined`, e também para `0`, `''` e `NaN`. Para número e texto, compare com `!== null` e `!== undefined`, ou use `??` em vez de `||`.\n- **`typeof null` é `'object'`.** A conferência `typeof v === 'object'` deixa o `null` passar. O compilador sabe disso e mantém `null` na união dentro do `if`.\n\n### Critério\n\nPrefira a conferência mais simples que resolve. `typeof` e igualdade são verificadas pelo compilador linha a linha. *Type predicate* é poderoso, mas é o único da lista em que a responsabilidade pela verdade é toda sua. Reserve para a borda do sistema (ts-09) e cubra com teste.",
+      "naPratica": "No Cockpit, buscar uma tarefa por id devolve `Tarefa | null`. O `if (!tarefa) throw new NotFoundException()` no começo do service é estreitamento por retorno antecipado: dali para baixo o compilador sabe que a tarefa existe, sem nenhum `!` ou `as`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Estreitamento por veracidade com `number | null`. O que sai nas três chamadas?",
+          "codigo": "function mostra(valor: number | null) {\n  if (valor) {\n    console.log('tem', valor);\n  } else {\n    console.log('vazio', valor);\n  }\n}\nmostra(5);\nmostra(null);\nmostra(0);\n",
+          "saida": "tem 5\nvazio null\nvazio 0\n",
+          "explicacao": "`if (valor)` é falso para `null` e também para `0`. A terceira chamada cai no ramo \"vazio\" com um número legítimo. Para separar só o `null`, a conferência certa é `if (valor !== null)`. O compilador não reclama: no ramo `else` ele mantém o tipo `number | null`, justamente por causa do zero."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`id` pode ser texto ou número. Compila?",
+          "codigo": "function formata(id: string | number) {\n  return id.toUpperCase();\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 2,
+          "explicacao": "Não compila: `TS2339`, `toUpperCase` não existe em `number`. Com uma união, só vale o que existe em todos os membros. Falta estreitar com `typeof id === 'string'` antes."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Dois estreitamentos diferentes na mesma função: `instanceof` e `in`. Compila?",
+          "codigo": "type Usuario = { nome: string };\ntype Admin = { nome: string; permissoes: string[] };\n\nfunction resumo(p: Usuario | Admin, quando: Date | string) {\n  const data = quando instanceof Date ? quando.toISOString() : quando;\n  if ('permissoes' in p) {\n    return `${p.nome} (${p.permissoes.length}) ${data}`;\n  }\n  return `${p.nome} ${data}`;\n}\n",
+          "compila": true,
+          "explicacao": "Compila. `instanceof Date` separa a classe do texto, e no outro lado do ternário `quando` é `string`. `'permissoes' in p` separa os dois formatos de objeto: só `Admin` declara esse campo. `p.nome` não precisa de estreitamento porque existe nos dois."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`typeof v === 'object'` deveria separar a `Date` do texto. Compila?",
+          "codigo": "function texto(v: Date | null | string) {\n  if (typeof v === 'object') {\n    return v.toISOString();\n  }\n  return v;\n}\n",
+          "compila": false,
+          "erro": "TS18047",
+          "linha": 3,
+          "explicacao": "Não compila: `TS18047`, `v` pode ser `null` na linha 3. Em JavaScript `typeof null` é `'object'`, então a conferência tira o `string` e deixa `Date | null`. Corrija com `v instanceof Date` ou acrescente `v !== null`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O predicado `ehTarefa` confere se existe o campo `titulo`. O que sai para as quatro entradas?",
+          "codigo": "type Tarefa = { titulo: string };\n\nfunction ehTarefa(v: unknown): v is Tarefa {\n  return typeof v === 'object' && v !== null && 'titulo' in v;\n}\n\nconst dados: unknown[] = [{ titulo: 'Estudar' }, 'texto', null, { titulo: 42 }];\nfor (const d of dados) {\n  if (ehTarefa(d)) {\n    console.log('tarefa:', typeof d.titulo);\n  } else {\n    console.log('descartado');\n  }\n}\n",
+          "saida": "tarefa: string\ndescartado\ndescartado\ntarefa: number\n",
+          "explicacao": "A última entrada passou com `titulo` numérico. O predicado conferiu que o campo existe, mas não o tipo dele, e o compilador acreditou no `v is Tarefa`. Dentro do `if`, o editor mostra `d.titulo` como `string` enquanto o valor real é `number`. Faltou `typeof v.titulo === 'string'` no corpo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Dentro de `if (typeof id === 'string') { ... }` o editor passa a mostrar `id` como `string`. Quem faz esse estreitamento?",
+          "opcoes": [
+            "O compilador TypeScript, analisando o fluxo do código antes de o programa rodar",
+            "O NestJS, por meio dos pipes de validação, quando a requisição chega",
+            "O Node, que guarda o tipo de cada variável em execução",
+            "O `typeof`, que converte o valor para `string` dentro do bloco"
+          ],
+          "correta": 0,
+          "explicacao": "Estreitamento é análise estática do compilador TypeScript: acontece no editor e no build, com ou sem framework. Pipes do Nest validam dados em execução, outra etapa (ts-09). O `typeof` em execução só responde uma pergunta. Ele não converte nada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quem estreita o tipo dentro de um `if (typeof x === 'string')`?",
+          "verso": "O compilador TypeScript, por análise de fluxo, antes de rodar. Nenhum framework participa. Em execução só existe o `typeof` do JavaScript."
+        },
+        {
+          "frente": "Por que `if (valor)` é perigoso para estreitar `number | null`?",
+          "verso": "Ele também é falso para `0` (e para `''` e `NaN`). Use `valor !== null`, ou `??` no lugar de `||`."
+        },
+        {
+          "frente": "O que `v is Tarefa` no retorno de uma função promete, e quem confere?",
+          "verso": "Promete que, se devolver `true`, `v` é `Tarefa`. Ninguém confere o corpo: o compilador confia. Predicado incompleto vira tipo mentiroso."
+        },
+        {
+          "frente": "`typeof v === 'object'` elimina o `null`?",
+          "verso": "Não. `typeof null` é `'object'`. Acrescente `v !== null`."
+        },
+        {
+          "frente": "Cite 4 formas de estreitar uma união.",
+          "verso": "`typeof`, igualdade (`=== null`, `=== 'feita'`), `'campo' in obj`, `instanceof`, `Array.isArray`, retorno antecipado, *type predicate*."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Narrowing",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html"
+        },
+        {
+          "titulo": "MDN — typeof",
+          "url": "https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Reference/Operators/typeof"
+        }
+      ]
+    },
+    {
+      "id": "ts-04",
+      "titulo": "Uniões discriminadas: o CASE tipado",
+      "minutos": 9,
+      "ponte": "É a tabela com uma coluna `TIPO` ('F' ou 'J') e colunas que só fazem sentido para um dos tipos, lida com `CASE tipo WHEN`. No banco, nada impede ler o CNPJ numa linha de pessoa física (vem `NULL`), e um `WHEN` esquecido só aparece em execução. Na união discriminada o compilador só libera o campo dentro do ramo certo e acusa o caso esquecido antes de rodar. Onde quebra: a garantia vale para o código compilado. A linha que vem do banco continua precisando de validação.",
+      "texto": "Uma **união discriminada** (*discriminated union*) é uma união de formatos de objeto em que todos têm um campo em comum com valor **literal** diferente em cada um. Esse campo é o **discriminante**. É a `TIPO` da tabela, com uma diferença: cada valor de `TIPO` traz junto a sua própria lista de campos.\n\n```ts\ntype Pagamento =\n  | { tipo: 'pix'; chave: string }\n  | { tipo: 'boleto'; linhaDigitavel: string; vencimento: string }\n  | { tipo: 'cartao'; ultimosDigitos: string; parcelas: number };\n```\n\nAo conferir o discriminante, o compilador estreita o objeto inteiro (o mecanismo de ts-03):\n\n```ts\nfunction descreve(p: Pagamento): string {\n  switch (p.tipo) {\n    case 'pix':\n      return `Pix para ${p.chave}`;\n    case 'boleto':\n      return `Boleto até ${p.vencimento}`;\n    case 'cartao':\n      return `Cartão final ${p.ultimosDigitos} em ${p.parcelas}x`;\n    default:\n      return nuncaChega(p);\n  }\n}\n\nfunction nuncaChega(valor: never): never {\n  throw new Error(`Caso não tratado: ${JSON.stringify(valor)}`);\n}\n```\n\nDentro de `case 'pix'`, `p.chave` existe e `p.parcelas` não. Fora do `switch`, nenhum dos dois pode ser lido.\n\n### O `never` no `default`\n\nO `default` é a checagem de exaustividade de ts-02 em forma de função. Se todos os casos foram tratados, o que chega ao `default` é `never`, e a chamada compila. No dia em que alguém acrescentar `{ tipo: 'dinheiro' }` à união, **todo `switch` que esqueceu o caso novo para de compilar**. O compilador entrega a lista de lugares a alterar. E se um valor inesperado chegar em execução (dado antigo no banco, API de terceiro), a função lança um erro com o valor na mensagem, em vez de seguir calada.\n\n### Estados impossíveis deixam de existir\n\nO uso mais valioso está em modelar estado. Compare:\n\n```ts\n// antes: três campos soltos\ntype Busca = { carregando: boolean; erro?: string; dados?: Tarefa[] };\n\n// depois: um estado por vez\ntype Busca =\n  | { estado: 'carregando' }\n  | { estado: 'erro'; mensagem: string }\n  | { estado: 'pronto'; dados: Tarefa[] };\n```\n\nO primeiro formato aceita `carregando: true` junto com `erro` preenchido e `dados` também. São oito combinações, e só três fazem sentido. O segundo formato só consegue representar as três. Código que não precisa defender combinação impossível fica menor e tem menos `if`.\n\nO mesmo desenho serve para resultado de operação: `{ ok: true; valor: T } | { ok: false; erro: string }`.\n\n### Armadilhas e critério\n\n- O discriminante precisa ser **literal** (`'pix'`), não `string`. Um objeto montado solto tem o campo inferido como `string` e não encaixa na união. A solução está em ts-11 (`as const`) ou em anotar o tipo da variável.\n- Use o mesmo nome de discriminante no projeto inteiro (`tipo`, `kind` ou `status`). Escolha um.\n- Não use quando as variantes têm os mesmos campos. Aí basta uma união de literais num campo comum: `status: 'aberta' | 'feita'`.\n- `if` encadeado funciona igual ao `switch`. O `switch` com `default` de `never` ganha na leitura a partir de três casos.",
+      "naPratica": "No Cockpit, o estado de uma sessão de foco (\"parada\", \"rodando desde tal hora\", \"pausada com tanto tempo restante\") é união discriminada. Modelado com booleanos soltos, cedo ou tarde aparece na tela um cronômetro \"rodando e pausado\" ao mesmo tempo.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "A função lê `chave` sem conferir o `tipo`. Compila?",
+          "codigo": "type Pagamento =\n  | { tipo: 'pix'; chave: string }\n  | { tipo: 'boleto'; linhaDigitavel: string };\n\nfunction descreve(p: Pagamento) {\n  return p.chave;\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 6,
+          "explicacao": "Não compila: `TS2339` na linha 6. `chave` só existe na variante `pix`, e nada no código provou que `p` é essa variante. Depois de `if (p.tipo === 'pix')`, a leitura é liberada."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A união ganhou o evento `adiada` e o `switch` ficou como estava. Compila? Em que linha quebra?",
+          "codigo": "type Evento =\n  | { tipo: 'criada'; titulo: string }\n  | { tipo: 'concluida'; em: string }\n  | { tipo: 'adiada'; dias: number };\n\nfunction texto(e: Evento): string {\n  switch (e.tipo) {\n    case 'criada':\n      return `Nova: ${e.titulo}`;\n    case 'concluida':\n      return `Feita em ${e.em}`;\n    default: {\n      const falta: never = e;\n      return falta;\n    }\n  }\n}\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 13,
+          "explicacao": "Não compila: `TS2322` na linha 13. O que chega ao `default` é a variante `adiada`, que não cabe em `never`. A mensagem do erro traz o formato esquecido. Acrescente `case 'adiada'` e o `default` volta a receber `never`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Resultado de operação como união discriminada pelo campo `ok`. O que sai?",
+          "codigo": "type Resultado =\n  | { ok: true; valor: number }\n  | { ok: false; erro: string };\n\nfunction divide(a: number, b: number): Resultado {\n  if (b === 0) return { ok: false, erro: 'divisão por zero' };\n  return { ok: true, valor: a / b };\n}\n\nfor (const r of [divide(10, 4), divide(1, 0)]) {\n  if (r.ok) {\n    console.log('valor', r.valor);\n  } else {\n    console.log('erro', r.erro);\n  }\n}\n",
+          "saida": "valor 2.5\nerro divisão por zero\n",
+          "explicacao": "O discriminante pode ser booleano: `true` e `false` também são literais. No ramo `if (r.ok)` só existe `valor`. No `else` só existe `erro`. Quem chama é obrigado a olhar o `ok` antes de ler qualquer um dos dois, o que uma exceção não obriga."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O objeto `dados` tem exatamente os campos de um círculo. A atribuição da linha 6 compila?",
+          "codigo": "type Forma =\n  | { tipo: 'circulo'; raio: number }\n  | { tipo: 'retangulo'; largura: number; altura: number };\n\nconst dados = { tipo: 'circulo', raio: 2 };\nconst f: Forma = dados;\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 6,
+          "explicacao": "Não compila: `TS2322` na linha 6. Em `dados`, o campo `tipo` foi inferido como `string`, não como o literal `'circulo'`, porque campo de objeto pode ser alterado depois. `string` não serve de discriminante. Corrija anotando `const dados: Forma = ...` ou usando `as const` (ts-11)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que o `default` com `never` entrega num `switch` sobre uma união discriminada?",
+          "opcoes": [
+            "Desempenho: o compilador elimina os ramos mortos do `switch`",
+            "Validação em execução de que o objeto veio no formato certo",
+            "Um valor padrão seguro para casos que o banco ainda não conhece",
+            "Erro de compilação em todo `switch` que não tratar uma variante nova da união"
+          ],
+          "correta": 3,
+          "explicacao": "É checagem de exaustividade: variante nova não tratada chega ao `default`, não cabe em `never` e a compilação falha naquele ponto. Não valida dado em execução: quem faz isso é a validação da borda (ts-09). O `throw` dentro de `nuncaChega` é só a rede de segurança para o dado que escapou."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que faz de uma união uma união discriminada?",
+          "verso": "Todas as variantes têm um campo comum (o discriminante) com valor literal diferente em cada uma. Conferir esse campo estreita o objeto inteiro."
+        },
+        {
+          "frente": "Por que pôr `never` no `default` do `switch`?",
+          "verso": "Para o compilador acusar todo `switch` que não trata uma variante nova. É a lista automática de lugares a alterar quando o domínio cresce."
+        },
+        {
+          "frente": "Por que `{ carregando: boolean; erro?: string; dados?: T }` é pior que uma união discriminada?",
+          "verso": "Aceita combinações sem sentido (carregando com erro e dados). A união só representa os estados que existem, e o código para de defender os impossíveis."
+        },
+        {
+          "frente": "`const d = { tipo: 'pix', chave: 'x' }` não encaixa em `Pagamento`. Por quê?",
+          "verso": "`tipo` foi inferido como `string`, não como o literal `'pix'`. Anote a variável com o tipo ou use `as const`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Narrowing (discriminated unions)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-05",
+      "titulo": "Tipagem estrutural, type × interface",
+      "minutos": 9,
+      "ponte": "O PL/SQL é **nominal**: dois `TYPE ... IS RECORD` com os mesmos campos, declarados em packages diferentes, não são compatíveis. Vale o nome. O TypeScript é **estrutural**: vale o formato. Lembra o `INSERT ... SELECT`, em que importa as colunas baterem, e não de que tabela vieram. Onde quebra: no `INSERT ... SELECT` coluna sobrando dá erro. No TypeScript, campo sobrando passa (com uma exceção que a lição mostra).",
+      "texto": "Em TypeScript, um valor é compatível com um tipo quando **tem pelo menos os campos que o tipo pede, com tipos compatíveis**. O nome do tipo não entra na conta. É a **tipagem estrutural** (*structural typing*).\n\n```ts\ntype Ponto = { x: number; y: number };\ninterface Coordenada { x: number; y: number }\n\nconst c: Coordenada = { x: 1, y: 2 };\nconst p: Ponto = c; // ok: mesmo formato, nomes diferentes\n```\n\nVale também para classes: uma função que pede `Cliente` aceita qualquer objeto com os campos de `Cliente`, mesmo que nunca tenha passado por `new Cliente()`.\n\n### Campo a mais passa. Menos no literal.\n\nUm objeto com campos extras é aceito onde se pede menos:\n\n```ts\nconst comNome = { x: 3, y: 4, nome: 'origem' };\nconst q: Ponto = comNome; // ok\n```\n\nA exceção: ao escrever um **objeto literal direto** no lugar onde o tipo é esperado, o compilador faz a *excess property check* (checagem de propriedade excedente) e recusa campo desconhecido:\n\n```ts\nconst r: Ponto = { x: 3, y: 4, nome: 'origem' }; // erro\n```\n\nO motivo é prático. Num literal, campo desconhecido quase sempre é erro de digitação (`titlo` em vez de `titulo`), e ninguém mais teria acesso a esse campo. Numa variável que já existia, o campo extra pode ser legítimo.\n\n### Três consequências\n\n- **Apelido não protege.** `type IdCliente = number` e `type IdPedido = number` são o mesmo tipo. Passar um no lugar do outro compila. Apelido documenta. Não separa.\n- **Tipo declarado não garante ausência de campo.** Um objeto do tipo `UsuarioPublico` pode carregar `senhaHash` em execução se veio de uma variável maior. O que sai na resposta da API é o objeto real, não o tipo (ts-08 e ts-09).\n- **Teste fica barato.** Para testar uma função que pede um repositório, basta um objeto com os mesmos métodos. Não é preciso herdar de nada.\n\n### `type` ou `interface`\n\nOs dois descrevem formato de objeto e, nesse uso, são intercambiáveis. As diferenças reais:\n\n| | `type` | `interface` |\n|---|---|---|\n| União, tupla, apelido de primitivo | sim | não |\n| Tipos mapeados e condicionais (ts-12) | sim | não |\n| Estender outro formato | com `&` | com `extends` (erro mais claro em conflito) |\n| Declarar de novo com o mesmo nome | erro | **funde** as declarações |\n\nA fusão (*declaration merging*) é o diferencial da `interface`: permite acrescentar campos a um tipo de biblioteca, como incluir `usuario` no objeto de requisição do Express. No código de aplicação, a mesma fusão é risco: duas declarações com o mesmo nome se juntam sem aviso.\n\n### Critério\n\nEscolha uma convenção e siga. Uma que funciona bem: `type` por padrão no código da aplicação (cobre união, que você vai usar o tempo todo), `interface` para contrato que classes implementam e para estender tipos de biblioteca. Discutir isso em review, além de pedir consistência, é tempo mal gasto.",
+      "naPratica": "No Cockpit, o service devolve o registro do Prisma e o controller declara que responde um DTO menor. Compila, porque o registro tem todos os campos do DTO e mais alguns. E os campos a mais vão para o cliente. Compatibilidade estrutural explica por que o compilador não acusa esse vazamento.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "`Ponto` é `type`, `Coordenada` é `interface`, e `comNome` tem um campo a mais. Compila?",
+          "codigo": "type Ponto = { x: number; y: number };\ninterface Coordenada { x: number; y: number }\n\nconst c: Coordenada = { x: 1, y: 2 };\nconst p: Ponto = c;\n\nconst comNome = { x: 3, y: 4, nome: 'origem' };\nconst q: Ponto = comNome;\n",
+          "compila": true,
+          "explicacao": "Compila. `Coordenada` e `Ponto` têm o mesmo formato, então um serve onde o outro é pedido. `comNome` tem tudo o que `Ponto` exige e um campo extra, o que é permitido para uma variável que já existia."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O mesmo objeto com `nome`, agora escrito direto na atribuição. Compila?",
+          "codigo": "type Ponto = { x: number; y: number };\nconst q: Ponto = { x: 3, y: 4, nome: 'origem' };\n",
+          "compila": false,
+          "erro": "TS2353",
+          "linha": 2,
+          "explicacao": "Não compila: `TS2353`, o literal só pode ter propriedades conhecidas. É a checagem de propriedade excedente, que só vale para objeto literal escrito no lugar. Ela existe para pegar erro de digitação em nome de campo."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`saudacao` pede um `Cliente` e recebe um `Fornecedor`. O compilador aceita, porque o formato é igual. O que sai em execução?",
+          "codigo": "class Cliente {\n  nome = 'Ana';\n}\nclass Fornecedor {\n  nome = 'Beta Ltda';\n}\nfunction saudacao(c: Cliente) {\n  return `Olá, ${c.nome}`;\n}\nconst f = new Fornecedor();\nconsole.log(saudacao(f));\nconsole.log(f instanceof Cliente);\nconsole.log(saudacao({ nome: 'literal' }));\n",
+          "saida": "Olá, Beta Ltda\nfalse\nOlá, literal\n",
+          "explicacao": "Para o compilador, `Cliente` é \"qualquer coisa com `nome: string`\". Um `Fornecedor` serve, e um objeto literal também. O `instanceof` é do JavaScript e olha a classe de verdade, por isso responde `false`. Tipo e classe em execução são coisas diferentes."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`buscaPedido` pede um `IdPedido` e recebe um `IdCliente`. O compilador pega a troca?",
+          "codigo": "type IdCliente = number;\ntype IdPedido = number;\n\nfunction buscaPedido(id: IdPedido) {\n  return `pedido ${id}`;\n}\nconst cliente: IdCliente = 7;\nbuscaPedido(cliente);\n",
+          "compila": true,
+          "explicacao": "Compila, e é a armadilha. Os dois apelidos são `number`, e para a tipagem estrutural são o mesmo tipo. Apelido de primitivo melhora a leitura e não impede a troca. Quem precisa impedir usa objetos distintos ou a técnica de *branded types*, que só compensa em domínio onde a troca custa caro."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você precisa acrescentar o campo `usuario` ao tipo de requisição de uma biblioteca HTTP, sem alterar a biblioteca. O que permite isso?",
+          "opcoes": [
+            "`type`, porque aceita interseção com `&` no tipo original",
+            "`interface`, porque duas declarações com o mesmo nome se fundem",
+            "Nenhum dos dois: tipo de biblioteca não pode ser alterado",
+            "`type`, porque pode ser declarado de novo com campos adicionais"
+          ],
+          "correta": 1,
+          "explicacao": "A fusão de declarações é exclusiva de `interface`: declarar de novo, no módulo certo, acrescenta campos ao tipo existente. Com `type` e `&` você cria um tipo **novo**, e as funções da biblioteca continuam usando o antigo. Declarar um `type` duas vezes é erro de identificador duplicado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que quer dizer \"tipagem estrutural\"?",
+          "verso": "A compatibilidade é decidida pelo formato (campos e tipos), não pelo nome do tipo. Tem os campos pedidos, serve."
+        },
+        {
+          "frente": "Quando o compilador recusa um campo a mais num objeto?",
+          "verso": "Só em objeto literal escrito direto onde o tipo é esperado (*excess property check*). Variável que já existia passa com campos extras."
+        },
+        {
+          "frente": "Por que `type IdCliente = number` não impede passar um id de pedido?",
+          "verso": "Apelido não cria tipo novo. Os dois são `number`, e estruturalmente são o mesmo tipo."
+        },
+        {
+          "frente": "Qual a diferença que decide entre `type` e `interface`?",
+          "verso": "`type` faz união, tupla e tipos mapeados. `interface` funde declarações de mesmo nome (útil para estender tipo de biblioteca). Para formato de objeto, tanto faz: siga a convenção do projeto."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Type Compatibility",
+          "url": "https://www.typescriptlang.org/docs/handbook/type-compatibility.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Object Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/objects.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Everyday Types (type × interface)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-06",
+      "titulo": "Funções e genéricos: o tipo como parâmetro",
+      "minutos": 9,
+      "ponte": "Com `v_nome clientes.nome%TYPE` você diz \"o mesmo tipo daquela coluna\" sem repetir o tipo. Um **genérico** diz \"o mesmo tipo que entrou\": a função recebe uma lista de alguma coisa e devolve um elemento dessa mesma coisa. Onde quebra: o `%TYPE` fica amarrado a um objeto fixo do banco. O parâmetro de tipo é escolhido de novo a cada chamada, e quase sempre é o compilador que escolhe por você.",
+      "texto": "### Tipos de função, em três linhas\n\n```ts\nfunction prazo(dias: number, util = true): Date { ... }  // parâmetro com valor padrão\nfunction busca(texto: string, limite?: number) { ... }   // parâmetro opcional\ntype Comparador = (a: Tarefa, b: Tarefa) => number;      // o tipo de uma função\n```\n\nParâmetro sempre tem tipo. O retorno é inferido, e anotar vale em função exportada (ts-01).\n\n### O problema que o genérico resolve\n\nUma função que devolve o primeiro elemento de uma lista. Sem genérico, sobram duas opções ruins:\n\n```ts\nfunction primeiro(lista: any[]): any { return lista[0]; }\n```\n\nFunciona para qualquer lista e **perde o tipo**: entra `Tarefa[]`, sai `any`, e a conferência acaba ali (ts-02). A outra opção é escrever uma função por tipo, como você faria com sobrecarga numa package.\n\n### O tipo como parâmetro\n\n```ts\nfunction primeiro<T>(lista: T[]): T | undefined {\n  return lista[0];\n}\n```\n\n`<T>` declara um **parâmetro de tipo**: uma variável que guarda um tipo em vez de um valor. Leia a assinatura como \"para qualquer tipo `T`, recebo uma lista de `T` e devolvo um `T` ou nada\". A função continua uma só. O que muda a cada chamada é o valor de `T`.\n\n### Inferência do argumento de tipo\n\nVocê quase nunca informa o `T`. O compilador deduz a partir dos argumentos:\n\n```ts\nconst n = primeiro([10, 20]);        // T = number\nconst t = primeiro(tarefas);         // T = Tarefa\n```\n\nÉ o mesmo mecanismo de inferência de ts-01, um nível acima: do valor para o tipo, do tipo para o parâmetro de tipo.\n\n### Você já usa genéricos\n\n`Array<T>`, `Promise<T>`, `Map<K, V>` e `Set<T>` são tipos genéricos da linguagem. `Promise<Tarefa[]>` é \"uma promessa que, quando cumprida, entrega uma lista de tarefas\". Seus próprios tipos também podem receber parâmetro:\n\n```ts\ntype Pagina<T> = { itens: T[]; total: number; pagina: number };\n```\n\nUm formato de paginação para a API inteira, em vez de `PaginaDeTarefas`, `PaginaDeProjetos` e assim por diante.\n\n### Critério: quando NÃO usar\n\n- **O parâmetro de tipo precisa ligar duas coisas**: uma entrada a uma saída, ou duas entradas entre si. Se `T` aparece uma única vez na assinatura, ele não está fazendo nada. `function loga<T>(v: T): void` é igual a `function loga(v: unknown): void`.\n- **Genérico informado à mão para dado de fora é conversão disfarçada.** Em `buscar<Tarefa>('/tarefas')` o `T` não aparece em nenhum argumento: o compilador aceita o que você disser, e ninguém conferiu a resposta. Tem o mesmo valor de prova que um `as Tarefa` (ts-09 e ts-14).\n- Comece concreto. Extraia o genérico quando o segundo uso aparecer. Função genérica escrita \"para o futuro\" costuma ter a forma errada.",
+      "naPratica": "No Cockpit, a resposta paginada da API e o retorno de `useQuery` no front são genéricos: o tipo da tarefa entra uma vez e atravessa service, controller e tela. Quando o tipo se perde no meio do caminho, procure o `any` que quebrou a corrente.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "`primeiro` devolve `T | undefined`. As duas chamadas compilam?",
+          "codigo": "function primeiro<T>(lista: T[]): T | undefined {\n  return lista[0];\n}\nconst n = primeiro([10, 20, 30]);\nconst s: string = primeiro(['a', 'b']);\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 5,
+          "explicacao": "A linha 4 compila: `n` é `number | undefined`. A linha 5 não (`TS2322`): o `T` foi inferido como `string`, mas a função avisa que a lista pode estar vazia, e `undefined` não cabe em `string`. O genérico carregou o tipo do elemento e também a honestidade sobre o vazio."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Dois parâmetros de tipo. O que sai?",
+          "codigo": "function par<A, B>(a: A, b: B): [A, B] {\n  return [a, b];\n}\nfunction inverte<A, B>(p: [A, B]): [B, A] {\n  return [p[1], p[0]];\n}\nconst p = par('id', 7);\nconst i = inverte(p);\nconsole.log(p, i);\nconsole.log(typeof i[0], typeof i[1]);\n",
+          "saida": "[ 'id', 7 ] [ 7, 'id' ]\nnumber string\n",
+          "explicacao": "`par('id', 7)` infere `A = string` e `B = number` e devolve a tupla `[string, number]`. `inverte` recebe essa tupla e devolve `[number, string]`: o compilador sabe a posição de cada tipo depois da troca. Em execução não há nada de genérico: são só dois arrays."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`igual` exige que os dois argumentos sejam do mesmo `T`. Qual chamada não compila?",
+          "codigo": "function igual<T>(a: T, b: T): boolean {\n  return a === b;\n}\nigual(1, 2);\nigual('a', 'b');\nigual(1, 'um');\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 6,
+          "explicacao": "A linha 6 (`TS2345`). O compilador fixa `T = number` pelo primeiro argumento e o segundo não encaixa. Aqui o genérico liga duas entradas entre si. Com `a: unknown, b: unknown` as três chamadas compilariam e a comparação sem sentido passaria."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Um tipo genérico (`Pagina<T>`) e uma função genérica que o devolve. Compila?",
+          "codigo": "type Pagina<T> = { itens: T[]; total: number };\n\nfunction paginar<T>(todos: T[], tamanho: number): Pagina<T> {\n  return { itens: todos.slice(0, tamanho), total: todos.length };\n}\n\nconst pagina = paginar([{ titulo: 'Estudar' }, { titulo: 'Revisar' }], 1);\nconst titulo: string | undefined = pagina.itens[0]?.titulo;\n",
+          "compila": true,
+          "explicacao": "Compila. `T` foi inferido como `{ titulo: string }` a partir do array, e `pagina.itens` é uma lista desse formato. Na última linha, `itens[0]` pode não existir (o projeto liga `noUncheckedIndexedAccess`, assunto de ts-10), por isso o `?.` e o `| undefined`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No front, alguém escreveu `const tarefas = await buscar<Tarefa[]>('/tarefas')`, em que `buscar<T>(url: string): Promise<T>` faz o `fetch` e devolve o JSON. O que esse `<Tarefa[]>` garante?",
+          "opcoes": [
+            "Que a resposta é validada contra o tipo `Tarefa[]` antes de ser devolvida",
+            "Que o compilador confere o tipo com o contrato da API em tempo de build",
+            "Nada em execução: é uma afirmação do programador, com o mesmo valor de um `as Tarefa[]`",
+            "Que a função lança erro se a resposta não for um array"
+          ],
+          "correta": 2,
+          "explicacao": "`T` não aparece em nenhum argumento, então o compilador não tem do que inferir nem contra o que conferir: aceita o que for informado. A resposta da rede chega como vier. Garantia de formato só existe com validação em execução (ts-09) ou com cliente gerado a partir do contrato da API."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é o `<T>` em `function primeiro<T>(lista: T[]): T | undefined`?",
+          "verso": "Um parâmetro de tipo: uma variável que guarda um tipo. A cada chamada o compilador escolhe o valor dele a partir dos argumentos."
+        },
+        {
+          "frente": "Por que `primeiro(lista: any[]): any` é pior que a versão genérica?",
+          "verso": "Ela perde o tipo: entra `Tarefa[]`, sai `any`, e o `any` desliga a conferência dali em diante. O genérico leva o tipo da entrada até a saída."
+        },
+        {
+          "frente": "Qual o teste rápido para saber se um genérico é necessário?",
+          "verso": "O parâmetro de tipo precisa aparecer pelo menos duas vezes, ligando entrada a saída ou duas entradas. Se aparece uma vez só, `unknown` resolve."
+        },
+        {
+          "frente": "`buscar<Tarefa>(url)` valida a resposta?",
+          "verso": "Não. Genérico informado à mão para dado de fora é uma afirmação sem prova, igual a `as Tarefa`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Generics",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/generics.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — More on Functions",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/functions.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-07",
+      "titulo": "Genéricos com restrição (extends) e keyof",
+      "minutos": 9,
+      "ponte": "`T extends ...` é a constraint do parâmetro de tipo: como um `CHECK`, limita o que pode entrar. `keyof Tarefa` é a lista de colunas que você consultaria em `USER_TAB_COLUMNS`, e `Tarefa['titulo']` é o `tarefas.titulo%TYPE`. Onde quebra: o dicionário de dados é consultado em execução. `keyof` só existe para o compilador e some no build.",
+      "texto": "O genérico de ts-06 aceita **qualquer** tipo. Por isso, dentro da função, não se pode fazer quase nada com um `T`: o compilador não sabe se ele tem `id`, `length` ou coisa alguma. A **restrição** (*constraint*) resolve.\n\n### `T extends`: o mínimo que o tipo precisa ter\n\n```ts\nfunction porId<T extends { id: number }>(lista: T[], id: number): T | undefined {\n  return lista.find((item) => item.id === id);\n}\n```\n\nLeia `T extends { id: number }` como \"`T` é qualquer tipo que tenha pelo menos um `id` numérico\". Dentro da função, `item.id` está liberado. Para quem chama, o tipo completo é preservado: entra `Tarefa[]`, sai `Tarefa`, com todos os campos. Aqui `extends` não tem relação com herança de classe. Quer dizer \"é compatível com\", no sentido estrutural de ts-05.\n\n### `keyof`: os nomes dos campos como tipo\n\n```ts\ntype Tarefa = { id: number; titulo: string; feita: boolean };\ntype Campo = keyof Tarefa; // 'id' | 'titulo' | 'feita'\n```\n\n`keyof` devolve a união dos nomes de campo. Se `Tarefa` ganhar um campo, `Campo` ganha junto.\n\n### `T[K]`: o tipo de um campo\n\n`Tarefa['titulo']` é `string`. É o **acesso indexado** (*indexed access type*). Com uma união de chaves, devolve a união dos tipos: `Tarefa['id' | 'feita']` é `number | boolean`.\n\n### Juntando os três\n\n```ts\nfunction getProp<T, K extends keyof T>(obj: T, chave: K): T[K] {\n  return obj[chave];\n}\n\nconst titulo = getProp(tarefa, 'titulo'); // string\nconst feita = getProp(tarefa, 'feita');   // boolean\ngetProp(tarefa, 'prazo');                 // erro: 'prazo' não é campo de Tarefa\n```\n\nA assinatura diz: `chave` tem que ser um nome de campo de `T`, e o retorno é o tipo **daquele** campo. O segundo parâmetro de tipo, `K`, é o que permite devolver `string` para `'titulo'` e `boolean` para `'feita'`. Com `chave: keyof T` e sem o `K`, o retorno seria a união de todos os tipos de campo.\n\nÉ esse desenho que está por trás de APIs que recebem nome de campo: ordenar por coluna, escolher colunas, montar formulário. O nome digitado errado vira erro de compilação, e renomear o campo no tipo quebra todos os usos.\n\n### A armadilha do `Object.keys`\n\n`Object.keys(obj)` devolve `string[]`, não `(keyof T)[]`. Não é descuido. Pela tipagem estrutural, o objeto real pode ter mais campos do que o tipo declara, e o compilador não pode prometer que todas as chaves são conhecidas. Por isso `obj[chave]` com chave vinda de `Object.keys` não compila no modo `strict`.\n\n### Critério\n\n- Se a função só **lê** um campo e não devolve o `T`, dispense o genérico: `function temId(x: { id: number })` basta.\n- Mais de dois parâmetros de tipo com restrição pedem um passo atrás. Em código de aplicação, quase sempre existe uma versão mais simples.\n- `getProp` é exemplo didático. No dia a dia você **lê** assinaturas assim em bibliotecas com muito mais frequência do que escreve.",
+      "naPratica": "No Cockpit, a ordenação da lista de tarefas recebe o nome do campo. Tipado como `keyof Tarefa`, um parâmetro `ordenarPor=titlo` escrito errado no código quebra no build, e não vira uma consulta que falha no banco.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "`getProp` aceita qualquer nome de campo que exista no objeto. Qual linha não compila?",
+          "codigo": "function getProp<T, K extends keyof T>(obj: T, chave: K): T[K] {\n  return obj[chave];\n}\nconst tarefa = { id: 1, titulo: 'Estudar', feita: false };\nconst titulo = getProp(tarefa, 'titulo');\nconst prazo = getProp(tarefa, 'prazo');\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 6,
+          "explicacao": "A linha 6 (`TS2345`): `'prazo'` não está em `'id' | 'titulo' | 'feita'`. Na linha 5, `K` é o literal `'titulo'` e o retorno `T[K]` é `string`. Em JavaScript puro, a linha 6 devolveria `undefined` sem avisar."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`pluck` extrai um campo de cada item da lista. O que sai?",
+          "codigo": "function pluck<T, K extends keyof T>(lista: T[], chave: K): T[K][] {\n  return lista.map((item) => item[chave]);\n}\nconst tarefas = [\n  { id: 1, titulo: 'Estudar', feita: true },\n  { id: 2, titulo: 'Revisar', feita: false },\n];\nconsole.log(pluck(tarefas, 'titulo'));\nconsole.log(pluck(tarefas, 'feita'));\nconsole.log(pluck(tarefas, 'id').reduce((a, b) => a + b, 0));\n",
+          "saida": "[ 'Estudar', 'Revisar' ]\n[ true, false ]\n3\n",
+          "explicacao": "A mesma função devolve `string[]`, `boolean[]` e `number[]`, conforme a chave. Na última linha, o `reduce` com soma só compila porque o compilador sabe que `pluck(tarefas, 'id')` é `number[]`. Em execução, `pluck` é um `map` comum."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Uma função genérica que procura o maior `id`. Compila?",
+          "codigo": "function maiorId<T>(lista: T[]): number {\n  let maior = 0;\n  for (const item of lista) {\n    if (item.id > maior) maior = item.id;\n  }\n  return maior;\n}\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 4,
+          "explicacao": "Não compila: `TS2339` na linha 4. `T` sem restrição pode ser qualquer coisa, inclusive `string` ou `number`, e nada garante um `id`. Com `T extends { id: number }` compila. Como a função não devolve `T`, a versão sem genérico também serve: `lista: { id: number }[]`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Percorrer um objeto pelas chaves de `Object.keys`. Compila?",
+          "codigo": "const precos = { cafe: 5, pao: 2 };\nfor (const k of Object.keys(precos)) {\n  console.log(precos[k]);\n}\n",
+          "compila": false,
+          "erro": "TS7053",
+          "linha": 3,
+          "explicacao": "Não compila: `TS7053` na linha 3. `Object.keys` devolve `string[]`, e uma `string` qualquer não serve de índice para um objeto com campos fixos. Use `Object.entries(precos)`, que entrega chave e valor juntos, ou declare o objeto como `Record<string, number>`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`porId` restringe `T` a quem tem `id` e devolve o próprio `T`. A última linha compila?",
+          "codigo": "function porId<T extends { id: number }>(lista: T[], id: number): T | undefined {\n  return lista.find((item) => item.id === id);\n}\nconst achada = porId([{ id: 1, titulo: 'Estudar' }], 1);\nconst titulo = achada?.titulo.toUpperCase();\n",
+          "compila": true,
+          "explicacao": "Compila. A restrição só exige `id`, mas o `T` inferido é o tipo completo do item, com `titulo`. Se o parâmetro fosse `lista: { id: number }[]` sem genérico, o retorno só teria `id` e a última linha falharia. Esse é o caso em que o genérico se justifica."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que `getProp` precisa do segundo parâmetro de tipo `K extends keyof T`, em vez de declarar apenas `chave: keyof T`?",
+          "opcoes": [
+            "Para o retorno `T[K]` ser o tipo do campo pedido, e não a união dos tipos de todos os campos",
+            "Porque `keyof T` não pode ser usado diretamente como tipo de parâmetro",
+            "Para o compilador validar em execução que a chave existe no objeto",
+            "Porque sem `K` a função aceitaria qualquer `string` como chave"
+          ],
+          "correta": 0,
+          "explicacao": "`K` captura a chave **específica** de cada chamada (`'titulo'`), e `T[K]` devolve o tipo exato dela. Com `chave: keyof T`, a função continuaria recusando chave inexistente, mas o retorno `T[keyof T]` seria `number | string | boolean` para qualquer chamada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Como ler `T extends { id: number }`?",
+          "verso": "\"`T` é qualquer tipo que tenha pelo menos um `id` numérico.\" É restrição estrutural, sem relação com herança de classe."
+        },
+        {
+          "frente": "O que são `keyof T` e `T[K]`?",
+          "verso": "`keyof T`: união dos nomes de campo de `T`. `T[K]`: o tipo do campo `K` em `T`."
+        },
+        {
+          "frente": "Por que `Object.keys(obj)` devolve `string[]` e não `(keyof T)[]`?",
+          "verso": "Pela tipagem estrutural, o objeto real pode ter campos além dos que o tipo declara. O compilador não pode prometer que todas as chaves são conhecidas."
+        },
+        {
+          "frente": "Quando a restrição `T extends { id: number }` vale mais que o parâmetro `{ id: number }[]`?",
+          "verso": "Quando a função devolve o `T`. O genérico preserva o tipo completo de quem chamou. Sem ele, o retorno só teria `id`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Generics (constraints)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/generics.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Keyof Type Operator",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/keyof-types.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Indexed Access Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/indexed-access-types.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-08",
+      "titulo": "Tipos utilitários: Pick, Omit, Partial, Record, Readonly",
+      "minutos": 9,
+      "ponte": "São as views do sistema de tipos. `Pick` é a view com algumas colunas, `Omit` é a view que esconde colunas, e `Partial` lembra o `UPDATE` em que só parte das colunas vem no `SET`. Como na view, a tabela é a fonte única e o derivado acompanha. Onde quebra: a view filtra o dado de verdade. `Omit` só muda o que o compilador enxerga, e o campo continua no objeto em execução.",
+      "texto": "Os **tipos utilitários** (*utility types*) já vêm com a linguagem e produzem um tipo novo a partir de outro. A ideia central: **declare o formato uma vez e derive o resto**. Tipo copiado à mão desatualiza, como coluna duplicada sem constraint.\n\n| Utilitário | O que produz |\n|---|---|\n| `Pick<T, 'a' \\| 'b'>` | só os campos listados |\n| `Omit<T, 'a' \\| 'b'>` | tudo menos os campos listados |\n| `Partial<T>` | todos os campos opcionais |\n| `Required<T>` | todos os campos obrigatórios |\n| `Readonly<T>` | todos os campos somente leitura |\n| `Record<K, V>` | objeto com chaves `K` e valores `V` |\n\n### Aplicado a DTOs\n\nDTO (*data transfer object*) é o formato do dado que atravessa a borda da API. Os três clássicos de um cadastro saem de um único tipo:\n\n```ts\ntype Tarefa = {\n  id: number;\n  titulo: string;\n  minutos: number;\n  feita: boolean;\n  criadaEm: string;\n};\n\ntype CreateTarefaDto = Omit<Tarefa, 'id' | 'criadaEm' | 'feita'>;\ntype UpdateTarefaDto = Partial<Omit<Tarefa, 'id' | 'criadaEm'>>;\ntype TarefaResumo = Pick<Tarefa, 'id' | 'titulo'>;\n```\n\nQuem cria não informa o que o servidor gera. Quem altera manda só o que mudou, e é isso o `Partial`. Um campo novo em `Tarefa` aparece nos três sem ninguém lembrar.\n\nNo NestJS com class-validator os DTOs são **classes**, porque os decorators de validação precisam existir em execução (ts-09). Para elas o Nest oferece funções equivalentes (`PartialType`, `PickType`, `OmitType`), que derivam o tipo e também as regras de validação. O raciocínio é o mesmo desta lição. Você verá o uso em nest-04.\n\n### `Record` para mapa exaustivo\n\n```ts\ntype Status = 'aberta' | 'feita' | 'cancelada';\nconst rotulo: Record<Status, string> = {\n  aberta: 'Aberta',\n  feita: 'Feita',\n  cancelada: 'Cancelada',\n};\n```\n\nCom uma união de literais como chave, o compilador exige **todas** as chaves. Um status novo sem rótulo não compila. É a checagem de exaustividade de ts-04 aplicada a uma tabela de consulta. Com `Record<string, V>` não há exigência nenhuma, e ler uma chave que não existe devolve `undefined` (ts-10).\n\n### Armadilhas\n\n- **`Omit` não remove nada em execução.** Um objeto vindo do banco, atribuído a `Omit<Usuario, 'senhaHash'>`, continua com o `senhaHash` dentro, e `JSON.stringify` o envia. Para tirar o campo da resposta é preciso montar um objeto novo, ou configurar a serialização.\n- **`Omit` aceita chave que não existe.** `Omit<Tarefa, 'idd'>` compila e não omite nada. Erro de digitação passa calado. `Pick` não tem esse problema: chave errada é erro.\n- **`Readonly` é raso e só de compilação.** Protege a troca do campo. Não protege o conteúdo de um array ou objeto interno, e não congela nada em execução.\n- **`Partial` não distingue ausente de `undefined`.** No update parcial, decida o que significa `{ prazo: undefined }` em relação a não mandar o campo, e o que significa `null`. Costuma ser: ausente não altera, `null` limpa.\n\n### Critério\n\nDerive quando os tipos **devem mudar juntos**. Quando a entrada da API e a entidade do banco têm motivos diferentes para mudar (a API é contrato público, a tabela é detalhe interno), declarar separado pode ser o desenho certo. Derivar tudo de um tipo só amarra o contrato da API à estrutura da tabela.",
+      "naPratica": "No Cockpit, `UpdateTarefaDto` é o `CreateTarefaDto` com tudo opcional. Ao acrescentar um campo à tarefa, você mexe em um lugar. E ao montar a resposta de usuário, o tipo sem a senha não basta: confira o JSON que sai de fato.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "DTOs derivados de `Tarefa`. Qual das três atribuições não compila?",
+          "codigo": "type Tarefa = { id: number; titulo: string; feita: boolean; criadaEm: string };\ntype CreateTarefaDto = Omit<Tarefa, 'id' | 'criadaEm'>;\ntype UpdateTarefaDto = Partial<CreateTarefaDto>;\n\nconst a: UpdateTarefaDto = { feita: true };\nconst b: UpdateTarefaDto = {};\nconst c: CreateTarefaDto = { titulo: 'Estudar' };\n",
+          "compila": false,
+          "erro": "TS2741",
+          "linha": 7,
+          "explicacao": "A linha 7 (`TS2741`): `CreateTarefaDto` é `{ titulo: string; feita: boolean }` e falta `feita`. As linhas 5 e 6 compilam porque o `Partial` tornou tudo opcional, inclusive o objeto vazio. Um update vazio é válido para o tipo. Se não for válido para o negócio, é a validação que recusa."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Um rótulo por status, com `Record<Status, string>`. Compila?",
+          "codigo": "type Status = 'aberta' | 'feita' | 'cancelada';\nconst rotulos: Record<Status, string> = {\n  aberta: 'Aberta',\n  feita: 'Feita',\n};\n",
+          "compila": false,
+          "erro": "TS2741",
+          "linha": 2,
+          "explicacao": "Não compila: `TS2741`, falta a propriedade `cancelada`. `Record` com união de literais exige todas as chaves. Com `Record<string, string>` compilaria, e `rotulos.cancelada` seria `undefined` na tela."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`UsuarioPublico` omite a senha, e `config` é `Readonly`. O que sai em execução?",
+          "codigo": "type Usuario = { id: number; nome: string; senhaHash: string };\ntype UsuarioPublico = Omit<Usuario, 'senhaHash'>;\n\nconst doBanco: Usuario = { id: 1, nome: 'Ana', senhaHash: 'x9f' };\nconst publico: UsuarioPublico = doBanco;\nconsole.log(JSON.stringify(publico));\n\nconst config: Readonly<{ tags: string[] }> = { tags: ['a'] };\nconfig.tags.push('b');\nconsole.log(config.tags.length);\n",
+          "saida": "{\"id\":1,\"nome\":\"Ana\",\"senhaHash\":\"x9f\"}\n2\n",
+          "explicacao": "A linha 5 compila pela tipagem estrutural (ts-05): `doBanco` tem tudo o que `UsuarioPublico` pede. O objeto é o mesmo, e a senha vai junto no JSON. `Omit` escondeu o campo do compilador, não do cliente. No segundo caso, `Readonly` impede `config.tags = [...]`, mas o array de dentro continua alterável."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Alguém digitou `'idd'` no `Omit`. Compila?",
+          "codigo": "type Tarefa = { id: number; titulo: string };\ntype SemId = Omit<Tarefa, 'idd'>;\nconst t: SemId = { id: 1, titulo: 'Estudar' };\n",
+          "compila": true,
+          "explicacao": "Compila, e é o problema. `Omit` aceita qualquer texto como chave, e omitir o que não existe não é erro. `SemId` ficou igual a `Tarefa`, com o `id` dentro. Com `Pick<Tarefa, 'titlo'>` o compilador reclamaria. Ao renomear um campo, procure os `Omit` à mão."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O endpoint `PATCH /tarefas/:id` recebe `UpdateTarefaDto = Partial<CreateTarefaDto>`. O que esse tipo garante sobre o corpo da requisição?",
+          "opcoes": [
+            "Que pelo menos um campo foi enviado",
+            "Que campos desconhecidos são removidos antes de chegar ao service",
+            "Para o código, que os campos lidos são os de `CreateTarefaDto` e que qualquer um pode faltar. Sobre o que chega pela rede, nada",
+            "Que os campos enviados têm os tipos corretos em execução"
+          ],
+          "correta": 2,
+          "explicacao": "Um tipo descreve o que o seu código pode fazer com o valor. `Partial` aceita o objeto vazio, não remove campo extra e não confere nada em execução: quem faz isso é a validação da borda (ts-09, nest-05)."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Como derivar `CreateDto` e `UpdateDto` de uma entidade `T`?",
+          "verso": "`CreateDto = Omit<T, 'id' | 'criadaEm'>` (sem o que o servidor gera). `UpdateDto = Partial<CreateDto>` (só o que mudou)."
+        },
+        {
+          "frente": "Por que `Omit<Usuario, 'senhaHash'>` não impede a senha de ir na resposta?",
+          "verso": "`Omit` só muda o tipo. O objeto em execução continua com o campo, e a serialização envia o objeto real. É preciso montar um objeto novo."
+        },
+        {
+          "frente": "Para que serve `Record<Status, string>` com `Status` sendo união de literais?",
+          "verso": "Mapa exaustivo: o compilador exige uma entrada para cada valor da união. Status novo sem entrada não compila."
+        },
+        {
+          "frente": "Qual a armadilha de `Omit` que `Pick` não tem?",
+          "verso": "`Omit` aceita chave inexistente (erro de digitação passa calado). `Pick` recusa."
+        },
+        {
+          "frente": "Quando NÃO derivar o DTO da entidade?",
+          "verso": "Quando os dois têm motivos diferentes para mudar: a API é contrato público, a tabela é detalhe interno. Derivar amarra um ao outro."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Utility Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/utility-types.html"
+        },
+        {
+          "titulo": "NestJS — Mapped types",
+          "url": "https://docs.nestjs.com/openapi/mapped-types"
+        }
+      ]
+    },
+    {
+      "id": "ts-09",
+      "titulo": "Os tipos somem na execução: validar a borda (Zod, class-validator)",
+      "minutos": 10,
+      "ponte": "No banco, o tipo da coluna e o `NOT NULL` valem em execução, para qualquer origem: tela, carga, script. No TypeScript o tipo é uma anotação no fonte que o compilador confere e joga fora. A borda da API é como a carga de um arquivo externo: você valida linha a linha antes de gravar na tabela de verdade. Onde quebra: no banco a constraint é a última linha de defesa e sempre existe. Aqui, se você não escrever a validação, ela não existe.",
+      "texto": "Antes de rodar, os tipos são **apagados** (*type erasure*). O que o Node executa é JavaScript sem nenhuma anotação. O próprio Node 24 roda um arquivo `.ts` simplesmente removendo os tipos, sem conferir nada. Consequência direta: **em execução, nada confere se um valor tem o tipo que o código declarou**.\n\nPara o código que você escreveu, isso não é problema: o compilador já conferiu. O problema é o dado que **entra** depois da compilação:\n\n- o corpo, os parâmetros e os cabeçalhos de uma requisição HTTP;\n- o resultado de `JSON.parse`;\n- a resposta de uma API de terceiro;\n- o resultado de SQL puro e de variáveis de ambiente.\n\nPara esses, escrever `as Tarefa` ou `dado: Tarefa` é uma **afirmação**, não uma conferência. O compilador acredita, o editor mostra os campos, e o valor real pode ser qualquer coisa.\n\n### A regra: validar na borda\n\nDado de fora entra como `unknown` (ts-02), passa por uma validação **em execução** e só então ganha tipo. Da borda para dentro, o código confia nos tipos. Valida-se uma vez, na entrada.\n\nÀ mão, a validação é um *type predicate* (ts-03):\n\n```ts\ntype NovaTarefa = { titulo: string; minutos: number };\n\nfunction ehNovaTarefa(v: unknown): v is NovaTarefa {\n  return (\n    typeof v === 'object' && v !== null &&\n    'titulo' in v && typeof v.titulo === 'string' &&\n    'minutos' in v && typeof v.minutos === 'number'\n  );\n}\n```\n\nFunciona e mostra o mecanismo. Não escala: o tipo e a conferência são escritos duas vezes e nada os mantém iguais, e a função só responde sim ou não, sem dizer qual campo falhou. Por isso se usa biblioteca.\n\n### Zod: o esquema é a fonte, o tipo é derivado\n\n```ts\nimport { z } from 'zod';\n\nconst NovaTarefaSchema = z.object({\n  titulo: z.string().min(1),\n  minutos: z.number().int().positive(),\n});\ntype NovaTarefa = z.infer<typeof NovaTarefaSchema>;\n\nconst tarefa = NovaTarefaSchema.parse(corpo); // lança erro detalhado se não bater\n```\n\nO esquema é um objeto que existe em execução. `z.infer` extrai dele o tipo, então os dois não divergem. O esquema também carrega regra que tipo nenhum expressa (texto não vazio, inteiro positivo).\n\n### class-validator: decorators na classe do DTO\n\n```ts\nexport class CreateTarefaDto {\n  @IsString() @IsNotEmpty() titulo: string;\n  @IsInt() @Min(1) minutos: number;\n}\n```\n\nÉ o caminho tradicional do NestJS: o `ValidationPipe` recebe o corpo, monta a classe e executa as regras antes de o controller rodar (nest-05). O DTO é **classe**, e não `type`, justamente porque classe e decorators sobrevivem à compilação.\n\n### Critério\n\n| | Zod | class-validator |\n|---|---|---|\n| Fonte da verdade | o esquema, e o tipo sai dele | a classe, e o tipo e as regras andam juntos por disciplina |\n| Onde brilha | front, formulários, configuração, resposta de API externa | controllers do Nest, com documentação OpenAPI integrada |\n| Custo | adaptar ao pipe do Nest | depende de decorators e de metadados em execução |\n\nA API do Cockpit usa class-validator, o padrão do Nest. No front, Zod é a escolha comum com formulários (react-14). Mais importante do que a biblioteca é a regra: **nenhum dado de fora ganha tipo sem passar por conferência em execução**.",
+      "naPratica": "Quando um campo chega como `\"25\"` em vez de `25` e a soma vira `\"255\"`, o erro quase nunca está na conta: está na borda que aceitou o dado sem validar. Em review, todo `as` aplicado a dado de fora merece a pergunta \"quem conferiu isso?\".",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O corpo chegou com `minutos` entre aspas. O `as Tarefa` resolve? O que sai?",
+          "codigo": "type Tarefa = { titulo: string; minutos: number };\n\nconst corpo = '{\"titulo\":\"Estudar\",\"minutos\":\"25\"}';\nconst t = JSON.parse(corpo) as Tarefa;\n\nconsole.log(typeof t.minutos);\nconsole.log(t.minutos + 5);\nconsole.log(t.minutos * 2);\n",
+          "saida": "string\n255\n50\n",
+          "explicacao": "O `as Tarefa` foi apagado antes de rodar e não converteu nada: `minutos` continua texto. Com `+`, o JavaScript concatena (`\"25\" + 5` vira `\"255\"`). Com `*`, converte para número e dá 50. O compilador tinha certeza de que era `number` nos dois casos. O erro é silencioso e depende da operação."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Agora com validação em execução antes de usar. O que sai para as três entradas?",
+          "codigo": "type Tarefa = { titulo: string; minutos: number };\n\nfunction ehTarefa(v: unknown): v is Tarefa {\n  return (\n    typeof v === 'object' && v !== null &&\n    'titulo' in v && typeof v.titulo === 'string' &&\n    'minutos' in v && typeof v.minutos === 'number'\n  );\n}\n\nconst entradas = ['{\"titulo\":\"Estudar\",\"minutos\":25}', '{\"titulo\":\"Ler\",\"minutos\":\"25\"}', 'null'];\nfor (const texto of entradas) {\n  const dado: unknown = JSON.parse(texto);\n  console.log(ehTarefa(dado) ? `ok ${dado.minutos + 5}` : 'rejeitado');\n}\n",
+          "saida": "ok 30\nrejeitado\nrejeitado\n",
+          "explicacao": "A primeira entrada passa e a soma é numérica. A segunda tem `minutos` como texto e é recusada na borda, antes de virar `\"255\"` lá dentro. A terceira é um JSON válido (`null`) que não é objeto. A conferência é feita pelo `typeof` do JavaScript, em execução. O `v is Tarefa` só conta ao compilador o que ela provou."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O resultado do `JSON.parse` foi guardado como `unknown`. A linha 2 compila?",
+          "codigo": "const dado: unknown = JSON.parse('{\"titulo\":\"Estudar\"}');\nconsole.log(dado.titulo);\n",
+          "compila": false,
+          "erro": "TS18046",
+          "linha": 2,
+          "explicacao": "Não compila: `TS18046`, `dado` é `unknown`. É o comportamento desejado: o compilador obriga a conferir antes de ler. Sem a anotação `: unknown`, `dado` seria `any` (o tipo que `JSON.parse` devolve) e a linha 2 compilaria sem conferência nenhuma."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O validador à mão, sem nenhum `as`. O compilador aceita o corpo do predicado e o uso?",
+          "codigo": "type Tarefa = { titulo: string; minutos: number };\n\nfunction ehTarefa(v: unknown): v is Tarefa {\n  return (\n    typeof v === 'object' && v !== null &&\n    'titulo' in v && typeof v.titulo === 'string' &&\n    'minutos' in v && typeof v.minutos === 'number'\n  );\n}\n\nfunction soma(corpo: unknown): number {\n  if (!ehTarefa(corpo)) throw new Error('corpo inválido');\n  return corpo.minutos + 5;\n}\n",
+          "compila": true,
+          "explicacao": "Compila. Cada conferência estreita um pouco: `typeof ... === 'object'` e `!== null` levam a `object`, e `'titulo' in v` libera a leitura de `v.titulo` (ainda `unknown`, por isso o `typeof` em seguida). Em `soma`, depois do `throw`, `corpo` é `Tarefa` até o fim da função."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um controller declara o parâmetro como `@Body() dto: CreateTarefaDto`, e o projeto **não** tem `ValidationPipe` configurado. O que acontece quando o cliente manda `{\"titulo\": 123}`?",
+          "opcoes": [
+            "O TypeScript recusa a requisição, porque `titulo` foi declarado como `string`",
+            "O Nest devolve 400 automaticamente, com base no tipo do parâmetro",
+            "O valor é convertido para a string `\"123\"` antes de chegar ao controller",
+            "O controller recebe o objeto como veio, com `titulo` numérico, e o código segue acreditando que é `string`"
+          ],
+          "correta": 3,
+          "explicacao": "O tipo do parâmetro foi apagado na compilação e não confere nada em execução. Sem o pipe de validação, o corpo chega como o cliente mandou. Quem recusa com 400 é o `ValidationPipe` executando as regras do class-validator, e ele precisa estar ligado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é *type erasure* e qual a consequência?",
+          "verso": "Os tipos são removidos antes de rodar. Em execução nada confere se um valor tem o tipo declarado, então dado de fora precisa de validação em execução."
+        },
+        {
+          "frente": "Quais são as origens de dado em que o tipo declarado não vale como prova?",
+          "verso": "Requisição HTTP (corpo, parâmetros, cabeçalhos), `JSON.parse`, resposta de API externa, SQL puro, variáveis de ambiente."
+        },
+        {
+          "frente": "Por que no Zod o tipo é derivado com `z.infer` em vez de escrito à mão?",
+          "verso": "Para existir uma fonte só. O esquema valida em execução e o tipo sai dele, então os dois não divergem."
+        },
+        {
+          "frente": "Por que DTO de Nest com class-validator é `class` e não `type`?",
+          "verso": "`type` é apagado na compilação. Classe e decorators existem em execução, e é deles que o `ValidationPipe` lê as regras."
+        },
+        {
+          "frente": "Onde validar: em cada função ou na borda?",
+          "verso": "Uma vez, na borda. Dado de fora entra como `unknown`, é validado e ganha tipo. Dali para dentro, confie nos tipos."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Zod — documentação",
+          "url": "https://zod.dev"
+        },
+        {
+          "titulo": "NestJS — Validation",
+          "url": "https://docs.nestjs.com/techniques/validation"
+        },
+        {
+          "titulo": "Node.js — Running TypeScript natively",
+          "url": "https://nodejs.org/en/learn/typescript/run-natively"
+        }
+      ]
+    },
+    {
+      "id": "ts-10",
+      "titulo": "tsconfig: strict e noUncheckedIndexedAccess",
+      "minutos": 9,
+      "ponte": "É o `PLSQL_WARNINGS = 'ENABLE:ALL'` com os avisos tratados como erro: o compilador sempre soube ver mais, e você decide o rigor. Onde quebra: lá a configuração é por sessão e o código significa a mesma coisa com ou sem ela. Aqui a configuração é do projeto (`tsconfig.json`) e **muda o significado dos tipos**: com `strictNullChecks` desligado, `string` aceita `null`.",
+      "texto": "O `tsconfig.json` diz ao compilador o que conferir e como. A opção que mais muda o dia a dia é `strict`, que liga de uma vez uma família de conferências. Ler TypeScript de um projeto sem `strict` é ler outra linguagem: os mesmos tipos prometem menos.\n\n### O que cada opção do `strict` pega\n\n| Opção | Sem ela | Com ela |\n|---|---|---|\n| `strictNullChecks` | `null` e `undefined` cabem em qualquer tipo | só cabem onde o tipo declara (`string \\| null`), e você trata antes de usar |\n| `noImplicitAny` | parâmetro sem tipo vira `any` calado | parâmetro sem tipo é erro |\n| `useUnknownInCatchVariables` | `catch (e)` tem `e: any` | `e` é `unknown` (ts-02) |\n| `strictPropertyInitialization` | campo de classe pode ficar sem valor | campo declarado precisa receber valor na declaração ou no construtor |\n| `strictFunctionTypes`, `strictBindCallApply`, `noImplicitThis` | conferências frouxas em parâmetros de *callback*, em `call`/`apply` e no `this` | conferências exatas |\n\nAs duas primeiras respondem pela maior parte do valor. `strictNullChecks` é a que transforma \"pode vir vazio\" em informação do tipo: o `NULL` deixa de ser surpresa de execução e passa a ser caso que o compilador cobra. `noImplicitAny` fecha a porta por onde o `any` entra sem ninguém digitar.\n\n### `noUncheckedIndexedAccess`: fora do `strict`, e vale ligar\n\nMesmo com `strict`, o acesso por índice mente:\n\n```ts\nconst nomes = ['Ana', 'Bia'];\nconst terceiro = nomes[2]; // tipo: string. Valor real: undefined\n```\n\nCom `noUncheckedIndexedAccess`, todo acesso por índice a array, e por chave a `Record<string, V>`, passa a ter tipo `V | undefined`. O compilador obriga o tratamento:\n\n```ts\nconst primeiro = nomes[0];           // string | undefined\nprimeiro?.toUpperCase();             // ok\nfor (const n of nomes) { n.length; } // ok: aqui o elemento existe\n```\n\nO custo é real: aparecem `?.`, `??` e conferências em lugares onde você sabe que o elemento existe. Na prática isso empurra o código para formas melhores (`for...of`, `map`, `find`, desestruturação com valor padrão), que não usam índice. Em projeto novo, ligue desde o primeiro dia. Ligar depois custa caro.\n\n### O que confere no Cockpit\n\n- `apps/api/tsconfig.json`: `strict: true` com `strictPropertyInitialization: false`. A exceção tem motivo: DTOs e entidades com decorators declaram campos que o framework preenche, sem construtor. É uma concessão comum em projetos Nest. O preço: um campo de classe esquecido não é acusado.\n- Esse arquivo não liga `noUncheckedIndexedAccess`. Os exercícios deste curso são conferidos com ela ligada, então alguns erros que você vê aqui não aparecem no build da API. Ligar lá é uma decisão a tomar olhando quantos erros surgem.\n- Na versão instalada (TypeScript 6.0), `strict` já vem ligado por padrão quando o `tsconfig` não diz nada. Em versões anteriores o padrão era desligado. Por isso projetos mais antigos declaram a opção, e declarar continua valendo a pena para quem lê.\n\n### Critério\n\n- **Projeto novo:** `strict` e `noUncheckedIndexedAccess` ligados. Não se discute.\n- **Projeto legado sem `strict`:** ligue uma opção por vez, começando por `noImplicitAny` e depois `strictNullChecks`, corrigindo por pasta. Ligar tudo num dia só gera milhares de erros, e alguém acaba calando todos com `any`.\n- **Desligar uma opção** é decisão registrada, com motivo, como a do `strictPropertyInitialization`. \"Estava dando erro\" não é motivo.",
+      "naPratica": "Ao entrar num repositório desconhecido, abra o `tsconfig.json` antes do código. Se `strict` estiver desligado, todo `string` que você ler pode ser `null`, e a ausência de erro no editor vale menos do que você está acostumado.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "Um parâmetro sem tipo. Compila no modo `strict`?",
+          "codigo": "function dobro(n) {\n  return n * 2;\n}\n",
+          "compila": false,
+          "erro": "TS7006",
+          "linha": 1,
+          "explicacao": "Não compila: `TS7006`, o parâmetro `n` tem tipo `any` implícito. É a `noImplicitAny`. Sem ela, a função compilaria e aceitaria `dobro('abc')`, que devolve `NaN` em execução."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O array tem dois elementos, visíveis no código. A linha 3 compila?",
+          "codigo": "const nomes = ['Ana', 'Bia'];\nconst primeiro = nomes[0];\nconsole.log(primeiro.toUpperCase());\n",
+          "compila": false,
+          "erro": "TS18048",
+          "linha": 3,
+          "explicacao": "Não compila: `TS18048`, `primeiro` pode ser `undefined`. É a `noUncheckedIndexedAccess`: o tipo de `nomes` é `string[]`, sem tamanho, e o compilador não acompanha quantos elementos há. Só com `strict`, sem essa opção, a linha passaria."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O que acontece em execução quando o índice ou a chave não existe?",
+          "codigo": "const nomes = ['Ana', 'Bia'];\nconst mapa: Record<string, number> = { ana: 1 };\n\nconsole.log(nomes[5]);\nconsole.log(mapa['bia']);\ntry {\n  console.log(nomes[5].toUpperCase());\n} catch (e) {\n  console.log(e instanceof TypeError);\n}\n",
+          "saida": "undefined\nundefined\ntrue\n",
+          "explicacao": "JavaScript não tem \"índice fora da faixa\" nem `NO_DATA_FOUND`: ler o que não existe devolve `undefined`, calado. O erro só aparece na linha que tenta usar o valor, que pode estar longe da leitura. A `noUncheckedIndexedAccess` traz esse `undefined` para o tipo, e a linha 7 deixa de compilar."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`find` procura um nome pela inicial. A linha 4 compila?",
+          "codigo": "function acha(nomes: string[], inicial: string) {\n  return nomes.find((n) => n.startsWith(inicial));\n}\nconst tamanho: number = acha(['Ana'], 'A').length;\n",
+          "compila": false,
+          "erro": "TS2532",
+          "linha": 4,
+          "explicacao": "Não compila: `TS2532`, o objeto pode ser `undefined`. `find` devolve `string | undefined` porque pode não achar. É a `strictNullChecks` cobrando o caso vazio. Sem ela, `undefined` caberia em `string` e a linha compilaria."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Três jeitos de conviver com a `noUncheckedIndexedAccess`. Compila?",
+          "codigo": "const nomes = ['Ana', 'Bia'];\n\nconst primeiro = nomes[0];\nconst a = primeiro?.toUpperCase() ?? 'vazio';\n\nfor (const n of nomes) {\n  console.log(n.toUpperCase());\n}\n\nconst [x = 'sem nome'] = nomes;\nconsole.log(a, x.length);\n",
+          "compila": true,
+          "explicacao": "Compila. O `?.` com `??` trata o vazio com um valor padrão. No `for...of` cada `n` é `string`, porque o laço só entrega elementos que existem. A desestruturação com valor padrão garante `string` para `x`. Nenhum dos três usa `!` ou `as`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destas conferências **não** é ligada pelo `strict: true`?",
+          "opcoes": [
+            "Recusar `null` onde o tipo declarado é `string`",
+            "Tratar `lista[0]` como possivelmente `undefined`",
+            "Recusar parâmetro de função sem tipo",
+            "Tratar o `e` de `catch (e)` como `unknown`"
+          ],
+          "correta": 1,
+          "explicacao": "O acesso por índice é a `noUncheckedIndexedAccess`, uma opção separada que precisa ser ligada à parte. As outras três fazem parte da família `strict`: `strictNullChecks`, `noImplicitAny` e `useUnknownInCatchVariables`."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `strictNullChecks` muda?",
+          "verso": "`null` e `undefined` deixam de caber em qualquer tipo. Só cabem onde o tipo declara, e o compilador cobra o tratamento antes do uso."
+        },
+        {
+          "frente": "O que `noUncheckedIndexedAccess` faz, e ela está dentro do `strict`?",
+          "verso": "Acesso por índice (`lista[i]`, `mapa[chave]`) passa a ser `T | undefined`. Não está no `strict`: é ligada à parte."
+        },
+        {
+          "frente": "Por que a API do Cockpit desliga `strictPropertyInitialization`?",
+          "verso": "DTOs e classes com decorators declaram campos que o framework preenche, sem construtor. É concessão comum no Nest, com o custo de não acusar campo esquecido."
+        },
+        {
+          "frente": "Por que ligar o `strict` num projeto legado uma opção por vez?",
+          "verso": "Ligar tudo junto gera milhares de erros e a saída vira calar com `any`. Uma opção por vez, por pasta, mantém a correção honesta."
+        },
+        {
+          "frente": "Como evitar o `| undefined` do acesso por índice sem usar `!`?",
+          "verso": "`for...of`, `map`, `find`, desestruturação com valor padrão, ou `?.` com `??`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript — TSConfig Reference (strict)",
+          "url": "https://www.typescriptlang.org/tsconfig/#strict"
+        },
+        {
+          "titulo": "TypeScript — TSConfig Reference (noUncheckedIndexedAccess)",
+          "url": "https://www.typescriptlang.org/tsconfig/#noUncheckedIndexedAccess"
+        }
+      ]
+    },
+    {
+      "id": "ts-11",
+      "titulo": "as const, satisfies e literais; por que evitar enum",
+      "minutos": 9,
+      "ponte": "A união de literais `'aberta' | 'feita'` é o `CHECK (status IN ('A','F'))` do compilador, e um objeto `as const` faz o papel das constantes da spec de uma package (`c_aberta CONSTANT VARCHAR2(1) := 'A'`). Onde quebra: o `CHECK` barra o valor errado em execução, venha de onde vier. A união de literais só barra o que passa pelo compilador. O dado de fora continua precisando da validação de ts-09.",
+      "texto": "### O alargamento\n\nEm ts-01 você viu que `const s = 'aberta'` guarda o literal e `let s = 'aberta'` guarda `string`. Com objetos e arrays acontece o mesmo: os campos podem mudar, então o compilador **alarga** (*widening*) o tipo deles.\n\n```ts\nconst config = { inicial: 'aberta', tentativas: 3 };\n// tipo: { inicial: string; tentativas: number }\n```\n\nFoi isso que impediu o objeto de encaixar na união discriminada em ts-04.\n\n### `as const`: congele o tipo no valor\n\n```ts\nconst config = { inicial: 'aberta', tentativas: 3 } as const;\n// tipo: { readonly inicial: 'aberta'; readonly tentativas: 3 }\n```\n\n`as const` pede a inferência mais estreita possível: literais em vez de tipos gerais, tudo `readonly`, array virando tupla. Apesar do `as`, não é uma conversão perigosa como as de ts-14: ele não afirma nada que o compilador não esteja vendo.\n\nO uso que mais rende é declarar a lista de valores uma vez e **derivar** o tipo dela:\n\n```ts\nconst STATUS = ['aberta', 'feita', 'cancelada'] as const;\ntype Status = (typeof STATUS)[number]; // 'aberta' | 'feita' | 'cancelada'\n```\n\nA lista existe em execução (serve para validar entrada e preencher um `select`) e o tipo sai dela. Uma fonte só.\n\n### `satisfies`: conferir sem perder o tipo\n\nAnotar uma variável troca o tipo inferido pelo anotado. Às vezes você quer só a **conferência**:\n\n```ts\nconst cores = {\n  aberta: '#2563eb',\n  feita: '#16a34a',\n  cancelada: '#dc2626',\n} satisfies Record<Status, string>;\n```\n\nO compilador confere que não falta nem sobra status e que todo valor é `string`, e `cores` mantém o tipo exato do objeto escrito. Com `const cores: Record<Status, string>` a conferência é a mesma, mas o tipo vira o anotado e a precisão se perde. Regra prática: anotação quando você quer **esconder** detalhe (contrato), `satisfies` quando quer **manter** o detalhe e só ser conferido.\n\n### Por que evitar `enum`\n\n`enum` parece a escolha natural para quem vem de linguagens com tipos enumerados. Em TypeScript ele tem um custo que os outros recursos não têm: **não é sintaxe apagável**.\n\n- Quase tudo em TypeScript some na compilação. O `enum` gera código: um objeto em execução. É a linguagem acrescentando comportamento ao JavaScript, e não só tipos.\n- Ferramentas que apenas apagam os tipos não o aceitam. O Node 24 rodando `.ts` direto recusa `enum`, e por isso os exercícios `prever` deste curso não podem usá-lo.\n- A opção `erasableSyntaxOnly` do compilador transforma o uso em erro (`TS1294`). O `apps/web` do Cockpit está com ela ligada.\n- `enum` numérico ainda traz surpresa: o objeto gerado tem mapeamento nos dois sentidos, e percorrer as chaves devolve nomes e números misturados.\n\nA alternativa cobre os mesmos usos sem nada disso:\n\n```ts\nconst Status = { Aberta: 'aberta', Feita: 'feita' } as const;\ntype Status = (typeof Status)[keyof typeof Status]; // 'aberta' | 'feita'\n```\n\nQuando só o tipo interessa, a união de literais direta basta: `type Status = 'aberta' | 'feita'`. O editor completa os valores e renomeia em todos os usos.\n\n### Critério\n\n- Código novo: união de literais ou objeto `as const`. `enum`, não.\n- Código que já usa `enum` de texto e funciona: deixe. Trocar tudo é custo sem ganho imediato. Só não acrescente novos.\n- Você vai encontrar `enum` em bibliotecas e em projetos Nest mais antigos. Saiba ler. Um `enum` de texto se comporta, na prática, como o objeto `as const`.",
+      "naPratica": "No Cockpit, a lista de status de tarefa é declarada uma vez com `as const`: o tipo, a validação da API e o `select` da tela saem do mesmo array. Um status novo é uma linha, e o compilador aponta cada `switch` e cada `Record` que ficou incompleto.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "`config.inicial` vale `'aberta'`, um status válido. A chamada compila?",
+          "codigo": "type Status = 'aberta' | 'feita';\nfunction marca(s: Status) {\n  return s;\n}\nconst config = { inicial: 'aberta' };\nmarca(config.inicial);\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 6,
+          "explicacao": "Não compila: `TS2345` na linha 6. O campo `inicial` foi alargado para `string`, porque um campo de objeto pode ser alterado depois, e `string` não cabe em `Status`. O valor está certo. O tipo inferido é que ficou largo demais."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "O mesmo código com `as const`, e o tipo `Status` derivado do array. Compila?",
+          "codigo": "const STATUS = ['aberta', 'feita', 'cancelada'] as const;\ntype Status = (typeof STATUS)[number];\n\nconst config = { inicial: 'aberta' } as const;\nfunction marca(s: Status) {\n  return s;\n}\nmarca(config.inicial);\n",
+          "compila": true,
+          "explicacao": "Compila. Com `as const`, `config.inicial` tem o tipo literal `'aberta'`. `typeof STATUS` é a tupla somente leitura com os três literais, e o acesso `[number]` devolve a união dos elementos. Acrescentar um status ao array atualiza o tipo sozinho."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`satisfies` confere o objeto contra `Record<Status, string>`. Compila?",
+          "codigo": "type Status = 'aberta' | 'feita';\nconst cores = {\n  aberta: '#2563eb',\n  feita: '#16a34a',\n  cancelada: '#dc2626',\n} satisfies Record<Status, string>;\n",
+          "compila": false,
+          "erro": "TS2353",
+          "linha": 5,
+          "explicacao": "Não compila: `TS2353` na linha 5. `cancelada` não faz parte de `Status`, e o `satisfies` aplica a checagem de propriedade excedente de ts-05. Se faltasse `feita`, o erro seria de propriedade ausente. A conferência é a mesma de uma anotação. A diferença está no tipo que a variável guarda depois."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`Cor` pode ser texto ou objeto RGB. As duas últimas linhas chamam um método de texto. Qual delas não compila?",
+          "codigo": "type Cor = string | { r: number; g: number; b: number };\ntype Paleta = { primaria: Cor };\n\nconst conferido = { primaria: '#2563eb' } satisfies Paleta;\nconst anotado: Paleta = { primaria: '#2563eb' };\n\nconferido.primaria.toUpperCase();\nanotado.primaria.toUpperCase();\n",
+          "compila": false,
+          "erro": "TS2339",
+          "linha": 8,
+          "explicacao": "A linha 8 (`TS2339`). Com a anotação, `anotado.primaria` tem o tipo declarado `Cor`, e `toUpperCase` não existe na variante objeto. Com `satisfies`, `conferido.primaria` manteve o tipo inferido `string`, e a linha 7 compila. Os dois objetos foram conferidos contra `Paleta` do mesmo jeito."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "`as const` torna tudo `readonly` para o compilador. E em execução?",
+          "codigo": "const STATUS = ['aberta', 'feita'] as const;\nconst copia = STATUS as unknown as string[];\ncopia.push('qualquer');\nconsole.log(STATUS.length);\nconsole.log(Object.isFrozen(STATUS));\n\nconst ROTULO = { aberta: 'Aberta', feita: 'Feita' } as const;\nconsole.log(Object.keys(ROTULO));\n",
+          "saida": "3\nfalse\n[ 'aberta', 'feita' ]\n",
+          "explicacao": "`as const` é só tipo: foi apagado e o array continua um array comum. A dupla conversão da linha 2 enganou o compilador, o `push` funcionou, e `STATUS` passou a ter três elementos enquanto o tipo `Status` continua dizendo dois. Congelar de verdade é `Object.freeze`, que age em execução. O objeto `ROTULO` existe em execução e pode ser percorrido, coisa que uma união de literais pura não permite."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual é a diferença entre `enum` e os demais recursos de tipo do TypeScript que justifica evitá-lo em código novo?",
+          "opcoes": [
+            "`enum` é mais lento em execução do que comparar textos",
+            "`enum` gera código em execução, então não é sintaxe apagável: ferramentas que só removem tipos o recusam, e `erasableSyntaxOnly` o proíbe",
+            "`enum` não é conferido pelo compilador nos `switch`",
+            "`enum` foi removido do TypeScript 6"
+          ],
+          "correta": 1,
+          "explicacao": "O `enum` é uma das poucas construções que o compilador precisa transformar em código. Isso o deixa fora do modelo \"JavaScript mais tipos apagáveis\", que é como o Node e vários bundlers tratam TypeScript hoje. Ele continua existindo na linguagem e continua sendo conferido em `switch`. Desempenho não é o argumento."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que `as const` faz?",
+          "verso": "Pede a inferência mais estreita: literais em vez de `string`/`number`, tudo `readonly`, array como tupla. Só no tipo: em execução nada é congelado."
+        },
+        {
+          "frente": "Como derivar uma união de literais de um array?",
+          "verso": "`const STATUS = ['a', 'b'] as const;` e `type Status = (typeof STATUS)[number];`. O array serve em execução e o tipo sai dele."
+        },
+        {
+          "frente": "Anotação de tipo ou `satisfies`: qual a diferença?",
+          "verso": "Os dois conferem o valor contra o tipo. A anotação troca o tipo da variável pelo anotado. `satisfies` mantém o tipo inferido, mais preciso."
+        },
+        {
+          "frente": "Por que evitar `enum` em código novo?",
+          "verso": "Não é sintaxe apagável: gera objeto em execução. O Node rodando `.ts` direto e a opção `erasableSyntaxOnly` o recusam. União de literais ou objeto `as const` cobrem os mesmos usos."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Enums",
+          "url": "https://www.typescriptlang.org/docs/handbook/enums.html"
+        },
+        {
+          "titulo": "TypeScript — TSConfig Reference (erasableSyntaxOnly)",
+          "url": "https://www.typescriptlang.org/tsconfig/#erasableSyntaxOnly"
+        },
+        {
+          "titulo": "TypeScript 4.9 — o operador satisfies",
+          "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-9.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-12",
+      "titulo": "Tipos mapeados e condicionais: ler, não decorar",
+      "minutos": 11,
+      "ponte": "É o script que lê `USER_TAB_COLUMNS` e gera uma view: \"para cada coluna da tabela, emita a coluna assim\". Um tipo mapeado é esse `FOR` sobre os campos de um tipo, e um tipo condicional é um `CASE WHEN` cujo resultado é um tipo. Onde quebra: o seu script roda e produz um objeto no banco. Aqui tudo acontece dentro do compilador e não sobra nada em execução.",
+      "texto": "Esta lição tem um objetivo só: você abrir a definição de um tipo de biblioteca e **conseguir ler**. Escrever tipos assim em código de aplicação é raro, e quase sempre é sinal de alerta.\n\n### Tipo mapeado: um laço sobre os campos\n\nEm ts-08 você usou `Partial<T>`. Por dentro, ele é isto:\n\n```ts\ntype Partial<T> = { [P in keyof T]?: T[P] };\n```\n\nLeia da esquerda para a direita, com o que já sabe de ts-07:\n\n- `keyof T`: os nomes dos campos de `T`.\n- `[P in keyof T]`: para cada nome `P` dessa lista, crie um campo.\n- `?`: opcional.\n- `T[P]`: com o mesmo tipo que o campo tinha.\n\nOs outros utilitários são variações de uma linha:\n\n```ts\ntype Readonly<T> = { readonly [P in keyof T]: T[P] };\ntype Required<T> = { [P in keyof T]-?: T[P] };       // -? remove o opcional\ntype Pick<T, K extends keyof T> = { [P in K]: T[P] }; // laço só sobre as chaves pedidas\n```\n\n### Tipo condicional: um `CASE` de tipos\n\n```ts\ntype ElementoDe<T> = T extends unknown[] ? T[number] : T;\n```\n\n`T extends U ? X : Y` se lê como \"se `T` é compatível com `U`, o resultado é `X`, senão é `Y`\". É o `extends` de ts-07, agora usado como pergunta.\n\nUm detalhe explica metade dos utilitários: quando `T` é uma **união**, a condição é aplicada a **cada membro** e os resultados são reunidos. Por isso isto funciona:\n\n```ts\ntype Exclude<T, U> = T extends U ? never : T;\n// Exclude<'a' | 'b' | 'c', 'c'>  →  'a' | 'b'\n```\n\nCada membro que casa com `U` vira `never`, e `never` some de uma união.\n\n### `infer`: capturar um pedaço\n\n```ts\ntype ReturnType<T> = T extends (...args: any) => infer R ? R : any;\n```\n\nLeia: \"se `T` é uma função, **chame de `R` o tipo que ela devolve** e me entregue `R`\". `infer` declara uma variável de tipo no meio do padrão, como um grupo de captura em expressão regular. `Awaited<T>` (o que há dentro de uma `Promise`) e `Parameters<T>` (os parâmetros de uma função) seguem o mesmo molde.\n\n### Roteiro para ler um tipo de biblioteca\n\n1. **Ache as entradas.** O que está entre `<` e `>` são os parâmetros, como numa função.\n2. **Identifique a forma.** `{ [P in ...]: ... }` é laço sobre campos. `A extends B ? X : Y` é decisão. `infer` é captura.\n3. **Substitua por um caso concreto.** Troque `T` pela sua `Tarefa` e resolva no papel, um passo por vez.\n4. **Confirme no editor.** Declare `type Teste = OTipo<Tarefa>` e passe o mouse. O editor mostra o resultado calculado.\n\nO passo 4 resolve a maior parte dos casos. Você não precisa entender cada linha da definição para usar o tipo com segurança. Precisa saber o que entra e conferir o que sai.\n\n### Critério de sênior\n\n- **Na aplicação, use os prontos.** `Partial`, `Pick`, `Omit`, `Record`, `ReturnType` e `Awaited` cobrem quase tudo.\n- **Escrever um tipo mapeado ou condicional próprio precisa de justificativa**: elimina duplicação real e o time consegue ler. Um tipo que exige comentário de cinco linhas custa mais do que a duplicação que evitou.\n- **Tipos complexos têm custo de build e de mensagem de erro.** Quanto mais o tipo calcula, mais longo e obscuro o erro quando algo não encaixa (ts-14).\n- Quem escreve biblioteca (Prisma, TanStack Query) paga esse custo para que o seu código de aplicação fique simples. Não inverta os papéis.",
+      "naPratica": "No Cockpit, o tipo do resultado de uma consulta do Prisma com `include` é calculado por tipos mapeados e condicionais a partir do schema. Você não escreve nenhum deles, mas vai precisar ler o que o editor mostra e, às vezes, extrair um tipo com `Awaited<ReturnType<typeof funcao>>`.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "Dois tipos mapeados escritos à mão, iguais aos utilitários da linguagem. Qual linha não compila?",
+          "codigo": "type Opcional<T> = { [P in keyof T]?: T[P] };\ntype SoLeitura<T> = { readonly [P in keyof T]: T[P] };\n\ntype Tarefa = { id: number; titulo: string };\nconst a: Opcional<Tarefa> = { titulo: 'Estudar' };\nconst b: SoLeitura<Tarefa> = { id: 1, titulo: 'Estudar' };\nb.titulo = 'Revisar';\n",
+          "compila": false,
+          "erro": "TS2540",
+          "linha": 7,
+          "explicacao": "A linha 7 (`TS2540`): `titulo` é somente leitura. O laço `[P in keyof T]` percorreu `id` e `titulo` e pôs `readonly` em cada um. A linha 5 compila porque `Opcional` pôs `?` nos dois campos. São exatamente as definições de `Partial` e `Readonly`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`Tarefa` não foi declarada: foi extraída do retorno da função com `ReturnType`. A linha 6 compila?",
+          "codigo": "function criaTarefa(titulo: string) {\n  return { id: 1, titulo, feita: false };\n}\ntype Tarefa = ReturnType<typeof criaTarefa>;\n\nconst t: Tarefa = { id: 2, titulo: 'Ler', feita: 'não' };\n",
+          "compila": false,
+          "erro": "TS2322",
+          "linha": 6,
+          "explicacao": "Não compila: `TS2322`, `feita` é `boolean` e recebeu texto. `typeof criaTarefa` é o tipo da função, e `ReturnType` capturou com `infer` o que ela devolve: `{ id: number; titulo: string; feita: boolean }`. O tipo acompanha a função sem ser escrito duas vezes."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Três tipos condicionais: um da linguagem aplicado a uma união, um escrito à mão com `infer` e o `Awaited`. Compila?",
+          "codigo": "type Status = 'aberta' | 'feita' | 'cancelada';\ntype Ativa = Exclude<Status, 'cancelada'>;\ntype ElementoDe<T> = T extends (infer E)[] ? E : never;\n\nconst s: Ativa = 'feita';\nconst n: ElementoDe<number[]> = 42;\ntype Resposta = Awaited<Promise<{ total: number }>>;\nconst r: Resposta = { total: 3 };\n",
+          "compila": true,
+          "explicacao": "Compila. `Exclude` aplica a condição a cada membro da união e descarta `'cancelada'`, deixando `'aberta' | 'feita'`. `ElementoDe<number[]>` casa com o padrão \"array de `E`\" e captura `E = number`. `Awaited` desembrulha a `Promise` e devolve `{ total: number }`."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "`Completo<T>` usa o modificador `-?`. A linha 3 compila?",
+          "codigo": "type Rascunho = { titulo?: string; minutos?: number };\ntype Completo<T> = { [P in keyof T]-?: T[P] };\nconst pronto: Completo<Rascunho> = { titulo: 'Estudar' };\n",
+          "compila": false,
+          "erro": "TS2741",
+          "linha": 3,
+          "explicacao": "Não compila: `TS2741`, falta `minutos`. O `-?` **remove** o opcional de cada campo, e `Completo<Rascunho>` é `{ titulo: string; minutos: number }`. É a definição do utilitário `Required`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Como se lê `type ReturnType<T> = T extends (...args: any) => infer R ? R : any`?",
+          "opcoes": [
+            "\"Se `T` estende `R`, devolva a função, senão devolva `any`.\"",
+            "\"Converta `T` em uma função que devolve `R`.\"",
+            "\"Se `T` é uma função, capture em `R` o tipo que ela devolve e entregue `R`. Senão, entregue `any`.\"",
+            "\"Execute a função `T` e use o tipo do valor devolvido.\""
+          ],
+          "correta": 2,
+          "explicacao": "`T extends ... ? X : Y` é a decisão, e `infer R` captura um pedaço do padrão casado, aqui o retorno. Nada é executado nem convertido: o cálculo acontece só no compilador, sobre tipos."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, criei um tipo genérico nosso, `DeepPartialExcept<T, K>`, com tipo mapeado recursivo e condicional, para tipar os updates de todas as entidades. Posso subir?\" O que você responde no review?",
+          "pontos": [
+            "Perguntou qual problema concreto o tipo resolve e quantos lugares vão usar",
+            "Comparou com a alternativa simples (`Partial`, `Pick`, `Omit` ou um DTO declarado à mão)",
+            "Citou o custo: leitura pelo time, mensagem de erro longa, tempo de build",
+            "Lembrou que tipo não valida o corpo da requisição em execução",
+            "Deu um critério claro para aceitar ou recusar, em vez de vetar por gosto"
+          ],
+          "modelo": "Antes de olhar o tipo, me mostra dois lugares onde ele vai ser usado e como ficariam com `Partial` e `Omit`. Se a diferença for uma ou duas linhas por entidade, eu fico com os prontos: todo mundo lê e o erro, quando aparece, é curto. Tipo recursivo próprio tem três custos: só quem escreveu entende, a mensagem de erro fica enorme e o build fica mais lento. E ele não valida nada em execução, então o DTO com as regras vai existir de qualquer jeito. Se a duplicação for real em muitas entidades, aceito, com exemplos de uso e teste de tipo ao lado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Como ler `{ [P in keyof T]?: T[P] }`?",
+          "verso": "\"Para cada campo `P` de `T`, crie um campo opcional com o mesmo tipo.\" É a definição de `Partial<T>`."
+        },
+        {
+          "frente": "Como ler `T extends U ? X : Y`?",
+          "verso": "\"Se `T` é compatível com `U`, o tipo é `X`, senão é `Y`.\" Com `T` união, aplica a cada membro e reúne os resultados."
+        },
+        {
+          "frente": "O que `infer R` faz dentro de um tipo condicional?",
+          "verso": "Captura um pedaço do padrão casado numa variável de tipo, como um grupo de captura. Em `ReturnType`, captura o retorno da função."
+        },
+        {
+          "frente": "Qual o jeito mais rápido de entender um tipo complexo de biblioteca?",
+          "verso": "Aplicar a um caso concreto e passar o mouse: `type Teste = OTipo<Tarefa>`. O editor mostra o resultado calculado."
+        },
+        {
+          "frente": "Por que evitar tipos mapeados e condicionais próprios em código de aplicação?",
+          "verso": "Custo de leitura para o time, erros longos e obscuros, build mais lento. Os utilitários prontos cobrem quase tudo."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Mapped Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/mapped-types.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Conditional Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/conditional-types.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Utility Types",
+          "url": "https://www.typescriptlang.org/docs/handbook/utility-types.html"
+        }
+      ]
+    },
+    {
+      "id": "ts-13",
+      "titulo": "Módulos: ESM × CommonJS, import type e o .js no import",
+      "minutos": 10,
+      "ponte": "Um módulo é como uma package: o que tem `export` é a spec, o resto é privado do body, e o `import` é a referência a outra package. Onde quebra: no banco a dependência é resolvida pelo nome dentro do schema, e existe um jeito só. No Node a dependência é resolvida pelo **caminho do arquivo**, não existe nada global, e há dois sistemas de módulos convivendo, com regras diferentes.",
+      "texto": "Em JavaScript, **cada arquivo é um módulo**. Nada do que está nele é visível de fora sem `export`, e nada de fora entra sem `import`. Por razão histórica, o Node tem dois sistemas para isso.\n\n### CommonJS e ESM\n\n| | CommonJS (CJS) | ES Modules (ESM) |\n|---|---|---|\n| Origem | criado pelo Node, antes de a linguagem ter módulos | padrão oficial da linguagem, o mesmo do navegador |\n| Sintaxe | `const x = require('./x')` e `module.exports = ...` | `import { x } from './x.js'` e `export ...` |\n| Carga | síncrona, em execução, em qualquer linha | estática: os `import` são conhecidos antes de o código rodar |\n| Extras | `__dirname`, `require` | `import.meta`, `await` no topo do arquivo |\n\nO ecossistema está migrando para ESM. Você vai encontrar os dois por muito tempo: tutoriais e projetos Nest mais antigos são CJS.\n\n### Como o Node decide\n\nPelo `package.json` mais próximo do arquivo:\n\n- com `\"type\": \"module\"`, todo `.js` é ESM;\n- sem esse campo, ou com `\"type\": \"commonjs\"`, todo `.js` é CJS;\n- as extensões `.mjs` e `.cjs` forçam um ou outro, e `.mts` e `.cts` são as equivalentes em TypeScript.\n\nO `apps/api` do Cockpit tem `\"type\": \"module\"`: é ESM.\n\n### Por que o import termina em `.js`\n\nNo ESM do Node, import relativo exige o **nome completo do arquivo, com extensão**. Não há tentativa de adivinhar. E o compilador TypeScript, por padrão, **não reescreve** o texto do import: o que você escreve no `.ts` é o que sai no `.js`.\n\nJunte os dois fatos. Você escreve `tarefas.service.ts`, o build gera `dist/tarefas.service.js`, e quem roda é o Node, lendo a pasta `dist`. O import precisa apontar para o arquivo que vai existir em execução:\n\n```ts\nimport { TarefasService } from './tarefas.service.js';\n```\n\nParece erro e não é: você escreve o nome do arquivo de **saída**. O compilador entende que `./tarefas.service.js` corresponde ao seu `.ts`. Isso vale porque o `tsconfig` da API usa `\"module\": \"nodenext\"`, que manda o compilador seguir as regras reais do Node. Sem a extensão, o erro é o `TS2835`.\n\nNo `apps/web` a regra é outra: `\"moduleResolution\": \"bundler\"`. Quem resolve os imports é o Vite, que aceita caminho sem extensão. São dois projetos no mesmo repositório com regras de import diferentes, e isso é normal.\n\n### `import type`\n\n```ts\nimport type { Request, Response } from 'express';\n```\n\nUm `import type` é **apagado por inteiro** na compilação. Serve para importar algo usado só como tipo, sem carregar o módulo em execução. A opção `verbatimModuleSyntax` torna a regra explícita: import com `type` some, import sem `type` fica, exatamente como escrito. O compilador então cobra o `type` em tudo o que é só tipo. O `apps/web` do Cockpit liga essa opção. O `apps/api` não liga (usa `isolatedModules`).\n\nA armadilha no Nest: a classe que você **injeta** no construtor não pode vir por `import type`. A injeção de dependência precisa da classe em execução, porque é por ela que o Nest encontra o provider (nest-02). Com `import type` a classe some do arquivo compilado e o Nest falha ao montar o módulo, mesmo com o compilador satisfeito. Interfaces e tipos de requisição vão com `import type`. Classes injetadas, com `import` normal.\n\n### Interoperabilidade\n\nESM importa pacote CJS sem cerimônia, e é o que acontece com boa parte das dependências. O caminho inverso, `require` de um módulo ESM, só passou a funcionar em versões recentes do Node, com restrições. Na prática: projeto novo nasce ESM, e ao ver `require is not defined` ou `Cannot use import statement outside a module`, a causa é mistura dos dois sistemas. Comece olhando o `\"type\"` do `package.json`.",
+      "naPratica": "Na API do Cockpit, o erro mais comum de quem chega é escrever `from './tarefas.service'` sem o `.js`: o editor acusa `TS2835` e sugere a correção. O segundo é o autoimport do editor trazer como `import type` uma classe que será injetada.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Este arquivo roda como ESM. O que existe e o que não existe nele?",
+          "codigo": "import path from 'node:path';\nimport { basename } from 'node:path';\n\nconsole.log(typeof require);\nconsole.log(typeof __dirname);\nconsole.log(typeof import.meta.url);\nconsole.log(basename('/app/dist/tarefas.service.js', '.js'));\nconsole.log(path.basename === basename);\n",
+          "saida": "undefined\nundefined\nstring\ntarefas.service\ntrue\n",
+          "explicacao": "`require` e `__dirname` são do CommonJS e não existem num módulo ESM. O equivalente é `import.meta`, que traz a URL do próprio arquivo. As duas primeiras linhas mostram as duas formas de importar: o objeto padrão do módulo (`path`) e um nome específico (`basename`). São a mesma função, por isso o `true`."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `import type` e um `import()` dinâmico do mesmo módulo. O que sai?",
+          "codigo": "import type { EventEmitter } from 'node:events';\n\nlet emissor: EventEmitter | undefined;\nconsole.log(emissor);\n\nconst modulo = await import('node:events');\nemissor = new modulo.EventEmitter();\nemissor.on('ping', (n: number) => console.log('ping', n));\nconsole.log(emissor.emit('ping', 1));\nconsole.log(Object.keys(modulo).includes('EventEmitter'));\n",
+          "saida": "undefined\nping 1\ntrue\ntrue\n",
+          "explicacao": "O `import type` da linha 1 é apagado: em execução ele não carrega nada, e só serviu para tipar `emissor`. Para usar a classe de verdade (`new`), o módulo precisa ser carregado, aqui com `import()` dinâmico e `await` no topo do arquivo, permitido em ESM. `emit` chama o ouvinte na hora (imprime `ping 1`) e devolve `true` porque havia ouvinte. Se a linha 7 fosse `new EventEmitter()` usando o nome da linha 1, o programa quebraria: aquele nome não existe em execução."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Na API do Cockpit (ESM, `\"module\": \"nodenext\"`), o arquivo `tarefas.controller.ts` importa `tarefas.service.ts`, da mesma pasta. Como fica o import, e por quê?",
+          "opcoes": [
+            "`from './tarefas.service.js'`: o texto do import não é reescrito, e em execução o arquivo que existe é o `.js` gerado",
+            "`from './tarefas.service.ts'`: é o arquivo que existe no repositório",
+            "`from './tarefas.service'`: o Node completa a extensão sozinho",
+            "`from 'tarefas.service'`: arquivos da mesma pasta dispensam o `./`"
+          ],
+          "correta": 0,
+          "explicacao": "O compilador mantém o caminho como foi escrito, e o ESM do Node exige a extensão. Como quem roda é o `.js` da pasta de saída, é esse nome que vai no import. Sem extensão é o comportamento do CommonJS e dos bundlers, não do ESM do Node. Sem `./`, o Node procura um pacote em `node_modules`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de um autoimport, o service ficou com `import type { PrismaService } from '../core/prisma/prisma.service.js'`, e `PrismaService` é recebido no construtor. O compilador não acusa nada. O que acontece ao subir a API?",
+          "opcoes": [
+            "Nada: `import type` e `import` são equivalentes para classes",
+            "A API sobe, mas as consultas ficam sem tipo",
+            "O Nest falha ao resolver a dependência: a classe foi apagada do arquivo compilado e não sobra referência a ela em execução",
+            "O Node recusa o arquivo por erro de sintaxe"
+          ],
+          "correta": 2,
+          "explicacao": "`import type` some na compilação. A injeção de dependência do Nest usa a classe como chave em execução. Sem a classe, não há o que resolver. O compilador fica satisfeito porque, para os tipos, nada falta. É um erro que só aparece ao iniciar a aplicação."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Os dois mundos de módulo no Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Abra `app/apps/api/package.json` e `app/apps/api/tsconfig.json`. Anote o valor de `\"type\"`, `\"module\"` e se `verbatimModuleSyntax` aparece.",
+            "Abra `app/apps/web/tsconfig.app.json` e anote `\"moduleResolution\"`, `verbatimModuleSyntax` e `erasableSyntaxOnly`.",
+            "Em `app/apps/api/src/app.module.ts`, apague o `.js` de um import relativo e veja o erro no editor. Anote o código do erro e desfaça a alteração.",
+            "Procure na pasta `app/apps/api/src` um `import type` e confirme que o nome importado é usado só como tipo naquele arquivo.",
+            "Escreva em `estudo/modulos.md`, com as suas palavras, por que a API usa `.js` no import e o web não."
+          ],
+          "prontoQuando": "O arquivo `modulos.md` tem os valores anotados dos dois projetos, o código do erro que apareceu (`TS2835`) e a explicação em até cinco linhas, e o `app.module.ts` voltou ao estado original (`git status` limpo nesse arquivo)."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que o import relativo termina em `.js` num projeto TypeScript com `\"module\": \"nodenext\"`?",
+          "verso": "O compilador não reescreve o caminho, e o ESM do Node exige a extensão. Em execução o arquivo que existe é o `.js` gerado, então é esse nome que se escreve."
+        },
+        {
+          "frente": "Como o Node decide se um `.js` é ESM ou CommonJS?",
+          "verso": "Pelo `\"type\"` do `package.json` mais próximo: `\"module\"` é ESM, ausente ou `\"commonjs\"` é CJS. `.mjs` e `.cjs` forçam."
+        },
+        {
+          "frente": "O que acontece com um `import type` na compilação?",
+          "verso": "É apagado por inteiro. Nada é carregado em execução. Serve só para nomes usados como tipo."
+        },
+        {
+          "frente": "Por que não usar `import type` numa classe injetada no construtor de um provider Nest?",
+          "verso": "A injeção precisa da classe em execução para achar o provider. Com `import type` ela some do arquivo compilado e o Nest falha ao iniciar."
+        },
+        {
+          "frente": "`require is not defined` ou `Cannot use import statement outside a module`: onde olhar primeiro?",
+          "verso": "No `\"type\"` do `package.json` e na extensão do arquivo. É mistura de CommonJS com ESM."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Node.js — Modules: ECMAScript modules",
+          "url": "https://nodejs.org/api/esm.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Modules: Theory",
+          "url": "https://www.typescriptlang.org/docs/handbook/modules/theory.html"
+        },
+        {
+          "titulo": "TypeScript — TSConfig Reference (verbatimModuleSyntax)",
+          "url": "https://www.typescriptlang.org/tsconfig/#verbatimModuleSyntax"
+        }
+      ]
+    },
+    {
+      "id": "ts-14",
+      "titulo": "Ler erro longo do compilador e nunca calar (as, !, ts-ignore)",
+      "minutos": 10,
+      "ponte": "Um erro longo do compilador é uma pilha de `ORA-06512`: várias linhas de \"passei por aqui\" e uma só com a causa. Você já sabe procurar o `ORA-01403` no meio da pilha. Aqui a causa fica na última linha. E `as`, `!` e `@ts-ignore` são o `WHEN OTHERS THEN NULL`: o erro some da tela e continua no sistema. Onde quebra: o `WHEN OTHERS` engole um erro que aconteceu. O `as` engole um erro que ainda vai acontecer, em execução, longe dali.",
+      "texto": "### Anatomia de um erro longo\n\n```text\nerror TS2345: Argument of type '{ id: number; cliente: { nome: string; }; itens: { produto: string; quantidade: string; }[]; }' is not assignable to parameter of type 'Pedido'.\n  Types of property 'itens' are incompatible.\n    Type '{ produto: string; quantidade: string; }[]' is not assignable to type 'Item[]'.\n      Type '{ produto: string; quantidade: string; }' is not assignable to type 'Item'.\n        Types of property 'quantidade' are incompatible.\n          Type 'string' is not assignable to type 'number'.\n```\n\nO compilador comparou dois formatos e desceu campo a campo até achar a diferença. Cada nível de recuo é um passo para dentro da estrutura. A primeira linha diz **onde** a comparação começou. A última diz **o que** não bateu.\n\n### O método: de baixo para cima\n\n1. **Leia a última linha.** `Type 'string' is not assignable to type 'number'`. Em toda frase desse formato, o primeiro tipo é o que você **entregou** e o segundo é o que era **esperado**.\n2. **Suba procurando os nomes de propriedade.** `quantidade`, dentro de `itens`. Está montado o caminho: `itens[].quantidade`.\n3. **Leia só o começo da primeira linha.** `Argument of type ... parameter of type 'Pedido'`: é um argumento de função. Ignore o tipo gigante impresso por extenso.\n4. **Decida quem está errado**: o valor (a quantidade deveria ser número) ou o tipo (`Item` deveria aceitar texto). Essa decisão é sua. O compilador só mostra que os dois discordam.\n\nOs códigos que você mais vai ver:\n\n| Código | Situação |\n|---|---|\n| `TS2322` | atribuição: o valor não cabe no tipo da variável, do campo ou do retorno |\n| `TS2345` | argumento: o valor não cabe no parâmetro |\n| `TS2339` | propriedade não existe naquele tipo |\n| `TS2741` | falta uma propriedade obrigatória |\n| `TS18047`, `TS18048` | o valor pode ser `null` ou `undefined` |\n\n### As formas de calar, e o que cada uma esconde\n\n| Forma | O que diz ao compilador | O que acontece em execução |\n|---|---|---|\n| `valor as Tipo` | \"confie em mim, é desse tipo\" | nada: nenhuma conversão, nenhuma conferência |\n| `valor!` | \"confie em mim, não é `null` nem `undefined`\" | nada: se for, quebra na linha seguinte |\n| `as any`, `as unknown as T` | \"pare de olhar\" | o erro aparece longe, em outro arquivo |\n| `// @ts-ignore` | \"ignore qualquer erro na próxima linha\" | cala também os erros futuros daquela linha |\n\nNenhuma delas muda o programa. Todas mudam só o que o compilador **acredita**. O erro apontado continua existindo e passa a aparecer em execução, sem a mensagem que dizia onde estava.\n\n### O que fazer no lugar\n\n| Vontade | Alternativa |\n|---|---|\n| `x!` porque \"sempre existe\" | `if (!x) throw new Error('...')` no começo. Estreita e, se a certeza estiver errada, o erro diz o quê |\n| `x!` para valor padrão | `x ?? padrao` |\n| `dado as Tarefa` em dado de fora | validar em execução (ts-09) |\n| `as` porque o tipo inferido ficou largo | `as const` ou `satisfies` (ts-11) |\n| `as any` porque o tipo da biblioteca está errado | isolar numa função pequena, com comentário e link para o problema |\n| `@ts-ignore` | `// @ts-expect-error motivo`, que falha quando o erro deixa de existir |\n\n### Critério\n\n`as` não é proibido. Há usos legítimos: `as const`, o resultado de uma conferência que o compilador não consegue acompanhar, dublês em teste. A régua é: **eu consigo apontar a linha que prova o que estou afirmando?** Se a prova existe, ela costuma poder virar estreitamento e o `as` fica desnecessário. Se não existe, o `as` é um palpite assinado.\n\nEm review, cada `as`, `!` e `@ts-ignore` em código de produção merece uma pergunta. Poucos sobrevivem a ela.",
+      "naPratica": "Quando um erro de tipo aparecer no Cockpit e a vontade for pôr um `as` para \"resolver depois\", aplique o método de baixo para cima antes. Em quase todos os casos a última linha aponta um defeito real: um campo que pode vir vazio, um DTO desatualizado, um retorno de API que mudou.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "Não compila. Antes de rodar, diga qual campo é a causa. Depois confira lendo o erro de baixo para cima.",
+          "codigo": "type Item = { produto: string; quantidade: number };\ntype Pedido = { id: number; cliente: { nome: string }; itens: Item[] };\n\nfunction envia(p: Pedido) {\n  return p.id;\n}\n\nconst pedido = { id: 1, cliente: { nome: 'Ana' }, itens: [{ produto: 'Café', quantidade: '2' }] };\nenvia(pedido);\n",
+          "compila": false,
+          "erro": "TS2345",
+          "linha": 9,
+          "explicacao": "`TS2345` na linha 9, com a mensagem de seis níveis mostrada no texto da lição. A última linha (`string` não cabe em `number`) e as propriedades acima dela (`quantidade`, dentro de `itens`) dão o caminho: `itens[].quantidade` veio como texto. O erro é reportado na chamada, e a causa está na linha 8."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um `!` e uma dupla conversão com `as`. O compilador aceita tudo. O que sai em execução?",
+          "codigo": "type Usuario = { nome: string; email: string };\nconst usuarios: Usuario[] = [{ nome: 'Ana', email: 'ana@exemplo.com' }];\n\nconst bia = usuarios.find((u) => u.nome === 'Bia')!;\ntry {\n  console.log(bia.email);\n} catch (e) {\n  console.log('explodiu:', e instanceof TypeError);\n}\n\nconst idade = ('trinta' as unknown as number) + 1;\nconsole.log(idade);\n",
+          "saida": "explodiu: true\ntrinta1\n",
+          "explicacao": "O `!` da linha 4 afirmou que o `find` acha alguém. Não achou: `bia` é `undefined`, e a leitura de `.email` lança `TypeError` duas linhas depois. A dupla conversão da linha 11 fez o compilador tratar um texto como número, e o `+` concatenou. Nos dois casos o compilador tinha avisado e foi calado. `!` e `as` são apagados antes de rodar e não deixam conferência nenhuma."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Duas linhas com erro de tipo, uma calada com `@ts-ignore` e outra com `@ts-expect-error`. Compila?",
+          "codigo": "const total: number = 10;\n\n// @ts-ignore\nconst a: string = total;\n\n// @ts-expect-error o tipo de `total` é number\nconst b: string = total;\n",
+          "compila": true,
+          "explicacao": "Compila. As duas diretivas suprimem o erro da linha seguinte. Até aqui parecem iguais. A diferença aparece no próximo exercício, quando o erro deixa de existir."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "Alguém corrigiu `total` para `string` e as diretivas ficaram. Compila? Em que linha quebra?",
+          "codigo": "const total: string = 'dez';\n\n// @ts-ignore\nconst a: string = total;\n\n// @ts-expect-error o tipo de `total` é number\nconst b: string = total;\n",
+          "compila": false,
+          "erro": "TS2578",
+          "linha": 6,
+          "explicacao": "Não compila: `TS2578` na linha 6, diretiva `@ts-expect-error` sem uso. Ela exige que exista um erro na linha seguinte e reclama quando ele some, o que obriga a limpeza. O `@ts-ignore` da linha 3 fica ali para sempre, pronto para calar o próximo erro que aparecer naquela linha, seja qual for."
+        },
+        {
+          "tipo": "compila",
+          "enunciado": "A alternativa ao `!`: conferir e lançar. O retorno `string` compila sem conversão nenhuma?",
+          "codigo": "function emailDe(emails: Map<string, string>, nome: string): string {\n  const email = emails.get(nome);\n  if (email === undefined) {\n    throw new Error(`Usuário ${nome} não encontrado`);\n  }\n  return email;\n}\n",
+          "compila": true,
+          "explicacao": "Compila. `Map.get` devolve `string | undefined`. Depois do `if` com `throw`, o compilador estreita para `string`. O resultado para o tipo é o mesmo de `emails.get(nome)!`. A diferença: se a certeza estiver errada, este código para com uma mensagem que diz qual usuário faltou, em vez de um `undefined` viajando pelo sistema."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num erro longo do compilador, a última linha diz `Type 'string | undefined' is not assignable to type 'string'`, e acima dela há `Types of property 'prazo' are incompatible`. Qual é a leitura correta?",
+          "opcoes": [
+            "O tipo esperado aceita vazio, e o valor entregue não pode ser vazio",
+            "O campo `prazo` não existe no tipo esperado",
+            "O compilador não conseguiu inferir o tipo de `prazo`",
+            "O `prazo` entregue pode vir vazio, e o tipo esperado exige um texto sempre preenchido"
+          ],
+          "correta": 3,
+          "explicacao": "Em \"X is not assignable to Y\", X é o que foi entregue e Y o que era esperado. O valor entregue admite `undefined` e o destino não. A correção é decidir: tratar o vazio antes de entregar, ou tornar o campo opcional no destino. Inverter a leitura (primeira opção) é o engano mais comum."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o método para ler um erro longo do compilador?",
+          "verso": "De baixo para cima: a última linha é a causa, as linhas com `property` dão o caminho até o campo, e a primeira diz onde a comparação começou."
+        },
+        {
+          "frente": "Em `Type 'A' is not assignable to type 'B'`, quem é quem?",
+          "verso": "`A` é o que você entregou. `B` é o que era esperado."
+        },
+        {
+          "frente": "Por que `as` e `!` escondem bug em vez de resolver?",
+          "verso": "São apagados na compilação e não conferem nada em execução. Só mudam o que o compilador acredita. O erro reaparece rodando, longe e sem mensagem."
+        },
+        {
+          "frente": "Qual a diferença entre `@ts-ignore` e `@ts-expect-error`?",
+          "verso": "Os dois calam o erro da linha seguinte. O `@ts-expect-error` falha quando o erro deixa de existir. O `@ts-ignore` fica para sempre e cala erros futuros."
+        },
+        {
+          "frente": "Qual a alternativa a `x!` quando você \"tem certeza\" de que o valor existe?",
+          "verso": "`if (!x) throw new Error('...')`. Estreita o tipo do mesmo jeito e, se a certeza falhar, o erro diz o que faltou."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "TypeScript Handbook — Everyday Types (type assertions, non-null)",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html"
+        },
+        {
+          "titulo": "TypeScript Handbook — Understanding Errors",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/understanding-errors.html"
+        }
+      ]
+    }
+  ]
+}

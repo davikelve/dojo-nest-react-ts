@@ -1,0 +1,559 @@
+{
+  "licoes": [
+    {
+      "id": "ui-01",
+      "titulo": "HTML semântico",
+      "minutos": 9,
+      "ponte": "No Forms você escolhe o **tipo do item**: text item, push button, check box, list item. Ao escolher, o comportamento vem junto: o botão entra na ordem de navegação, responde ao teclado e dispara `WHEN-BUTTON-PRESSED`. Ninguém desenha um retângulo no canvas e programa o clique do mouse para fingir um botão. HTML semântico é a mesma decisão: escolher o elemento pelo que ele **é**. Onde quebra: o Forms não deixa você errar o tipo. O HTML deixa, e uma `div` com `onclick` parece funcionar até alguém usar o teclado.",
+      "texto": "HTML descreve **o que cada coisa é**. A aparência é assunto do CSS. Um elemento *semântico* é aquele cujo nome carrega significado: `button` é um botão, `nav` é navegação, `h1` é o título principal. `div` e `span` não significam nada: são caixas neutras, para quando nenhum outro elemento serve.\n\n### O exemplo que resume a lição\n\n```text\n<div class=\"botao\" onclick=\"salvar()\">Salvar</div>\n\n<button type=\"button\" onclick=\"salvar()\">Salvar</button>\n```\n\nCom CSS, os dois ficam idênticos na tela. A diferença está no que o navegador entrega **de graça** para o `button`:\n\n| Comportamento | `button` | `div` clicável |\n|---|---|---|\n| Recebe foco com Tab | sim | não |\n| Aciona com Enter e com Espaço | sim | não |\n| Leitor de tela anuncia \"botão\" | sim | lê só o texto |\n| Aceita `disabled` | sim | não |\n| Envia o formulário quando está dentro de um `form` | sim | não |\n\nPara a `div` chegar no mesmo ponto você escreveria `tabindex`, `role`, tratamento de teclado e estado desabilitado. E provavelmente esqueceria um deles.\n\n### O conjunto mínimo que você precisa conhecer\n\n- **Estrutura da página:** `header`, `nav`, `main`, `aside`, `footer`. Um `main` por página. Leitores de tela têm atalho para saltar entre essas regiões.\n- **Títulos:** `h1` a `h6`, em ordem, sem pular nível. Eles formam o sumário da página. Escolha o nível pela hierarquia, nunca pelo tamanho da fonte.\n- **Ação × navegação:** `button` **faz** algo na tela. `a href` **leva** a outro endereço. Link que só executa JavaScript é botão. Botão que troca de página é link.\n- **Listas e tabelas:** `ul`, `ol` e `li` para listas. `table` com `th` para dado tabular, nunca para montar layout.\n- **Formulário:** `form`, `label`, `input`, `select`, `textarea`, `fieldset` e `legend`.\n\n### Label ligado ao input\n\n```text\n<label for=\"titulo\">Título da tarefa</label>\n<input id=\"titulo\" name=\"titulo\" type=\"text\" required>\n```\n\nO `for` do `label` aponta para o `id` do `input`. Isso dá três coisas: clicar no texto leva o foco ao campo, o leitor de tela anuncia \"Título da tarefa, campo de edição\", e a área de clique de um checkbox cresce. `placeholder` **não** é label: some quando o usuário digita e costuma ter contraste ruim.\n\n### Por que `form` importa\n\nDentro de um `form`, Enter em qualquer campo envia, o navegador valida `required` e `type=\"email\"` sozinho, e o gerenciador de senhas entende a tela. Detalhe que pega todo mundo: dentro de um `form`, `button` sem `type` é `submit`. Botão de \"cancelar\" precisa de `type=\"button\"`, ou ele envia o formulário.\n\n### Acessibilidade de graça\n\nO navegador constrói, a partir do HTML, a **árvore de acessibilidade**: uma descrição da tela em papéis, nomes e estados. É ela que o leitor de tela, o controle por voz e também as ferramentas de teste leem. Elemento certo entra nessa árvore já com o papel certo. Uma `div` entra como nada.\n\n### Opinião de sênior\n\nComece pelo elemento nativo e só saia dele com motivo. O custo de usar `button` é tirar o estilo padrão do navegador, uma vez. O custo de não usar aparece em todo lugar: teclado, leitor de tela, teste. No review, `div` com `onClick` é achado de bloqueio, não de gosto.",
+      "naPratica": "No Cockpit, os testes de componente procuram elementos como o usuário procura: `getByRole('button', { name: 'Salvar' })`, `getByLabelText('Título')`. HTML semântico faz o teste ficar fácil de escrever. Quando o teste não acha o botão pelo papel, o leitor de tela também não acha.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma `div` estilizada como botão, com `onclick`. O que acontece quando o usuário navega com Tab e aperta Enter?",
+          "opcoes": [
+            "Funciona: o navegador trata qualquer elemento com `onclick` como botão",
+            "O Tab pula a `div`: ela não recebe foco, e Enter não tem onde agir",
+            "O foco chega na `div`, mas só o Espaço aciona",
+            "Funciona apenas se a `div` estiver dentro de um `form`"
+          ],
+          "correta": 1,
+          "explicacao": "Só elementos interativos nativos (botão, link com `href`, campos) entram na ordem de Tab. A `div` fica fora dela, e o `onclick` só dispara com o mouse. O navegador não deduz intenção a partir do `onclick`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Num formulário há `<button>Cancelar</button>` ao lado do botão de salvar. O usuário clica em Cancelar. O que acontece?",
+          "opcoes": [
+            "Nada: botão sem `onclick` não faz nada",
+            "O formulário é limpo, como um `type=\"reset\"`",
+            "O formulário é enviado: dentro de `form`, o tipo padrão de `button` é `submit`",
+            "O navegador volta para a página anterior"
+          ],
+          "correta": 2,
+          "explicacao": "Sem o atributo `type`, um `button` dentro de `form` é `submit`. O Cancelar dispara o envio. A correção é `type=\"button\"` em todo botão que não envia. É um dos bugs mais comuns de quem começa."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual é a forma correta de dar nome a um campo de texto?",
+          "opcoes": [
+            "`<input placeholder=\"Título da tarefa\">`",
+            "`<span>Título da tarefa</span> <input>`",
+            "`<label for=\"t\">Título da tarefa</label> <input id=\"t\">`",
+            "`<input title=\"Título da tarefa\">`"
+          ],
+          "correta": 2,
+          "explicacao": "O `label` com `for` cria a ligação que o navegador e o leitor de tela entendem, e o clique no texto foca o campo. O `span` ao lado é só vizinhança visual. `placeholder` some ao digitar. `title` vira uma dica que aparece só com o mouse parado."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "A mesma tela com div e com semântica",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/ui-01-semantica.html` com um formulário de nova tarefa feito só de `div` e `span`: um campo de título, um checkbox \"urgente\" e um \"botão\" `div` com `onclick=\"alert('salvo')\"`.",
+            "Abra no navegador e tente usar só o teclado: Tab, Espaço, Enter. Anote o que não funciona.",
+            "No mesmo arquivo, abaixo, refaça com `form`, `label` com `for`, `input` e `button`. Ponha um `h1`, um `main` e um botão Cancelar com `type=\"button\"`.",
+            "Repita o teste de teclado na segunda versão e clique nos textos dos labels.",
+            "No DevTools, aba Elements, abra o painel Accessibility e compare o que aparece para a `div` e para o `button`."
+          ],
+          "prontoQuando": "A segunda versão é preenchida e enviada sem tocar no mouse, clicar no texto \"urgente\" marca o checkbox, e você viu no painel Accessibility o papel `button` de um e a ausência de papel do outro."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que um `button` entrega que uma `div` com `onclick` não entrega?",
+          "verso": "Foco por Tab, acionamento por Enter e Espaço, papel de botão para leitor de tela, `disabled` e envio de formulário."
+        },
+        {
+          "frente": "`button` × `a`: qual o critério?",
+          "verso": "`button` faz uma ação na tela. `a href` leva a outro endereço."
+        },
+        {
+          "frente": "Por que `placeholder` não substitui `label`?",
+          "verso": "Some quando o usuário digita, costuma ter contraste baixo e não cria a ligação clicável e anunciável que `label for` cria."
+        },
+        {
+          "frente": "Por que HTML semântico dá acessibilidade de graça?",
+          "verso": "O navegador monta a árvore de acessibilidade a partir dos elementos. Elemento certo já entra com papel, nome e estado certos."
+        },
+        {
+          "frente": "Qual o tipo padrão de um `button` dentro de `form`?",
+          "verso": "`submit`. Botão que não envia precisa de `type=\"button\"`."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "web.dev — Learn HTML",
+          "url": "https://web.dev/learn/html"
+        },
+        {
+          "titulo": "MDN — HTML: A good basis for accessibility",
+          "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Accessibility/HTML"
+        }
+      ]
+    },
+    {
+      "id": "ui-02",
+      "titulo": "CSS que importa: box model, flexbox e grid",
+      "minutos": 11,
+      "ponte": "No Forms cada item tem `X Position`, `Y Position`, `Width` e `Height`, em coordenadas do canvas. Aumentou um prompt, você reposiciona à mão tudo o que vem depois. Em CSS você quase nunca dá coordenada: declara uma **regra de distribuição** (\"estes três em linha, com 16 de espaço, o do meio ocupa o que sobrar\") e o navegador calcula a posição para o tamanho de tela que houver. Onde quebra: você perde o controle pixel a pixel, e a tela deixa de ter um tamanho só.",
+      "texto": "Três ideias cobrem a maior parte do layout que você vai escrever e revisar.\n\n### 1. Box model: tudo é caixa\n\nCada elemento é uma caixa com quatro camadas, de dentro para fora:\n\n1. **content:** o conteúdo.\n2. **padding:** respiro interno, entre o conteúdo e a borda. Tem a cor de fundo do elemento.\n3. **border:** a borda.\n4. **margin:** espaço externo, entre esta caixa e as vizinhas. Sempre transparente.\n\nA armadilha histórica: por padrão, `width: 200px` vale só para o conteúdo, e padding e borda **somam** por fora. Por isso todo projeto começa com:\n\n```text\n*, *::before, *::after { box-sizing: border-box; }\n```\n\nCom `border-box`, largura declarada é largura final. O Tailwind já aplica isso.\n\n### 2. `display`: como a caixa se comporta\n\n- `block`: ocupa a linha inteira e empilha (`div`, `p`, `h1`).\n- `inline`: flui dentro do texto e ignora largura e altura (`span`, `a`).\n- `flex` e `grid`: transformam o elemento num **contêiner** que distribui os filhos. É onde o layout acontece.\n- `none`: some da tela e da árvore de acessibilidade.\n\n### 3. Flexbox: uma dimensão\n\n`display: flex` organiza os filhos ao longo de **um eixo**.\n\n```text\n.barra {\n  display: flex;\n  flex-direction: row;             /* eixo principal: horizontal */\n  justify-content: space-between;  /* distribui no eixo principal */\n  align-items: center;             /* alinha no eixo cruzado */\n  gap: 16px;                       /* espaço entre os filhos */\n}\n```\n\n- **Eixo principal** (*main axis*): a direção do `flex-direction`. `row` é horizontal, `column` é vertical.\n- **Eixo cruzado** (*cross axis*): o perpendicular.\n- `justify-content` age no principal, `align-items` no cruzado. Se você troca para `column`, os dois **trocam de direção** junto. É a confusão número um.\n- `gap` põe espaço **entre** os filhos, sem margem sobrando nas pontas. Prefira `gap` a margem nos filhos.\n- No filho, `flex: 1` diz \"ocupe o que sobrar\".\n\n### 4. Grid: duas dimensões\n\n`display: grid` define linhas **e** colunas. É a ferramenta para o esqueleto da página.\n\n```text\n.pagina {\n  display: grid;\n  grid-template-columns: 240px 1fr;   /* menu fixo, conteúdo com o resto */\n  min-height: 100vh;\n}\n\n.cartoes {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));\n  gap: 16px;\n}\n```\n\n`fr` é uma fração do espaço livre. A segunda regra cria quantas colunas de pelo menos 220px couberem, sem nenhuma condição por tamanho de tela.\n\n### Qual usar\n\n| Situação | Ferramenta |\n|---|---|\n| Itens em fila: barra de botões, cabeçalho, ícone ao lado de texto | flex |\n| Centralizar uma coisa dentro de outra | flex ou grid |\n| Esqueleto da página: menu, cabeçalho, conteúdo | grid |\n| Grade de cartões, formulário em colunas alinhadas | grid |\n\nRegra prática: o conteúdo dita o tamanho e você só enfileira, flex. O layout dita onde cada coisa cai, grid.\n\n### Opinião de sênior\n\n- `position: absolute` com `top` e `left` é a coordenada do canvas de volta. Serve para sobrepor (um selo, um menu suspenso). Para montar tela, quebra no primeiro texto maior.\n- Altura fixa em contêiner de texto é bug agendado: o texto traduzido ou a fonte maior do usuário estoura.\n- Espaçamento vem de uma escala (4, 8, 12, 16, 24), não de número solto. É a origem dos *design tokens* de ui-03.\n- Para depurar, o DevTools desenha o box model do elemento e tem inspetor visual de flex e de grid. Use antes de chutar valor.",
+      "naPratica": "No Cockpit, o esqueleto (menu lateral e conteúdo) é um grid, e quase todo o resto é flex com `gap`. Ao migrar uma tela do Forms, não copie posições do canvas: descreva os grupos (\"filtros em linha, lista embaixo, ações à direita\") e deixe o layout fluir.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Um contêiner tem `display: flex; flex-direction: column;`. Qual propriedade centraliza os filhos **na horizontal**?",
+          "opcoes": [
+            "`justify-content: center`, porque justify é sempre horizontal",
+            "`align-items: center`, porque com `column` o eixo cruzado é o horizontal",
+            "`text-align: center`, porque flex não alinha na horizontal",
+            "`margin: center` em cada filho"
+          ],
+          "correta": 1,
+          "explicacao": "Com `column`, o eixo principal é vertical e o cruzado é horizontal. `align-items` age no eixo cruzado. `justify-content` não é \"horizontal\": ele acompanha o eixo principal, e é esse o engano clássico de quem decorou em vez de entender os eixos."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Sem nenhum reset, um elemento tem `width: 200px; padding: 20px; border: 2px solid`. Qual a largura que ele ocupa na tela?",
+          "opcoes": [
+            "200px: `width` é a largura final",
+            "220px: soma só o padding de um lado",
+            "244px: no padrão (`content-box`), padding e borda dos dois lados somam à largura",
+            "160px: o padding é descontado do conteúdo"
+          ],
+          "correta": 2,
+          "explicacao": "No `content-box`, que é o padrão do CSS, `width` é só o conteúdo: 200 + 20 + 20 de padding + 2 + 2 de borda = 244. Com `box-sizing: border-box` ocuparia 200, com 156 de conteúdo. Por isso todo projeto e todo framework aplicam `border-box` no começo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O esqueleto da aplicação tem menu lateral de largura fixa, cabeçalho no topo e área de conteúdo que ocupa o resto. Qual a ferramenta mais direta?",
+          "opcoes": [
+            "`position: absolute` com `top` e `left` em cada região",
+            "Uma `table` com duas colunas e duas linhas",
+            "Grid, com `grid-template-columns: 240px 1fr`",
+            "`float: left` no menu e margem no conteúdo"
+          ],
+          "correta": 2,
+          "explicacao": "Layout em duas dimensões é o caso do grid: colunas e linhas declaradas num lugar só. Posição absoluta é a coordenada do canvas e não se adapta. `table` é para dado tabular. `float` foi a gambiarra de layout de antes do flex e do grid."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Uma tela do Cockpit sem nenhuma coordenada",
+          "minutos": 25,
+          "passos": [
+            "Crie `estudo/ui-02-layout.html` com `header`, `nav`, `main` e uma tag `style` no `head`. Aplique `box-sizing: border-box` em tudo.",
+            "Faça o esqueleto com grid: menu de 220px à esquerda, cabeçalho no topo, conteúdo ocupando o resto, altura mínima de `100vh`.",
+            "No cabeçalho, use flex: título à esquerda, dois botões à direita, alinhados na vertical, com `gap`.",
+            "No `main`, crie seis cartões de tarefa numa grade com `repeat(auto-fill, minmax(220px, 1fr))` e `gap: 16px`.",
+            "Estreite e alargue a janela e observe a grade. Abra o DevTools e ative os selos `grid` e `flex` na aba Elements."
+          ],
+          "prontoQuando": "A página não tem nenhum `position: absolute`, `top`, `left` nem largura fixa nos cartões, e o número de colunas da grade muda sozinho quando você redimensiona a janela."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são as quatro camadas do box model, de dentro para fora?",
+          "verso": "Content, padding (respiro interno), border e margin (espaço externo)."
+        },
+        {
+          "frente": "O que `box-sizing: border-box` muda?",
+          "verso": "`width` e `height` passam a incluir padding e borda. Largura declarada é largura final."
+        },
+        {
+          "frente": "`justify-content` × `align-items`?",
+          "verso": "`justify-content` distribui no eixo principal (o do `flex-direction`). `align-items` alinha no eixo cruzado. Com `column`, os dois trocam de direção."
+        },
+        {
+          "frente": "Flex × grid: qual o critério?",
+          "verso": "Flex: uma dimensão, o conteúdo dita o tamanho (filas, barras). Grid: duas dimensões, o layout dita onde cada coisa cai (página, grades)."
+        },
+        {
+          "frente": "Por que evitar `position: absolute` para montar a tela?",
+          "verso": "É coordenada fixa, como no canvas do Forms: não se adapta a outro tamanho de tela nem a um texto maior."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "web.dev — Learn CSS",
+          "url": "https://web.dev/learn/css"
+        },
+        {
+          "titulo": "MDN — CSS layout",
+          "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout"
+        }
+      ]
+    },
+    {
+      "id": "ui-03",
+      "titulo": "Tailwind CSS",
+      "minutos": 10,
+      "ponte": "Pense nos *visual attributes* e nas *property classes* do Forms: em vez de ajustar fonte e cor item a item, você aplica um atributo nomeado e a tela inteira segue o mesmo padrão. O Tailwind leva isso ao nível da propriedade: cada classe é um atributo visual minúsculo, tirado de uma tabela fechada de valores. Onde quebra: no Forms você aplica **um** atributo por item. Aqui você compõe dez ou quinze classes pequenas no mesmo elemento, e é o componente React que faz o papel da property class.",
+      "texto": "### A ideia\n\nNo CSS tradicional você inventa um nome (`.cartao-tarefa`), escreve as regras num arquivo `.css` e aplica o nome no HTML. O Tailwind inverte: entrega milhares de classes **utilitárias**, cada uma fazendo uma coisa só, e você compõe o estilo direto na marcação.\n\n```text\n<button class=\"rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700\">\n  Salvar\n</button>\n```\n\nLendo: borda arredondada média, fundo azul 600, padding horizontal 4 e vertical 2, texto pequeno, peso médio, branco, e azul 700 ao passar o mouse. É o CSS de ui-02 com outro vocabulário: `flex`, `items-center`, `gap-4`, `grid`, `grid-cols-3`.\n\n### Por que funciona em time\n\n1. **Ninguém inventa nome.** Some a discussão de nomenclatura e o arquivo `.css` que só cresce.\n2. **Mudança local.** O estilo mora no componente. Alterar um botão não quebra uma tela do outro lado do sistema, e apagar um componente apaga o estilo dele. CSS global é o oposto: ninguém tem coragem de remover uma regra.\n3. **Escala fechada.** `p-4` existe e `p-[17px]` é exceção que salta aos olhos no review. O time inteiro usa os mesmos espaçamentos e as mesmas cores sem precisar combinar.\n4. **O arquivo final é pequeno.** A ferramenta lê o seu código e gera CSS só para as classes que encontrou.\n\n### O custo\n\n- A marcação fica longa e, no começo, feia. O remédio não é voltar ao CSS: é **extrair componente**. Se o mesmo conjunto de classes aparece em três lugares, falta um `<Botao>`.\n- Há um vocabulário para aprender. Ele espelha o CSS, então quem não sabe CSS não se salva com Tailwind.\n- É mais uma etapa de build.\n\n### Variantes: estado e tamanho de tela\n\nUm prefixo aplica a classe só numa condição:\n\n- `hover:bg-blue-700`, `focus-visible:ring-2`, `disabled:opacity-50`: estados.\n- `md:grid-cols-2`, `lg:grid-cols-3`: a partir de uma largura de tela (ui-06).\n- `dark:bg-slate-900`: tema escuro.\n\n### Classes condicionais\n\nNo React, a lista de classes é uma string, e você a monta conforme o estado. O projeto costuma ter uma função auxiliar para isso (no shadcn ela se chama `cn`).\n\n```tsx\n<li className={cn('rounded p-2', feita && 'line-through opacity-60')}>\n```\n\n**A armadilha clássica:** o Tailwind descobre as classes **lendo o texto** dos seus arquivos. Ele não executa o código. `bg-${cor}-600` nunca aparece escrito por inteiro, então a classe não é gerada e o elemento fica sem cor, sem erro nenhum. A regra: o nome completo da classe precisa existir como texto no código. Use um mapa: `{ alta: 'bg-red-600', baixa: 'bg-green-600' }[prioridade]`.\n\n### Design tokens\n\n*Design token* é uma decisão visual com nome: a cor primária, o raio da borda, a escala de espaçamento. Em vez de `#2563eb` espalhado em quarenta arquivos, existe `primary`, definido num lugar só. O Tailwind é, na prática, uma forma de consumir tokens: você escreve `bg-primary` e trocar a marca vira alterar uma linha.\n\n**Onde** os tokens são declarados depende da versão. Nas versões 4, a configuração fica no próprio CSS, com a diretiva `@theme` e variáveis CSS. Nas versões 3, fica num arquivo `tailwind.config.js`. O Tailwind ainda não está instalado no Cockpit: quando instalar, confira a versão e siga a documentação dela, porque tutoriais das duas gerações circulam misturados.\n\n### Opinião de sênior\n\nUse quando há um time, componentes (React) e vontade de consistência. Não compensa em página solta sem build, nem como forma de pular o aprendizado de CSS. No review, três sinais de alerta: valor arbitrário entre colchetes repetido, o mesmo bloco de classes copiado em vários arquivos, e cor fixa (`bg-blue-600`) onde deveria haver um token (`bg-primary`).",
+      "naPratica": "No Cockpit, as cores e os raios vêm de tokens (`bg-primary`, `text-muted-foreground`) que os componentes do shadcn já usam. Quando uma classe \"não pega\", a primeira suspeita é nome montado por concatenação.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma versão mínima da função que monta classes condicionais. O que cada chamada devolve?",
+          "codigo": "type Parte = string | false | null | undefined;\nconst cx = (...partes: Parte[]) => partes.filter(Boolean).join(' ');\n\nconst item = (feita: boolean, urgente?: boolean) =>\n  cx('rounded p-2', feita && 'line-through opacity-60', urgente && 'border-red-600');\n\nconsole.log(item(false));\nconsole.log(item(true));\nconsole.log(item(false, true));\n\nconst cor = 'red';\nconsole.log(`bg-${cor}-600`.length, 'bg-red-600'.length);\n",
+          "saida": "rounded p-2\nrounded p-2 line-through opacity-60\nrounded p-2 border-red-600\n10 10\n",
+          "explicacao": "`condicao && 'classe'` vale `false` ou `undefined` quando a condição não se aplica, e o `filter(Boolean)` descarta. É o mecanismo das funções `clsx` e `cn`. A última linha mostra a armadilha: em execução as duas strings são idênticas, mas o Tailwind não executa nada. Ele procura o texto `bg-red-600` nos arquivos, e no modelo com `${cor}` esse texto não existe."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O componente usa `className={`text-${nivel}-700`}` e `nivel` vale `'green'`. Na tela o texto sai sem cor e não há erro no console. Por quê?",
+          "opcoes": [
+            "O Tailwind não tem a cor `green`",
+            "Template string não é aceita no atributo `className`",
+            "O Tailwind gera CSS só para nomes de classe que encontra escritos por inteiro no código, e `text-green-700` não está escrito",
+            "Faltou reiniciar o servidor de desenvolvimento"
+          ],
+          "correta": 2,
+          "explicacao": "A geração é por leitura de texto, não por execução. A string final existe só em tempo de execução, então a regra CSS nunca é criada. O HTML recebe a classe, e ela não tem estilo associado. Solução: um mapa com os nomes completos."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O mesmo conjunto de doze classes de botão aparece copiado em nove arquivos. Qual a correção de sênior?",
+          "opcoes": [
+            "Criar uma classe `.btn` num arquivo CSS global e voltar ao CSS tradicional",
+            "Extrair um componente `<Botao>` que guarda as classes num lugar só",
+            "Deixar como está: repetição é o preço do Tailwind",
+            "Guardar as classes numa constante global `ESTILO_BOTAO` e importar nos nove arquivos"
+          ],
+          "correta": 1,
+          "explicacao": "Em projeto com componentes, a unidade de reuso é o componente: ele leva junto marcação, comportamento e estilo. A constante global reaproveita o texto e deixa escapar o resto (o `type`, o estado desabilitado, a acessibilidade). A classe global recria o problema que o Tailwind resolve."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Traduzir CSS para utilitários",
+          "minutos": 20,
+          "passos": [
+            "Copie `estudo/ui-02-layout.html` para `ui-03-tailwind.html`.",
+            "Na documentação do Tailwind, ache a forma de uso por script de CDN, indicada para experimento sem build, e inclua no `head`. Confira que é a da versão atual.",
+            "Apague a tag `style` e refaça o cabeçalho e os cartões só com classes utilitárias (`flex`, `items-center`, `justify-between`, `gap-4`, `grid`, `rounded`, `p-4`, `border`).",
+            "Acrescente um estado: `hover:` no cartão e `focus-visible:` num botão.",
+            "Escreva de propósito uma classe que não existe (`p-quatro`) e veja que nada acontece e nada avisa."
+          ],
+          "prontoQuando": "A página fica visualmente equivalente à de ui-02 sem nenhuma tag `style`, e você consegue ler em voz alta o que cada classe de um cartão faz."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é uma classe utilitária?",
+          "verso": "Uma classe que faz uma coisa só (`p-4`, `flex`, `text-sm`), tirada de uma escala fechada. O estilo é composto na marcação."
+        },
+        {
+          "frente": "Por que `bg-${cor}-600` não funciona no Tailwind?",
+          "verso": "Ele gera CSS lendo o texto do código, sem executar. O nome completo da classe precisa existir escrito. Use um mapa de nomes completos."
+        },
+        {
+          "frente": "Por que utilitários funcionam bem em time?",
+          "verso": "Ninguém inventa nome, a mudança é local ao componente, a escala de valores é fechada e o CSS final só tem o que é usado."
+        },
+        {
+          "frente": "O que é um design token?",
+          "verso": "Uma decisão visual com nome (cor primária, raio, espaçamento) definida num lugar só. Trocar a marca é alterar o token."
+        },
+        {
+          "frente": "O bloco de classes se repete em vários arquivos. O que fazer?",
+          "verso": "Extrair um componente. No Tailwind, a unidade de reuso é o componente, não uma classe CSS nova."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "Tailwind CSS — Documentação",
+          "url": "https://tailwindcss.com/docs"
+        },
+        {
+          "titulo": "Tailwind CSS — Styling with utility classes",
+          "url": "https://tailwindcss.com/docs/styling-with-utility-classes"
+        }
+      ]
+    },
+    {
+      "id": "ui-04",
+      "titulo": "Biblioteca de componentes: shadcn/ui, Radix e design system",
+      "minutos": 10,
+      "ponte": "Toda fábrica de Forms tem um **form de referência**: o template com a barra de ferramentas, os visual attributes e as property classes de onde toda tela nova herda. Isso é um design system, com outro nome. E há duas formas de reutilizar um objeto no Forms: *subclass* (referência, atualiza junto com a origem) e *copy* (o objeto passa a ser seu). Biblioteca de componentes por npm é subclass. O shadcn é **copy**. Onde quebra: no Forms a herança é imposta pela ferramenta. Aqui, nada impede alguém de escrever um botão do zero ao lado do padrão.",
+      "texto": "Um botão é fácil. Um *select* com busca, um diálogo modal, um menu suspenso e um seletor de data **não são**: cada um esconde dezenas de regras de teclado, foco e leitor de tela. Ninguém deveria reescrever isso por projeto. A pergunta é de onde pegar.\n\n### Três camadas\n\n**1. Comportamento sem estilo: Radix.** O Radix entrega componentes *headless* (sem aparência): diálogo, menu, abas, tooltip, popover. Ele resolve a parte difícil e invisível: prender o foco dentro do diálogo, fechar com Esc, devolver o foco a quem abriu, navegar no menu pelas setas, os atributos ARIA corretos. Você entra com o CSS.\n\n**2. Estilo: Tailwind.** As classes de ui-03.\n\n**3. A receita pronta: shadcn/ui.** O shadcn junta os dois: componentes com o comportamento de uma biblioteca headless (historicamente o Radix) e estilo em Tailwind, usando tokens.\n\n### A diferença que importa: copiar em vez de depender\n\nUma biblioteca tradicional (Material UI, Ant Design) entra como **dependência**: você importa de `node_modules`, e o código é deles. O shadcn não funciona assim. Um comando de linha **copia o arquivo-fonte** do componente para dentro do seu repositório, tipicamente em `src/components/ui/button.tsx`. A partir daí o arquivo é seu.\n\n| | Dependência (npm) | Cópia (shadcn) |\n|---|---|---|\n| Quem é dono do código | A biblioteca | Você |\n| Mudar aparência ou comportamento | Só pelo que a API de tema permite | Edita o arquivo |\n| Atualização e correção de bug | `npm update` | Manual: comparar e reaplicar |\n| Risco | Brigar com a biblioteca para fugir do padrão dela | Cada cópia divergir e ninguém manter |\n\nRepare na divisão: a **parte difícil** (o comportamento acessível) continua vindo de dependência e recebe correção por atualização. O que é copiado é a casca: marcação e classes. É um corte bem escolhido, não é copiar e colar a esmo.\n\n### Design system\n\n*Design system* não é uma biblioteca. É o conjunto de:\n\n- **Tokens:** cores, tipografia, espaçamento, raios.\n- **Componentes:** botão, campo, diálogo, tabela, já com os estados (foco, erro, desabilitado, carregando).\n- **Padrões de uso:** como é um formulário, onde fica o botão principal, como se mostra um erro.\n- **Regras e dono:** quem aprova componente novo, como se propõe mudança.\n\n### Por que empresa grande tem um\n\n1. **Consistência:** cem telas feitas por dez times parecem um produto só.\n2. **Velocidade:** tela nova é montagem de peças, não decisão de cor e de espaçamento.\n3. **Acessibilidade resolvida uma vez:** corrigiu o diálogo, corrigiu em todo lugar.\n4. **Mudança barata:** trocar a marca é trocar tokens.\n\nO custo é real: alguém precisa **ser o dono**. Design system sem dono vira biblioteca abandonada com três versões de botão. Em empresa grande isso é um time. Em time pequeno, é uma pessoa com essa responsabilidade explícita e uma regra simples no review.\n\n### Opinião de sênior\n\n- **Produto com identidade própria e time que sabe CSS:** shadcn. Você começa com algo bom e é dono do resultado.\n- **Sistema interno, muitas telas de cadastro, prazo curto, sem designer:** uma biblioteca completa por dependência pode entregar mais rápido. O preço vem no dia em que pedirem algo fora do padrão dela.\n- **Em qualquer caso:** não escreva diálogo, menu ou combobox do zero. A chance de sair acessível é pequena.\n- **Regra de review:** componente de `components/ui` só muda com motivo e com aviso ao time. Tela não recria o que já existe lá.",
+      "naPratica": "No Cockpit, o pacote `@radix-ui` já aparece em `node_modules` e os componentes de interface ficarão em `apps/web/src/components/ui`. Na migração de um sistema Forms, o design system é o equivalente do form de referência: defina antes da primeira tela, não depois da vigésima.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois de adicionar o componente `Dialog` do shadcn ao projeto, onde está o código-fonte dele?",
+          "opcoes": [
+            "Em `node_modules`, como qualquer biblioteca, importado de um pacote `shadcn`",
+            "Num arquivo dentro do seu repositório, que você pode editar e que passa a manter",
+            "Num serviço remoto que entrega o componente em tempo de execução",
+            "Embutido no Tailwind, ativado por uma classe"
+          ],
+          "correta": 1,
+          "explicacao": "O comando copia o arquivo-fonte para o seu projeto. Não existe um pacote de componentes do shadcn para importar. O que continua em `node_modules` é a biblioteca de comportamento que o arquivo usa por baixo. A tentação é tratar como dependência e esperar atualização automática, que não vem."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que uma biblioteca headless como o Radix entrega?",
+          "opcoes": [
+            "Componentes com visual pronto, configuráveis por tema",
+            "Apenas classes CSS para compor",
+            "Comportamento e acessibilidade (foco, teclado, ARIA) sem aparência nenhuma",
+            "Um gerador de telas a partir do esquema do banco"
+          ],
+          "correta": 2,
+          "explicacao": "Headless quer dizer sem aparência: a biblioteca cuida do que é difícil e invisível, e o estilo é seu. Visual pronto por tema é o modelo das bibliotecas completas. Só classes é o Tailwind."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, vamos começar o front novo. Por que não instalar logo uma biblioteca completa, tipo Material UI, em vez desse shadcn em que a gente tem que manter o código dos componentes?\"",
+          "pontos": [
+            "Explicou a diferença de modelo: dependência versus código copiado para o repositório",
+            "Disse que o comportamento difícil (foco, teclado, ARIA) continua vindo de dependência e só a casca é copiada",
+            "Colocou o critério: identidade visual própria e capacidade do time em CSS versus prazo e telas padrão",
+            "Citou o custo de cada lado (brigar com o tema da biblioteca versus manter e atualizar as cópias)",
+            "Lembrou que em qualquer escolha é preciso um dono e uma regra de review"
+          ],
+          "modelo": "As duas escolhas são defensáveis, e depende de duas coisas. Se o produto vai ter cara própria e o time se vira em CSS, eu vou de shadcn: o arquivo do componente fica no nosso repositório e a gente muda o que quiser, enquanto a parte difícil, foco, teclado e leitor de tela, continua vindo de uma dependência que recebe correção. O custo é que atualização das cópias é manual. Se for sistema interno, só cadastro, sem designer e com prazo curto, uma biblioteca completa entrega mais rápido, e a conta chega no dia em que pedirem algo fora do padrão dela. Nos dois casos precisa de um dono dos componentes e de uma regra: tela não recria o que já existe na pasta de UI."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Ler um componente por dentro",
+          "minutos": 20,
+          "passos": [
+            "Abra a documentação do shadcn/ui, vá ao componente Dialog e abra a aba que mostra o código-fonte do componente.",
+            "Em `estudo/ui-04-dialog.md`, liste o que o arquivo importa: o que vem da biblioteca de comportamento e o que é só classe de estilo.",
+            "Ache no código onde entram os tokens (nomes como `bg-background`, `text-muted-foreground`) e anote três.",
+            "Abra a documentação do Radix para Dialog e copie da seção de acessibilidade as interações de teclado que ele garante.",
+            "Escreva em três linhas o que você teria que implementar à mão se fizesse esse diálogo com `div`."
+          ],
+          "prontoQuando": "O arquivo separa em duas listas o que é comportamento (vem da dependência) e o que é aparência (está no arquivo copiado), e tem as interações de teclado do diálogo."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual a diferença central entre o shadcn/ui e uma biblioteca como Material UI?",
+          "verso": "O shadcn copia o código-fonte do componente para o seu repositório: você é o dono. A biblioteca tradicional entra como dependência do npm."
+        },
+        {
+          "frente": "O que significa componente *headless*?",
+          "verso": "Entrega comportamento e acessibilidade (foco, teclado, ARIA) sem aparência. O estilo é por sua conta."
+        },
+        {
+          "frente": "O que compõe um design system?",
+          "verso": "Tokens, componentes com seus estados, padrões de uso e as regras de quem mantém e como muda."
+        },
+        {
+          "frente": "Por que empresa grande tem um design system?",
+          "verso": "Consistência entre times, velocidade para montar telas, acessibilidade resolvida uma vez e mudança de marca barata."
+        },
+        {
+          "frente": "Qual o custo de o componente ser código copiado?",
+          "verso": "Atualização e correção são manuais, e as cópias podem divergir. Precisa de dono e de regra no review."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "shadcn/ui — Documentação",
+          "url": "https://ui.shadcn.com/docs"
+        },
+        {
+          "titulo": "W3C WAI — ARIA Authoring Practices Guide: Patterns",
+          "url": "https://www.w3.org/WAI/ARIA/apg/patterns/"
+        }
+      ]
+    },
+    {
+      "id": "ui-05",
+      "titulo": "Acessibilidade: teclado, foco e ARIA",
+      "minutos": 11,
+      "ponte": "O usuário de Forms **vive no teclado**: Tab e Enter entre os itens, F7 e F8 para consultar, F9 na lista de valores, F10 para gravar. Um digitador experiente não toca no mouse e mede a tela pela velocidade dos dedos. No Forms isso vem pronto: a ordem de navegação é a ordem dos itens no bloco, e o foco sempre está em algum lugar. Na web **nada disso é automático** além do que o HTML nativo entrega. Por isso, na migração, acessibilidade de teclado não é gentileza: é requisito de aceitação. É o que decide se o usuário adota a tela nova ou pede a antiga de volta.",
+      "texto": "Acessibilidade é a tela funcionar para quem não usa mouse, não enxerga a tela, enxerga pouco ou usa o celular no sol. Na prática do dia a dia, quatro verificações cobrem a maior parte.\n\n### 1. Tudo operável por teclado\n\n- **Tab** e **Shift+Tab** percorrem os elementos interativos.\n- **Enter** aciona links e botões. **Espaço** aciona botões e marca checkbox.\n- **Setas** navegam **dentro** de um componente composto: opções de um menu, abas, grupo de radio.\n- **Esc** fecha o que abriu por cima: diálogo, menu, popover.\n\nO teste custa trinta segundos: largue o mouse e complete o fluxo principal. Onde você travou, a tela está quebrada.\n\n### 2. Ordem de foco\n\nA ordem do Tab é a **ordem dos elementos no HTML**. Se a ordem visual foi mudada por CSS e a do HTML não, o foco pula pela tela. Corrija a ordem do HTML.\n\nSobre `tabindex`:\n\n- `tabindex=\"0\"`: inclui o elemento na ordem natural. Só para componente interativo feito à mão.\n- `tabindex=\"-1\"`: fora do Tab, mas pode receber foco por código. Útil para mover o foco a um título ou a uma mensagem de erro.\n- `tabindex` **positivo**: cria uma ordem paralela impossível de manter. Não use.\n\n### 3. Foco visível\n\nO usuário de teclado precisa ver **onde está**. O navegador desenha um contorno no elemento focado. O erro clássico é `outline: none` para \"limpar o visual\": a tela fica inutilizável por teclado. Se o contorno padrão incomoda, substitua por outro, nunca remova. A pseudo-classe `:focus-visible` mostra o anel para quem navega por teclado e não no clique do mouse.\n\n### 4. Gerenciar o foco em diálogos\n\nUm diálogo modal tem três obrigações:\n\n1. **Ao abrir**, o foco vai para dentro dele.\n2. **Enquanto aberto**, o Tab não escapa para a página de trás (*focus trap*, armadilha de foco).\n3. **Ao fechar**, o foco **volta para o elemento que abriu**.\n\nA terceira é a mais esquecida. Sem ela, o foco cai no início da página e o usuário de teclado perde o lugar a cada diálogo. É o equivalente de fechar uma LOV e o cursor ir parar no primeiro item do form. O elemento nativo `dialog`, aberto com `showModal()`, e os componentes do Radix já fazem as três. Mais um motivo para não escrever diálogo do zero (ui-04).\n\n### ARIA só quando o HTML não basta\n\n*ARIA* é um conjunto de atributos (`role`, `aria-label`, `aria-expanded`, `aria-live`) que informam à árvore de acessibilidade o que o HTML sozinho não consegue dizer. A primeira regra de quem escreveu a especificação: **se existe elemento nativo com o comportamento, use o elemento**.\n\nARIA só muda o que é **anunciado**. Não acrescenta comportamento: `role=\"button\"` numa `div` faz o leitor de tela dizer \"botão\" e continua sem foco nem Enter. Pior do que não ter ARIA é ter ARIA que mente.\n\nUsos legítimos e frequentes:\n\n- `aria-label=\"Excluir tarefa\"` num botão que só tem ícone.\n- `aria-expanded` no botão que abre e fecha um painel.\n- `aria-live=\"polite\"` numa região cujo texto muda sozinho (\"3 tarefas salvas\"), para o leitor de tela anunciar.\n- `aria-invalid` e `aria-describedby` ligando o campo à mensagem de erro.\n\n### Contraste\n\nTexto precisa de contraste suficiente com o fundo. A referência da WCAG no nível AA é razão de **4,5:1** para texto normal e **3:1** para texto grande. O DevTools mostra a razão ao inspecionar a cor. Cinza claro em fundo branco é a reprovação mais comum. E nunca comunique algo **só** por cor: erro leva ícone ou texto, não apenas vermelho.\n\n### Opinião de sênior\n\nAcessibilidade feita desde o início custa quase nada: é escolher o elemento certo e não remover o foco. Feita depois, é retrabalho em toda tela. Ponha no critério de pronto: \"o fluxo principal se completa só com teclado\". Ferramentas automáticas ajudam e pegam só uma parte dos problemas. O teste com o teclado na mão não tem substituto.",
+      "naPratica": "Numa migração de Forms, leve para a conversa de aceitação um roteiro de teclado por tela: ordem dos campos, tecla de gravar, tecla de abrir a busca, foco depois de salvar. No Cockpit, todo diálogo devolve o foco ao botão que abriu, e isso entra no teste de componente.",
+      "exercicios": [
+        {
+          "tipo": "compila",
+          "enunciado": "Ao fechar o diálogo, o código devolve o foco ao botão que o abriu. O TypeScript aceita?",
+          "codigo": "const abrir = document.querySelector<HTMLButtonElement>('#abrir');\nconst dialogo = document.querySelector<HTMLDialogElement>('#confirmar');\n\ndialogo?.addEventListener('close', () => {\n  abrir.focus();\n});\n",
+          "compila": false,
+          "erro": "TS18047",
+          "linha": 5,
+          "explicacao": "`querySelector` devolve `HTMLButtonElement | null`: o elemento pode não estar na página. O compilador recusa `abrir.focus()` sem tratar o nulo (`TS18047: 'abrir' is possibly 'null'`). A correção é `abrir?.focus()`. Repare que na linha 4 o `?.` já protegia o diálogo. Devolver o foco é obrigação, e com o `dialog` nativo aberto por `showModal()` o navegador já faz isso sozinho."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega pôs `role=\"button\"` numa `div` com `onclick` para \"resolver a acessibilidade\". O que mudou?",
+          "opcoes": [
+            "Tudo: agora a `div` se comporta como um `button`",
+            "O leitor de tela passa a anunciar \"botão\", mas a `div` continua sem foco por Tab e sem resposta a Enter e Espaço",
+            "Nada: `role` só vale em elementos de formulário",
+            "A `div` ganha foco por Tab, mas não é anunciada"
+          ],
+          "correta": 1,
+          "explicacao": "ARIA altera o que é anunciado, não o comportamento. O resultado é pior do que antes: o leitor de tela promete um botão que o teclado não consegue acionar. A correção é trocar por `button`, que dá papel, foco e teclado de uma vez."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O usuário abre um diálogo de confirmação pelo botão \"Excluir\" da quinta linha de uma lista e fecha com Esc. Para onde o foco deve ir?",
+          "opcoes": [
+            "Para o início da página, para o usuário recomeçar a navegação",
+            "Para o primeiro campo do formulário mais próximo",
+            "Para lugar nenhum: o foco some até o próximo clique",
+            "De volta ao botão \"Excluir\" da quinta linha, que abriu o diálogo"
+          ],
+          "correta": 3,
+          "explicacao": "O foco volta para quem abriu, e o usuário continua de onde estava. Mandar para o início da página obriga a percorrer tudo de novo com Tab. É o defeito mais comum em diálogo feito à mão, e passa despercebido por quem testa só com mouse."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a tela nova está linda, mas o pessoal da digitação reclamou que ficou mais lenta que o Forms. Acessibilidade de teclado é mesmo prioridade? Ninguém ali usa leitor de tela.\"",
+          "pontos": [
+            "Separou acessibilidade de teclado de leitor de tela: o público aqui é o digitador rápido",
+            "Lembrou que o usuário de Forms trabalha sem mouse e que a produtividade dele é o critério de adoção",
+            "Tratou como requisito de aceitação da migração, não como melhoria futura",
+            "Deu itens concretos a verificar: ordem do Tab, foco visível, foco após salvar e após fechar diálogo, atalhos",
+            "Apontou o custo: barato se entra no critério de pronto, caro se for retrabalho depois"
+          ],
+          "modelo": "É prioridade, e não por causa de leitor de tela. Quem digita o dia inteiro no Forms não tira a mão do teclado: Tab, Enter, tecla de gravar. Se a tela nova obriga a pegar o mouse para abrir a busca ou perde o foco depois de salvar, cada registro fica alguns segundos mais lento, e multiplicado por centenas de registros por dia a pessoa pede o Forms de volta com razão. Eu trataria como requisito de aceitação: o fluxo principal completo só com teclado, ordem do Tab igual à ordem de digitação, foco sempre visível, foco voltando ao lugar certo depois de salvar e de fechar diálogo. Fazer isso agora é barato. Deixar para depois é reabrir tela por tela."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "O teste dos trinta segundos, com e sem o conserto",
+          "minutos": 20,
+          "passos": [
+            "Crie `estudo/ui-05-foco.html` com três botões \"Excluir\" numa lista e um elemento `dialog` com o texto \"Confirma?\" e dois botões dentro de um `form method=\"dialog\"`.",
+            "Faça cada \"Excluir\" abrir o diálogo com `showModal()`. Sem mouse, abra pelo segundo botão, feche com Esc e veja onde o foco ficou.",
+            "Acrescente no CSS `button:focus { outline: none; }` e repita o percurso. Depois troque por `button:focus-visible { outline: 3px solid; outline-offset: 2px; }`.",
+            "Troque `showModal()` por `show()` e observe, com Tab, o foco escapando para a página de trás.",
+            "Adicione um botão só com o caractere `×` e dê a ele um `aria-label`. Confira o nome no painel Accessibility do DevTools."
+          ],
+          "prontoQuando": "Você viu o foco voltar sozinho ao botão que abriu o diálogo com `showModal()`, viu o foco escapar com `show()`, e consegue dizer por que `outline: none` sem substituto reprova a tela."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as três obrigações de foco de um diálogo modal?",
+          "verso": "Ao abrir, foco para dentro. Enquanto aberto, o Tab não escapa. Ao fechar, o foco volta para o elemento que abriu."
+        },
+        {
+          "frente": "Por que `outline: none` é um defeito?",
+          "verso": "Remove o indicador de foco: quem navega por teclado não sabe onde está. Substitua o estilo (com `:focus-visible`), nunca remova."
+        },
+        {
+          "frente": "Qual a primeira regra do ARIA?",
+          "verso": "Se existe elemento HTML nativo com o comportamento, use o elemento. ARIA só muda o que é anunciado, não acrescenta comportamento."
+        },
+        {
+          "frente": "Por que acessibilidade de teclado é requisito de aceitação numa migração de Forms?",
+          "verso": "O usuário de Forms trabalha sem mouse. Se a tela nova exige mouse ou perde o foco, ele fica mais lento e rejeita a migração."
+        },
+        {
+          "frente": "O que define a ordem do Tab?",
+          "verso": "A ordem dos elementos no HTML. `tabindex` positivo cria ordem paralela e não deve ser usado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "web.dev — Learn Accessibility",
+          "url": "https://web.dev/learn/accessibility"
+        },
+        {
+          "titulo": "W3C WAI — ARIA Authoring Practices Guide",
+          "url": "https://www.w3.org/WAI/ARIA/apg/"
+        },
+        {
+          "titulo": "MDN — O elemento dialog",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog"
+        }
+      ]
+    },
+    {
+      "id": "ui-06",
+      "titulo": "Responsivo e os estados de toda tela: carregando, vazio, erro",
+      "minutos": 10,
+      "ponte": "No Forms, `EXECUTE_QUERY` é síncrono: a tela congela, o cursor vira ampulheta, e quando volta ou há registros no bloco, ou aparece `FRM-40301` (a consulta não retornou registros), ou um alerta com o `ORA-`. Os quatro estados sempre existiram, só que o **runtime** cuidava deles. Na web a busca é assíncrona e a tela continua viva enquanto o dado não chega: cada estado precisa ser desenhado por você. E o canvas tinha um tamanho só. Aqui a mesma tela abre num monitor largo e num celular.",
+      "texto": "Duas disciplinas que separam a tela de demonstração da tela de produção.\n\n### Parte 1: responsivo, mobile first\n\n*Mobile first* quer dizer: o CSS **sem condição** é o da tela pequena, e você acrescenta regras à medida que a tela cresce.\n\n```text\n.cartoes { display: grid; grid-template-columns: 1fr; gap: 16px; }\n\n@media (min-width: 768px)  { .cartoes { grid-template-columns: repeat(2, 1fr); } }\n@media (min-width: 1024px) { .cartoes { grid-template-columns: repeat(3, 1fr); } }\n```\n\nNo Tailwind, a mesma coisa: `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3`. O prefixo `md:` significa \"**a partir de** média\", não \"só em média\". Classe sem prefixo vale para todas as larguras.\n\nPor que começar pelo pequeno:\n\n- O layout de celular é o mais simples: uma coluna. Regras a mais só acrescentam.\n- Obriga a decidir **o que é essencial**. Em 360px não cabe tudo, e essa escolha melhora a tela grande também.\n- O caminho inverso, desmontar um layout largo com exceções, gera mais CSS e mais bug.\n\n*Breakpoint* (ponto de quebra) é a largura em que o layout muda. Os padrões do Tailwind ficam perto de 640, 768, 1024 e 1280 pixels. Não pense em aparelhos (\"o do iPhone\"): mude o layout **onde o conteúdo quebra**.\n\nTrês regras que evitam a maioria dos problemas:\n\n1. A linha `<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">` no `head`. Sem ela o celular finge ser um monitor e encolhe tudo.\n2. Largura fluida (`max-width`, `1fr`, `%`), nunca fixa em pixels para contêiner.\n3. Tabela larga em tela pequena: ou rola na horizontal dentro do próprio contêiner, ou vira lista de cartões. Esconder colunas sem critério é esconder dado.\n\n**Custo e critério:** sistema de retaguarda usado só em monitor não precisa de layout de celular caprichado. Precisa não quebrar em notebook pequeno e com zoom de 200%. Pergunte quem usa e onde antes de investir.\n\n### Parte 2: os quatro estados de toda tela que busca dado\n\nToda tela que depende de uma requisição tem quatro estados. O iniciante desenha um.\n\n| Estado | O que mostrar | Erro comum |\n|---|---|---|\n| **Carregando** | Esqueleto com a forma do conteúdo, ou indicador de progresso | Tela em branco, ou o layout pulando quando o dado chega |\n| **Vazio** | Explicação e a próxima ação (\"Nenhuma tarefa para hoje. Criar a primeira\") | Tabela só com cabeçalho, que parece defeito |\n| **Erro** | O que houve em linguagem de gente e um botão de tentar de novo | Carregando para sempre, ou a mensagem técnica crua |\n| **Com dado** | O conteúdo | É o único que todo mundo testa |\n\nDetalhes de quem já sofreu com isso:\n\n- **A ordem de checagem importa:** carregando, depois erro, depois vazio, depois dado. Checar vazio antes de carregando faz a tela piscar \"nenhum registro\" a cada abertura.\n- **Vazio tem dois sabores.** Sem dado nenhum pede \"crie o primeiro\". Filtro sem resultado pede \"limpe os filtros\". Mensagens diferentes.\n- **Recarregar não é carregar.** Se já há dado na tela e ele está sendo atualizado, mantenha o dado e mostre um indicador discreto. Trocar a lista por esqueleto a cada atualização é pior do que o Forms.\n- **Indicador só depois de um pequeno atraso.** Resposta rápida com spinner piscando parece mais lenta do que sem nada.\n- **Erro parcial.** Se a lista carregou e o contador falhou, mostre a lista.\n- **Acessibilidade:** mudança de estado deve ser anunciada (`aria-live` ou `role=\"status\"`, ui-05), e o esqueleto não pode empurrar o layout.\n\n### Opinião de sênior\n\nOs quatro estados entram na **definição de pronto** e no review: \"cadê o vazio e o erro?\" é pergunta padrão. E vale desenhar esses estados como componentes reutilizáveis logo no início (`<EstadoVazio>`, `<EstadoErro>`): com eles prontos, fazer certo passa a dar o mesmo trabalho que fazer errado.",
+      "naPratica": "No Cockpit, o TanStack Query entrega os sinais prontos (pendente, erro, dado, atualizando em segundo plano) e cada tela só decide o que desenhar para cada um. Na aba Network do DevTools dá para simular rede lenta e offline e ver os estados que você nunca vê em `localhost`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A função decide o que a tela desenha. O que sai para cada um dos cinco estados?",
+          "codigo": "type Estado = { carregando: boolean; erro?: string; dados?: string[] };\n\nfunction tela(e: Estado): string {\n  if (e.carregando && !e.dados) return 'esqueleto';\n  if (e.erro) return 'erro + tentar de novo';\n  if (!e.dados || e.dados.length === 0) return 'vazio + criar a primeira';\n  return `lista (${e.dados.length})` + (e.carregando ? ' + atualizando' : '');\n}\n\nconsole.log(tela({ carregando: true }));\nconsole.log(tela({ carregando: false, erro: 'sem rede' }));\nconsole.log(tela({ carregando: false, dados: [] }));\nconsole.log(tela({ carregando: false, dados: ['a', 'b'] }));\nconsole.log(tela({ carregando: true, dados: ['a', 'b'] }));\n",
+          "saida": "esqueleto\nerro + tentar de novo\nvazio + criar a primeira\nlista (2)\nlista (2) + atualizando\n",
+          "explicacao": "A ordem das checagens é a lição: carregando sem dado, erro, vazio, dado. A última linha é o quinto caso que quase ninguém desenha: já existe dado e uma atualização está em curso. A tela mantém a lista e só acrescenta um indicador. Se a primeira condição fosse apenas `e.carregando`, a lista sumiria e voltaria a cada atualização."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No Tailwind, um elemento tem `grid-cols-1 md:grid-cols-3`. Quantas colunas ele tem num celular de 380px e num monitor de 1600px?",
+          "opcoes": [
+            "1 no celular e 1 no monitor: `md:` vale só para telas médias",
+            "3 no celular e 1 no monitor: a classe sem prefixo é a do desktop",
+            "1 no celular e 3 no monitor: sem prefixo vale para tudo, e `md:` vale da largura média para cima",
+            "3 nos dois: a última classe sempre vence"
+          ],
+          "correta": 2,
+          "explicacao": "Mobile first: a classe sem prefixo é a base, para qualquer largura. O prefixo significa \"a partir de\", sem limite superior, então `md:grid-cols-3` continua valendo em 1600px. Ler `md:` como \"somente em telas médias\" é o engano mais comum."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A lista de tarefas abre e, por meio segundo, mostra \"Nenhuma tarefa encontrada\" antes de os dados aparecerem. Qual a causa provável?",
+          "opcoes": [
+            "A API está devolvendo uma lista vazia e depois corrigindo",
+            "O componente testa \"vazio\" antes de testar \"carregando\": enquanto o dado não chega, ele é tratado como lista vazia",
+            "O navegador está usando uma resposta antiga do cache HTTP",
+            "Falta a tag `meta viewport` na página"
+          ],
+          "correta": 1,
+          "explicacao": "Antes da resposta, o dado é `undefined`, e um teste como `!dados?.length` trata isso como vazio. Checar o carregamento primeiro resolve. A API não devolve duas respostas para uma requisição, e o `viewport` afeta escala, não estado."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Uma tela, quatro estados, três larguras",
+          "minutos": 25,
+          "passos": [
+            "Crie `estudo/ui-06-estados.html` com a tag `meta viewport`, um `main` e quatro botões: Carregando, Vazio, Erro e Com dado.",
+            "Escreva uma função `desenha(estado)` que troca o conteúdo de uma `section`: três blocos cinza como esqueleto, a mensagem de vazio com um botão \"Criar a primeira\", a mensagem de erro com \"Tentar de novo\", ou seis cartões.",
+            "Faça a grade de cartões mobile first: uma coluna sem condição, duas a partir de 768px, três a partir de 1024px, com `@media (min-width: ...)`.",
+            "Dê `role=\"status\"` à `section` e ligue cada botão ao seu estado.",
+            "No DevTools, ative o modo de dispositivo e teste os quatro estados em 360px, 800px e 1280px."
+          ],
+          "prontoQuando": "Os quatro estados aparecem ao clicar nos botões, nenhum deles quebra em 360px de largura, e a grade muda de uma para duas e três colunas nas larguras certas."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais são os quatro estados de toda tela que busca dado?",
+          "verso": "Carregando, vazio, erro e com dado. Há um quinto: com dado e atualizando em segundo plano."
+        },
+        {
+          "frente": "O que significa *mobile first*?",
+          "verso": "O CSS sem condição é o da tela pequena. As regras para telas maiores são acrescentadas com `min-width`."
+        },
+        {
+          "frente": "No Tailwind, o que quer dizer o prefixo `md:`?",
+          "verso": "A partir da largura média para cima, sem limite superior. Não é \"somente em telas médias\"."
+        },
+        {
+          "frente": "Por que checar \"carregando\" antes de \"vazio\"?",
+          "verso": "Antes de a resposta chegar não há dado. Se o teste de vazio vier primeiro, a tela pisca \"nenhum registro\" a cada abertura."
+        },
+        {
+          "frente": "O que um bom estado vazio contém?",
+          "verso": "Uma explicação e a próxima ação. Distingue \"não há nada ainda\" de \"o filtro não encontrou nada\"."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "web.dev — Learn Responsive Design",
+          "url": "https://web.dev/learn/design"
+        },
+        {
+          "titulo": "Tailwind CSS — Responsive design",
+          "url": "https://tailwindcss.com/docs/responsive-design"
+        },
+        {
+          "titulo": "MDN — Using media queries",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries"
+        }
+      ]
+    }
+  ]
+}

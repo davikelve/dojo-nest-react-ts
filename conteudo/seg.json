@@ -1,0 +1,1046 @@
+{
+  "licoes": [
+    {
+      "id": "seg-01",
+      "titulo": "Modelo de ameaça da web e o OWASP Top 10 em 10 minutos",
+      "minutos": 10,
+      "ponte": "No Forms, a segurança vinha quase pronta: a rede era interna, cada pessoa tinha o seu usuário de banco e o `GRANT` decidia o que ela alcançava. Na web continua existindo \"quem pode o quê\", mas a analogia quebra em três pontos: a aplicação fica **exposta**, o banco enxerga **um único usuário de serviço** e quem decide cada acesso é o **seu código**, a cada requisição.",
+      "texto": "Um **modelo de ameaça** (*threat model*) é a resposta escrita a quatro perguntas: o que eu protejo, quem pode atacar, por onde ele entra e o que eu faço a respeito. Você já faz isso de cabeça quando decide quem recebe `GRANT` numa tabela. Na web as respostas mudam.\n\n| | Forms cliente-servidor | Aplicação web |\n|---|---|---|\n| Quem alcança a aplicação | Quem está na rede interna | Qualquer um que alcance a URL |\n| Quem o banco enxerga | O usuário de banco da pessoa | Um usuário de serviço, igual para todos |\n| Onde mora a autorização | `GRANT`, *role*, regra na tela | No código da API, a cada requisição |\n| O cliente é confiável? | Executável instalado pela empresa | Não. O navegador é do usuário, e quem ataca nem usa navegador |\n\nA última linha é a que mais muda o jeito de pensar. Qualquer requisição pode ser montada à mão, com qualquer campo e qualquer valor. Esconder um botão ou validar no formulário é usabilidade. **Segurança é o que o servidor confere.**\n\n### O OWASP Top 10 em linguagem simples\n\nA OWASP é uma fundação aberta que publica, a cada poucos anos, a lista dos dez riscos mais comuns em aplicações web. As categorias mudam de nome e de posição entre as edições, então guarde as ideias e confira a edição atual no site.\n\n| Categoria | O que é, em uma frase | Defesa |\n|---|---|---|\n| *Broken Access Control* | O usuário vê ou altera o que não é dele | Checar no servidor a cada requisição e filtrar por dono (seg-06) |\n| *Security Misconfiguration* | Padrão inseguro deixado ligado, erro detalhado na resposta | Configuração validada, cabeçalhos (seg-11), nada de *stack trace* para o cliente |\n| Cadeia de dependências | Pacote vulnerável, desatualizado ou malicioso | *Lockfile*, auditoria e atualização contínua (seg-09) |\n| *Cryptographic Failures* | Dado sensível sem proteção, senha mal guardada | HTTPS sempre, hash lento para senha (seg-02) |\n| *Injection* | Dado do usuário executado como comando (SQL, HTML) | *Bind*, escape na saída, validação (seg-05, seg-07) |\n| *Insecure Design* | A falha está no desenho, não numa linha | Pensar na ameaça antes de codificar |\n| *Authentication Failures* | Login fraco, sessão que não expira, força bruta | Token curto, refresh rotativo, *rate limit* (seg-03, seg-04, seg-11) |\n| Falhas de integridade | Confiar em código ou dado sem conferir a origem | Assinatura, *pipeline* protegido, não desserializar dado não confiável |\n| Falhas de log e alerta | O ataque acontece e ninguém percebe | Registrar evento de segurança e alertar, sem dado sensível (seg-08) |\n\nA décima vaga é a que mais muda. SSRF (o servidor fazendo requisição a um endereço escolhido pelo atacante, que você vê em seg-07) já foi item próprio, e edição recente destaca o tratamento errado de erros e exceções.\n\n### Como um sênior usa a lista\n\n- **Controle de acesso quebrado lidera as edições recentes.** O problema mais comum não é criptografia exótica. É esquecer de conferir se o registro pertence a quem pediu.\n- **O Top 10 é material de conscientização, não checklist de auditoria.** Passar pelos dez itens não prova que a aplicação é segura. Para verificação detalhada a própria OWASP mantém o ASVS, e para APIs existe uma lista separada, o API Security Top 10.\n- **Defesa em camadas.** Nenhuma defesa isolada basta. Validação, autorização, cabeçalhos e log se cobrem: quando uma falha, a outra segura.\n\nA armadilha clássica de quem vem da intranet é dizer \"isso só roda aqui dentro\". Rede interna é uma camada, não a única. Uma máquina comprometida ou um usuário legítimo curioso já estão do lado de dentro.",
+      "naPratica": "Antes de abrir a primeira rota do Cockpit para fora da sua máquina, escreva o modelo de ameaça em meia página. Num review, a pergunta que mais rende é sempre a mesma: \"e se quem chama esta rota mandar outro id, outro campo ou nenhum token?\"",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Uma tela React esconde o botão \"Excluir\" de quem não é administrador. A rota `DELETE /tarefas/:id` da API não confere o papel de quem chama. Qual a avaliação correta?",
+          "opcoes": [
+            "Está seguro: sem o botão, o usuário comum não tem como disparar a exclusão",
+            "Está seguro desde que o código do front seja minificado",
+            "Há falha de controle de acesso: a requisição pode ser montada sem a tela, e o servidor não confere",
+            "Só há falha se o usuário souber programar"
+          ],
+          "correta": 2,
+          "explicacao": "O cliente não é confiável. Esconder o botão é usabilidade; a autorização tem que estar no servidor. A opção do botão é tentadora para quem vem do Forms, onde a tela era o único caminho até o dado. Na web a rota é pública para qualquer ferramenta que fale HTTP."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "No Forms, o que impedia a Ana de ler a tabela de salários era a falta de `GRANT` no usuário de banco dela. Numa API com um único usuário de serviço, o que faz esse papel?",
+          "opcoes": [
+            "Uma checagem de autorização no código da API, feita a cada requisição",
+            "O mesmo `GRANT`, porque o banco continua sabendo quem é a Ana",
+            "O CORS, que bloqueia chamadas de quem não tem permissão",
+            "O HTTPS, que impede a Ana de ver os dados em trânsito"
+          ],
+          "correta": 0,
+          "explicacao": "O banco só enxerga o usuário de serviço, que tem acesso a tudo o que a aplicação usa. Quem sabe que a chamada é da Ana é a API, pelo token. O `GRANT` continua útil para limitar o usuário de serviço ao mínimo, mas não distingue pessoas. CORS e HTTPS resolvem outros problemas."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "A equipe revisou o sistema contra os dez itens do OWASP Top 10 e não achou nada. O que dá para afirmar?",
+          "opcoes": [
+            "Que o sistema é seguro, pois o Top 10 cobre todas as falhas conhecidas",
+            "Que o sistema está em conformidade com a legislação de proteção de dados",
+            "Nada: o Top 10 é irrelevante para sistemas internos",
+            "Que os riscos mais comuns foram olhados; a lista é de conscientização, não uma verificação completa"
+          ],
+          "correta": 3,
+          "explicacao": "O Top 10 reúne os riscos mais frequentes, não todos. Para verificação detalhada existe o ASVS. A primeira opção é o erro comum: tratar a lista como certificado."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, esse sistema novo só vai rodar na intranet. Precisa mesmo de toda essa preocupação com segurança de web?\"",
+          "pontos": [
+            "Reconheceu que a rede interna é uma camada de proteção real, mas não a única",
+            "Explicou que na web o banco vê um usuário de serviço, então a autorização passou para o código",
+            "Citou que o cliente não é confiável: a requisição pode ser montada fora da tela",
+            "Lembrou do atacante interno ou da máquina comprometida",
+            "Propôs proporção: o básico sempre, o resto conforme o risco do dado"
+          ],
+          "modelo": "Precisa do básico, sim. A intranet reduz quem alcança o sistema, e isso conta. Mas no Forms quem barrava cada pessoa era o usuário de banco e o grant. Na API o banco enxerga um usuário de serviço só, então quem decide o que cada um vê é o nosso código. Se a gente relaxar ali, qualquer colega com uma ferramenta de requisição troca um id e lê o que não devia. E uma máquina infectada também está dentro da rede. O que eu não abro mão: autorização no servidor em toda rota, bind em todo SQL, senha e segredo bem guardados. O resto a gente dosa pelo risco do dado."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Modelo de ameaça do Cockpit em meia página",
+          "minutos": 15,
+          "passos": [
+            "Crie `estudo/modelo-de-ameaca.md` com quatro títulos: O que protejo, Quem pode atacar, Por onde entra, O que faço.",
+            "Em \"O que protejo\", liste os dados do Cockpit do mais sensível ao menos sensível (anotações de 1:1 vêm antes da lista de tarefas).",
+            "Em \"Por onde entra\", liste as portas: tela de login, cada grupo de rotas da API, o banco, as dependências npm.",
+            "Para cada porta, escreva uma defesa e o número da lição desta trilha que trata dela."
+          ],
+          "prontoQuando": "O arquivo tem as quatro seções preenchidas e cada porta de entrada tem pelo menos uma defesa associada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as 4 perguntas de um modelo de ameaça?",
+          "verso": "O que eu protejo, quem pode atacar, por onde ele entra e o que eu faço a respeito."
+        },
+        {
+          "frente": "Por que esconder um botão no front não é controle de acesso?",
+          "verso": "A requisição pode ser montada sem a tela. O cliente não é confiável: segurança é o que o servidor confere."
+        },
+        {
+          "frente": "Qual categoria lidera as edições recentes do OWASP Top 10?",
+          "verso": "*Broken Access Control*: o usuário vê ou altera o que não é dele porque o servidor não conferiu."
+        },
+        {
+          "frente": "O OWASP Top 10 é um checklist de auditoria?",
+          "verso": "Não. É lista de conscientização dos riscos mais comuns. Para verificação detalhada existe o ASVS; para APIs, o API Security Top 10."
+        },
+        {
+          "frente": "No Forms o `GRANT` separava as pessoas. O que separa numa API com usuário de serviço?",
+          "verso": "A checagem de autorização no código da API, a cada requisição, com a identidade que vem no token."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Top 10 (edição atual)",
+          "url": "https://owasp.org/www-project-top-ten/"
+        },
+        {
+          "titulo": "OWASP API Security Project",
+          "url": "https://owasp.org/www-project-api-security/"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet Series — Threat Modeling",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html"
+        }
+      ]
+    },
+    {
+      "id": "seg-02",
+      "titulo": "Senhas: hash, sal e argon2",
+      "minutos": 9,
+      "ponte": "O Oracle não guarda a senha do usuário de banco, guarda um verificador derivado dela, e você nunca precisou pensar nisso. Quando a aplicação tem a própria tabela de usuários, esse trabalho passa a ser seu. A analogia quebra aqui: não existe um `CREATE USER ... IDENTIFIED BY` que resolva. Você escolhe o algoritmo, o custo e o formato do que fica gravado.",
+      "texto": "A regra de partida: **a aplicação nunca deve conseguir recuperar a senha de ninguém**. Ela só precisa responder \"a senha digitada é a mesma do cadastro?\". Há três jeitos de guardar, e só um serve.\n\n| Como guarda | O que acontece quando a tabela vaza |\n|---|---|\n| Texto puro | Todas as senhas expostas na hora |\n| Cifrada (reversível) | Quem levar a chave junto lê todas. E a chave fica no mesmo servidor |\n| *Hash* (função de mão única) | O atacante precisa adivinhar senha por senha |\n\n### Por que hash rápido não serve\n\nSHA-256 foi feito para ser rápido. Uma placa de vídeo testa bilhões de candidatas por segundo, e senhas humanas são previsíveis. Além disso, sem **sal** duas pessoas com a mesma senha ficam com o mesmo hash, e o atacante quebra todas de uma vez com tabelas calculadas antes.\n\nDaí as duas defesas:\n\n- **Sal** (*salt*): um valor aleatório, diferente para cada usuário, misturado à senha antes do hash. Fica guardado ao lado do hash e **não é segredo**. O papel dele é obrigar o atacante a recomeçar o trabalho para cada linha.\n- **Hash lento**: uma função de derivação com custo configurável. Se cada tentativa custa 100 ms e dezenas de megabytes, o login legítimo nem percebe, e o ataque de bilhões de tentativas deixa de ser viável.\n\n### Qual algoritmo\n\n- **argon2id**: a primeira recomendação da OWASP. Cobra tempo **e memória**, o que tira a vantagem de placas de vídeo e de hardware dedicado.\n- **bcrypt**: mais antigo, aceitável e muito difundido. Só considera os primeiros 72 bytes da senha.\n- **scrypt** e **PBKDF2**: aceitáveis quando o ambiente impõe (PBKDF2 aparece onde há exigência de certificação).\n\nNa prática você usa uma biblioteca que gera o sal e devolve uma única *string* com tudo dentro:\n\n```ts\nimport argon2 from 'argon2';\n\nconst guardado = await argon2.hash(senha);\n// $argon2id$v=19$m=...,t=...,p=...$<sal>$<hash>\n\nconst confere = await argon2.verify(guardado, tentativa);\n```\n\nO algoritmo e os parâmetros de custo viajam junto com o hash. Isso permite aumentar o custo no futuro: no próximo login bem-sucedido, você recalcula com os parâmetros novos e regrava. As versões recentes do Node também trazem argon2 no módulo `node:crypto`; confira na documentação da sua versão se a API já é estável antes de trocar a biblioteca por ela.\n\n### Comparação em tempo constante\n\nComparar dois hashes com `===` para no primeiro caractere diferente. A diferença de tempo, medida milhares de vezes, vaza informação. A comparação correta percorre tudo sempre: `timingSafeEqual` do `node:crypto`. Quando você usa o `verify` da biblioteca, ela já faz isso. O cuidado vale para qualquer segredo que você compare à mão, como um token ou uma assinatura.\n\n### As armadilhas\n\n- **Limite de tamanho.** Hash lento com senha de 1 MB vira ataque de negação de serviço. Aceite senhas longas, mas com teto (algo como 128 caracteres).\n- **Mensagem única.** \"Usuário ou senha inválidos\" para os dois casos. Dizer \"usuário não existe\" entrega a lista de cadastrados.\n- **Senha não vai para o log**, nem em erro de validação (seg-08).\n- **Comprimento vale mais que regra de composição.** Exigir símbolo e maiúscula produz `Senha@123`. Exigir tamanho mínimo e recusar senhas vazadas conhecidas produz senha melhor.\n\nE a decisão de sênior: se a empresa tem provedor de identidade, a melhor tabela de senhas é a que você **não tem** (seg-10).",
+      "naPratica": "No Cockpit o cadastro grava só a string devolvida pelo `hash`, numa coluna de texto. Num review, procure três coisas: `createHash` perto da palavra senha, comparação com `===` e a senha aparecendo em `console.log` ou em mensagem de erro.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O sal aqui é **fixo** só para a saída ser sempre igual. Em produção ele é aleatório, um por usuário. Escreva as quatro linhas da saída.",
+          "codigo": "import { scryptSync, timingSafeEqual } from 'node:crypto';\n\nconst SAL = 'sal-fixo-so-para-o-exercicio';\nconst derivar = (senha: string, sal: string) => scryptSync(senha, sal, 32);\n\nconst guardado = derivar('cafe-com-leite', SAL);\nconst confere = (tentativa: string) =>\n  timingSafeEqual(derivar(tentativa, SAL), guardado);\n\nconsole.log(guardado.length, guardado.toString('hex').length);\nconsole.log(confere('cafe-com-leite'));\nconsole.log(confere('cafe-com-leitE'));\nconsole.log(derivar('cafe-com-leite', 'outro-sal').equals(guardado));\n",
+          "saida": "32 64\ntrue\nfalse\nfalse\n",
+          "explicacao": "O `scryptSync` devolve 32 bytes, que em hexadecimal ocupam 64 caracteres. Mesma senha e mesmo sal dão o mesmo resultado, por isso a conferência funciona. Uma letra diferente muda tudo. E a mesma senha com outro sal dá outro valor: é isso que impede duas pessoas com a mesma senha de terem o mesmo hash."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Hash rápido e sem sal. O que cada linha imprime?",
+          "codigo": "import { createHash, timingSafeEqual } from 'node:crypto';\n\nconst sha = (s: string) => createHash('sha256').update(s).digest('hex');\n\nconst ana = sha('123456');\nconst beto = sha('123456');\nconsole.log(ana === beto);\nconsole.log(ana.length);\n\ntry {\n  timingSafeEqual(Buffer.from('abc'), Buffer.from('abcd'));\n} catch (e) {\n  console.log((e as { code: string }).code);\n}\n",
+          "saida": "true\n64\nERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH\n",
+          "explicacao": "Sem sal, a mesma senha gera o mesmo hash para a Ana e para o Beto: quem quebra um, quebra os dois. A terceira linha mostra um detalhe do `timingSafeEqual`: ele exige entradas do **mesmo tamanho** e lança erro se forem diferentes. Com hashes isso é natural, porque a saída tem sempre o mesmo comprimento."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. Qual é o problema **mais grave** deste trecho?\n\n```ts\nconst hash = createHash('sha256').update(dto.senha).digest('hex');\nconst usuario = await repo.buscaPorEmail(dto.email);\nif (!usuario) throw new UnauthorizedException('Usuário não existe');\nif (usuario.senhaHash !== hash) throw new UnauthorizedException('Senha errada');\n```",
+          "opcoes": [
+            "Usar `digest('hex')` em vez de `base64`, que ocupa menos espaço",
+            "Buscar o usuário depois de calcular o hash, o que desperdiça processamento",
+            "Lançar `UnauthorizedException` em vez de devolver `false`",
+            "SHA-256 é rápido e está sem sal: se a tabela vazar, as senhas são quebradas em massa"
+          ],
+          "correta": 3,
+          "explicacao": "O algoritmo é o defeito central: hash rápido e sem sal. O trecho tem mais dois problemas menores que um review também aponta: mensagens diferentes para usuário inexistente e senha errada, e comparação com `!==` em vez de tempo constante. Formato da saída e ordem das chamadas não afetam a segurança."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O sal fica gravado na mesma linha do hash, legível para quem roubar a tabela. Por que isso não é um problema?",
+          "opcoes": [
+            "É um problema: o sal deveria ficar cifrado em outra tabela",
+            "O papel do sal é tornar cada hash único, obrigando o atacante a atacar linha por linha; ele não precisa ser segredo",
+            "Porque o sal é apagado depois do primeiro login",
+            "Porque o atacante não sabe em que posição da string o sal está"
+          ],
+          "correta": 1,
+          "explicacao": "O sal elimina o ataque em massa (tabelas prontas e hashes iguais para senhas iguais). Quem torna cada tentativa cara é o hash lento. A opção de cifrar o sal é tentadora, mas confunde sal com chave: segredo é a senha, e nada mais precisa ser."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Por que SHA-256 não serve para guardar senha?",
+          "verso": "É rápido: bilhões de tentativas por segundo em placa de vídeo. Senha pede hash lento, com custo configurável (argon2id, bcrypt)."
+        },
+        {
+          "frente": "Para que serve o sal e ele é segredo?",
+          "verso": "Valor aleatório por usuário que torna cada hash único e mata tabelas prontas. Não é segredo: fica guardado junto do hash."
+        },
+        {
+          "frente": "O que o argon2id cobra que o bcrypt não cobra?",
+          "verso": "Memória, além de tempo. Isso tira a vantagem de placas de vídeo e hardware dedicado."
+        },
+        {
+          "frente": "Por que comparar segredos com `timingSafeEqual` e não com `===`?",
+          "verso": "`===` para no primeiro caractere diferente, e a diferença de tempo vaza informação. A comparação em tempo constante percorre tudo sempre."
+        },
+        {
+          "frente": "Qual mensagem devolver quando o usuário não existe no login?",
+          "verso": "A mesma de senha errada: \"usuário ou senha inválidos\". Mensagens diferentes entregam quem está cadastrado."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — Password Storage",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "Node.js — módulo crypto",
+          "url": "https://nodejs.org/api/crypto.html"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Authentication",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+        }
+      ]
+    },
+    {
+      "id": "seg-03",
+      "titulo": "Sessão × JWT: o que tem dentro de um token",
+      "minutos": 10,
+      "ponte": "No Forms, a sessão **é** a conexão: o banco sabe quem você é do logon ao logoff, e `USER` responde a qualquer momento. Em HTTP não há conexão presa por pessoa (você viu em http-01), então cada requisição precisa trazer a prova de quem a fez. Onde a analogia quebra: essa prova ou é uma senha de guichê que o servidor consulta, ou é um crachá assinado que ele apenas confere.",
+      "texto": "Há dois jeitos de a requisição provar quem é o usuário.\n\n**Sessão no servidor.** No login, o servidor cria um registro (no banco ou no Redis) e devolve um identificador aleatório e sem significado, normalmente num cookie. A cada requisição ele busca o registro. Para encerrar o acesso, apaga o registro.\n\n**Token autocontido.** No login, o servidor entrega um documento **assinado** com os dados do usuário. A cada requisição ele só confere a assinatura e a validade, sem consultar nada. O formato mais usado é o JWT (*JSON Web Token*).\n\n### O que tem dentro de um JWT\n\nTrês partes separadas por ponto, cada uma em *base64url* (base64 com alfabeto seguro para URL):\n\n```text\ncabecalho.corpo.assinatura\n```\n\n- **Cabeçalho** (*header*): o algoritmo, por exemplo `{\"alg\":\"HS256\",\"typ\":\"JWT\"}`.\n- **Corpo** (*payload*): as *claims* (afirmações). As padronizadas: `sub` (quem é), `iat` (emitido em), `exp` (expira em), `iss` (quem emitiu), `aud` (para quem é). Os horários são segundos desde 1970.\n- **Assinatura**: um HMAC do texto `cabecalho.corpo` com um segredo que só o servidor tem (HS256), ou uma assinatura com chave privada (RS256, em que quem confere só precisa da chave pública).\n\nO ponto que mais confunde: **assinado não é cifrado**. Base64url é só uma codificação. Qualquer pessoa com o token lê o corpo. A assinatura garante outra coisa: que ninguém **alterou** o conteúdo. Mudou uma letra do corpo, a assinatura deixa de bater.\n\n### O que não pôr no corpo\n\nSenha, documento pessoal, dado de saúde ou financeiro, qualquer coisa que você não mostraria ao próprio usuário ou a quem interceptar o token. Ponha o mínimo: o identificador do usuário e, no máximo, o papel. O token vai em toda requisição, então também não o engorde com dados que mudam: o que está nele fica congelado até expirar.\n\n### Como conferir direito\n\n1. **Fixe o algoritmo esperado.** Nunca aceite o que o cabeçalho do token diz sem comparar com a sua configuração. Bibliotecas antigas aceitavam `alg: none` e validavam token sem assinatura.\n2. Recalcule a assinatura e compare em tempo constante (seg-02).\n3. Confira `exp`, e `iss` e `aud` quando houver mais de um emissor ou de uma aplicação (seg-10).\n\nUse uma biblioteca mantida para isso. O exercício abaixo monta um token à mão para você **entender** o formato, não para copiar para produção.\n\n### O preço de cada um\n\n| | Sessão no servidor | JWT |\n|---|---|---|\n| Consulta por requisição | Sim (banco ou Redis) | Não |\n| Revogar na hora | Simples: apaga o registro | Difícil: o token vale até `exp` |\n| Dado desatualizado | Não: lê o estado atual | Sim: papel removido continua no token |\n| Vários serviços validando | Todos dependem do mesmo armazenamento | Cada um valida sozinho com a chave |\n\nPor não ter como revogar, o JWT pede **expiração curta**, de 5 a 15 minutos. A experiência de ficar logado por dias vem de um segundo token, o de renovação, que você vê em seg-04.\n\nCritério de sênior: para um monólito com um único front, sessão no servidor com cookie é mais simples e revogável, e é uma escolha legítima. JWT se paga quando vários serviços precisam validar sem depender de um ponto central, ou quando a identidade vem de um provedor externo. \"Todo mundo usa JWT\" não é motivo.",
+      "naPratica": "Cole um token de exemplo num decodificador local (ou faça o segundo exercício) e veja o corpo em texto puro. Depois disso você nunca mais põe dado sensível numa claim. No Cockpit o access token carrega só `sub` e expira em minutos.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um JWT HS256 montado à mão, com `iat` e `exp` fixos. Depois alguém troca o papel no corpo e reaproveita a assinatura original. O que sai?",
+          "codigo": "import { createHmac } from 'node:crypto';\n\nconst b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');\nconst assinar = (dados: string, segredo: string) =>\n  createHmac('sha256', segredo).update(dados).digest('base64url');\n\nconst SEGREDO = 'segredo-de-exercicio';\nconst cabecalho = b64({ alg: 'HS256', typ: 'JWT' });\nconst corpo = b64({ sub: 'u1', papel: 'usuario', iat: 1700000000, exp: 1700000900 });\nconst token = `${cabecalho}.${corpo}.${assinar(`${cabecalho}.${corpo}`, SEGREDO)}`;\n\nfunction confere(t: string): boolean {\n  const [c, p, a] = t.split('.');\n  return a === assinar(`${c}.${p}`, SEGREDO);\n}\n\nconst falso = b64({ sub: 'u1', papel: 'admin', iat: 1700000000, exp: 1700000900 });\nconst adulterado = [cabecalho, falso, token.split('.')[2]].join('.');\n\nconsole.log(token.split('.').length);\nconsole.log(cabecalho);\nconsole.log(confere(token));\nconsole.log(confere(adulterado));\n",
+          "saida": "3\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\ntrue\nfalse\n",
+          "explicacao": "O token tem três partes. O cabeçalho HS256 em base64url é sempre esse texto que começa com `eyJ` (é `{\"` codificado), por isso todo JWT começa igual. O token original confere. No adulterado, o corpo mudou e a assinatura antiga foi calculada sobre outro texto: recalculando, não bate. Sem o segredo, o atacante não consegue produzir a assinatura nova. Código real compara com `timingSafeEqual` e usa biblioteca."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Este programa **não tem o segredo** e a assinatura é lixo. Ele consegue ler o corpo?",
+          "codigo": "const token =\n  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +\n  'eyJzdWIiOiJ1MSIsInBhcGVsIjoidXN1YXJpbyIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwOTAwfQ.' +\n  'assinatura-que-eu-nao-sei-conferir';\n\nconst [, corpo] = token.split('.');\nconst dados = JSON.parse(Buffer.from(corpo ?? '', 'base64url').toString('utf8'));\n\nconsole.log(dados.sub, dados.papel);\nconsole.log(dados.exp - dados.iat);\n\nconst AGORA = 1700001000;\nconsole.log(dados.exp > AGORA ? 'no prazo' : 'expirado');\n",
+          "saida": "u1 usuario\n900\nexpirado\n",
+          "explicacao": "Ler o corpo não exige segredo nenhum: é só decodificar base64url. Por isso nada sensível vai ali. A diferença `exp - iat` é 900 segundos, 15 minutos de validade. Com o relógio fixado em 1700001000, o `exp` (1700000900) já passou. Atenção: este código **leu**, não **validou**. Um servidor que decide com base no corpo sem conferir a assinatura aceita qualquer token forjado."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um administrador perde o papel de admin às 10:00. O access token JWT dele, emitido às 9:58 com a claim `papel: admin`, expira às 10:13. O que acontece às 10:05 numa API que confia na claim?",
+          "opcoes": [
+            "A API recusa, porque o JWT consulta o banco a cada uso",
+            "A API aceita como admin: o token é autocontido e vale até expirar",
+            "A assinatura fica inválida assim que o papel muda no banco",
+            "O navegador apaga o token automaticamente"
+          ],
+          "correta": 1,
+          "explicacao": "É o custo do token autocontido: o conteúdo fica congelado até o `exp`. Por isso a expiração é curta, e por isso decisões críticas podem justificar uma consulta ao estado atual. A primeira opção descreve sessão no servidor, não JWT."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Qual destes dados é aceitável no corpo de um access token?",
+          "opcoes": [
+            "O hash da senha, para o servidor conferir mais rápido",
+            "O CPF e o endereço, para a tela não precisar buscar",
+            "O identificador do usuário (`sub`) e a expiração (`exp`)",
+            "A chave de API de um serviço externo que o usuário usa"
+          ],
+          "correta": 2,
+          "explicacao": "O corpo é legível por qualquer pessoa com o token. Vai o mínimo para identificar e validar. Dado pessoal e segredo não entram. O hash da senha é tentador para quem pensa em desempenho, mas entrega material de ataque a cada requisição."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o JWT é criptografado, né? Então posso pôr o CPF e o e-mail do cliente no payload para a tela não precisar buscar?\"",
+          "pontos": [
+            "Corrigiu: JWT comum é assinado, não cifrado; o corpo é só base64url",
+            "Explicou o que a assinatura garante: que o conteúdo não foi alterado",
+            "Disse por que não pôr dado pessoal: o token trafega em toda requisição e pode parar em log ou histórico",
+            "Deu a alternativa: só o identificador no token, e a tela busca o perfil numa rota própria",
+            "Citou que o conteúdo do token fica congelado até expirar"
+          ],
+          "modelo": "Não é criptografado, é assinado. O payload é base64url: qualquer pessoa com o token decodifica e lê em dois segundos. A assinatura só garante que ninguém alterou o conteúdo. Como o token vai em toda requisição e acaba aparecendo em ferramenta de depuração, proxy e às vezes em log, CPF ali é dado pessoal espalhado. E tem outro custo: o que está no token fica congelado até expirar, então e-mail alterado continuaria o antigo. Eu deixaria só o id do usuário e a expiração. A tela busca o perfil numa rota própria e guarda em cache."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Quais as três partes de um JWT e em que codificação?",
+          "verso": "Cabeçalho, corpo e assinatura, separados por ponto, cada um em base64url."
+        },
+        {
+          "frente": "Por que não pôr dado sensível no corpo de um JWT?",
+          "verso": "Ele é assinado, não cifrado. Qualquer pessoa com o token decodifica o base64url e lê."
+        },
+        {
+          "frente": "O que a assinatura de um JWT garante?",
+          "verso": "Que o cabeçalho e o corpo não foram alterados e que quem emitiu tinha a chave. Não garante sigilo."
+        },
+        {
+          "frente": "Por que access token JWT tem expiração curta?",
+          "verso": "Não há como revogá-lo sem consultar um estado central. O que está nele vale até o `exp`."
+        },
+        {
+          "frente": "Sessão no servidor ou JWT num monólito com um único front?",
+          "verso": "Sessão em cookie é mais simples e revogável na hora. JWT se paga com vários serviços validando ou identidade externa."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "RFC 7519 — JSON Web Token (JWT)",
+          "url": "https://www.rfc-editor.org/rfc/rfc7519"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Session Management",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "RFC 8725 — JSON Web Token Best Current Practices",
+          "url": "https://www.rfc-editor.org/rfc/rfc8725"
+        }
+      ]
+    },
+    {
+      "id": "seg-04",
+      "titulo": "Access token + refresh rotativo com detecção de reuso",
+      "minutos": 10,
+      "ponte": "Pense numa tabela de controle com `UPDATE ... SET usado_em = SYSDATE WHERE id = :id AND usado_em IS NULL` seguido da conferência de `SQL%ROWCOUNT`: quem chegar depois encontra zero linhas. O refresh rotativo é esse padrão aplicado a tokens. Onde a analogia quebra: aqui, encontrar zero linhas não é concorrência normal. É sinal de que existe uma cópia do token em outra mão.",
+      "texto": "Em seg-03 ficou um impasse. O access token precisa ser curto, porque não dá para revogá-lo. Mas ninguém aceita digitar a senha a cada 15 minutos. A saída é usar **dois tokens com trabalhos diferentes**.\n\n| | Access token | Refresh token |\n|---|---|---|\n| Para que serve | Autorizar cada chamada à API | Só pedir um access token novo |\n| Validade | Minutos | Dias |\n| Vai para onde | Todas as rotas | Uma única rota (`/auth/refresh`) |\n| O servidor guarda? | Não (autocontido) | Sim: uma linha por token |\n\nO refresh é valioso e dura muito. Se ele for roubado e reutilizável, o ladrão tem acesso por dias. Daí vêm três mecanismos.\n\n### 1. Rotação\n\nCada refresh token vale **uma vez**. Ao usá-lo, o cliente recebe um access novo **e um refresh novo**. O antigo é marcado como usado. O tempo em que um token roubado serve cai de dias para \"até o próximo uso\".\n\n### 2. Família e detecção de reuso\n\nTodos os refresh tokens que descendem do mesmo login formam uma **família**. Se chega um token que já foi usado, existem duas cópias dele no mundo: a do usuário e a de outra pessoa. O servidor **não tem como saber** qual das duas está na mão do dono. A resposta segura é revogar a família inteira e exigir login de novo. O usuário legítimo perde um minuto. O atacante perde o acesso.\n\n### 3. Guardar só o hash\n\nO refresh token equivale a uma senha de longa duração. Na tabela fica o **hash** dele, nunca o valor. Quem ler o banco ou um backup não consegue usar nada. Aqui SHA-256 basta, ao contrário do que você viu em seg-02: o token é um valor aleatório longo gerado pelo servidor, impossível de adivinhar por tentativa. Hash lento existe para compensar a previsibilidade de senha humana.\n\nUma linha da tabela costuma ter: `id`, `usuarioId`, `familiaId`, `hashToken`, `expiraEm`, `usadoEm`, `revogadoEm`.\n\n### O fluxo da renovação\n\n1. Calcula o hash do token recebido e busca a linha.\n2. Não achou, expirou ou está revogada: nega.\n3. Já está usada: **reuso**. Revoga a família e nega.\n4. Senão, marca como usada e emite o par novo na mesma família, **na mesma transação**.\n\nO passo 4 precisa ser atômico. Duas requisições simultâneas com o mesmo token não podem passar as duas. O `UPDATE` condicional com conferência de linhas afetadas resolve, como na ponte.\n\n### As armadilhas\n\n- **Falso positivo por concorrência.** Duas abas renovam ao mesmo tempo, ou a resposta se perde na rede e o cliente repete com o token antigo. O servidor vê reuso e derruba um usuário honesto. O front precisa garantir uma única renovação em andamento por vez (você vê em front-07). Alguns sistemas aceitam o token anterior por poucos segundos. É uma troca consciente de segurança por conforto, e precisa ficar registrada.\n- **Família eterna.** Rotação sem prazo absoluto mantém alguém logado para sempre. Dê à família uma validade máxima a partir do login.\n- **Logout que só apaga no navegador.** Sair de verdade é revogar a família no servidor.\n- **Troca de senha** revoga todas as famílias do usuário.\n\nO custo é real: uma tabela, uma transação e um caso de borda no front. Para uma ferramenta interna de baixo risco, sessão no servidor (seg-03) entrega revogação com menos peças. O par access e refresh se justifica quando você já decidiu por token autocontido.",
+      "naPratica": "No Cockpit, a tabela de refresh tokens tem `familiaId` e `usadoEm`, e o teste e2e mais importante do módulo de autenticação é: renovar duas vezes com o mesmo token e conferir que a segunda nega e que o token novo da primeira também parou de valer.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Rotação e detecção de reuso em memória. O `Map` faz o papel da tabela e a chave é o **hash** do token. O que cada linha imprime?",
+          "codigo": "import { createHash } from 'node:crypto';\n\nconst hash = (t: string) => createHash('sha256').update(t).digest('hex');\ntype Linha = { familia: string; usado: boolean; revogado: boolean };\nconst banco = new Map<string, Linha>();\nlet seq = 0;\n\nfunction emitir(familia: string): string {\n  const token = `refresh-${++seq}`;\n  banco.set(hash(token), { familia, usado: false, revogado: false });\n  return token;\n}\n\nfunction renovar(token: string): string {\n  const linha = banco.get(hash(token));\n  if (!linha || linha.revogado) return 'negado';\n  if (linha.usado) {\n    for (const l of banco.values()) if (l.familia === linha.familia) l.revogado = true;\n    return 'reuso: familia revogada';\n  }\n  linha.usado = true;\n  return emitir(linha.familia);\n}\n\nconst t1 = emitir('fam-A');\nconst t2 = renovar(t1);\nconsole.log(t2);\nconsole.log(renovar(t1));\nconsole.log(renovar(t2));\nconsole.log(banco.has(t1));\n",
+          "saida": "refresh-2\nreuso: familia revogada\nnegado\nfalse\n",
+          "explicacao": "A primeira renovação marca `refresh-1` como usado e emite `refresh-2` na mesma família. Apresentar `refresh-1` de novo é reuso: a família inteira é revogada. Por isso `refresh-2`, que era legítimo e nunca foi usado, também passa a ser negado. A última linha é `false` porque o banco guarda o hash, não o token. Num sistema real o token é aleatório (aqui é sequencial só para a saída ser previsível)."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O servidor recebe um refresh token que já consta como usado. Por que revogar a família inteira em vez de só negar essa requisição?",
+          "opcoes": [
+            "Porque existem duas cópias do token e não dá para saber qual lado é o dono; o token mais novo da família pode estar com o atacante",
+            "Porque a tabela ficaria inconsistente se sobrassem tokens ativos",
+            "Porque o access token do usuário expira junto com a família",
+            "Para liberar espaço na tabela de tokens"
+          ],
+          "correta": 0,
+          "explicacao": "Se o atacante usou o token primeiro, é ele quem tem o refresh mais novo, e o dono é quem aparece com o \"usado\". Só negar a requisição deixaria o atacante logado. Revogar tudo obriga os dois a fazer login, e só o dono consegue. O access token já emitido continua valendo até expirar, e é por isso que ele é curto."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Em seg-02, SHA-256 era inaceitável para senha. Por que ele serve para guardar o hash do refresh token?",
+          "opcoes": [
+            "Porque o refresh token expira e a senha não",
+            "Não serve: o refresh também precisa de argon2id",
+            "Porque o refresh token é um valor aleatório longo, impossível de adivinhar por tentativa; hash lento compensa senha previsível",
+            "Porque o refresh token já vem cifrado do cliente"
+          ],
+          "correta": 2,
+          "explicacao": "O que torna o hash rápido perigoso é a previsibilidade da senha humana. Um token aleatório de 256 bits não tem dicionário que o alcance. Usar argon2 aqui só encareceria cada renovação sem ganho. A expiração ajuda, mas não é o motivo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. O que falta nesta renovação?\n\n```ts\nasync renovar(token: string) {\n  const linha = await this.repo.buscaPorHash(sha256(token));\n  if (!linha || linha.expiraEm < new Date()) throw new UnauthorizedException();\n  return {\n    accessToken: this.emiteAccess(linha.usuarioId),\n    refreshToken: token,\n  };\n}\n```",
+          "opcoes": [
+            "Falta cifrar o access token antes de devolver",
+            "Não há rotação: o mesmo refresh vale até expirar, então uma cópia roubada serve por dias sem ser notada",
+            "Falta conferir a senha do usuário a cada renovação",
+            "O hash deveria ser comparado com `timingSafeEqual`"
+          ],
+          "correta": 1,
+          "explicacao": "O código devolve o mesmo refresh token e não marca nada como usado. Sem rotação não existe detecção de reuso: dono e ladrão usam o mesmo token em paralelo até o prazo final. A busca por hash no banco não é uma comparação byte a byte no código, então tempo constante não é o problema aqui."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, por que essa complicação de dois tokens? Não dá para emitir um access token de 30 dias e pronto?\"",
+          "pontos": [
+            "Explicou que o access token autocontido não pode ser revogado antes de expirar",
+            "Mostrou o risco: token de 30 dias roubado dá 30 dias de acesso, sem ninguém perceber",
+            "Descreveu a divisão: access curto para as rotas, refresh longo usado numa rota só e controlado no servidor",
+            "Citou que a rotação detecta roubo pelo reuso",
+            "Reconheceu o custo e a alternativa mais simples (sessão no servidor)"
+          ],
+          "modelo": "Dá, mas a gente perde o controle. O access token não consulta nada no servidor, então não tem como cancelar: se vazar um de 30 dias, são 30 dias de acesso e ninguém fica sabendo. Com dois tokens, o que circula em toda requisição vale minutos. O de longa duração só vai para uma rota, fica registrado no banco e troca a cada uso. Se alguém copiar e usar, o reuso aparece e a gente derruba a sessão. Custa uma tabela e uma transação. Se achar pesado para o caso, a alternativa honesta é sessão no servidor, não um token eterno."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Qual o trabalho de cada token no par access e refresh?",
+          "verso": "Access: curto, autocontido, autoriza cada rota. Refresh: longo, controlado no servidor, serve só para pedir um access novo."
+        },
+        {
+          "frente": "O que é rotação de refresh token?",
+          "verso": "Cada refresh vale uma vez. Ao usar, o cliente recebe um par novo e o antigo fica marcado como usado."
+        },
+        {
+          "frente": "Por que o reuso de um refresh já usado revoga a família inteira?",
+          "verso": "Há duas cópias e não dá para saber quem é o dono. O token mais novo pode estar com o atacante. Revogar tudo obriga novo login."
+        },
+        {
+          "frente": "O que o servidor guarda do refresh token?",
+          "verso": "Só o hash (SHA-256 basta, pois o token é aleatório e longo), com família, expiração, usado em e revogado em."
+        },
+        {
+          "frente": "Qual o falso positivo clássico da detecção de reuso?",
+          "verso": "Duas abas ou uma repetição de rede renovando com o mesmo token. O front precisa de uma única renovação em andamento por vez."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "RFC 9700 — Best Current Practice for OAuth 2.0 Security",
+          "url": "https://www.rfc-editor.org/rfc/rfc9700"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Session Management",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+        }
+      ]
+    },
+    {
+      "id": "seg-05",
+      "titulo": "Onde guardar o token: XSS × CSRF",
+      "minutos": 10,
+      "ponte": "No Forms o cliente era um executável que só rodava o código da sua equipe, e ninguém perguntava onde ficava a sessão. O navegador é outro mundo: a mesma página pode acabar rodando script que não é seu, e outro site pode disparar requisições para a sua API. Não há analogia boa no cliente-servidor. O mais próximo é imaginar um `.pll` de terceiros anexado à sua tela, com acesso a todas as variáveis globais.",
+      "texto": "Depois do login, o front precisa guardar os tokens em algum lugar. Cada lugar abre a porta para um ataque diferente, e a decisão só faz sentido entendendo os dois.\n\n### XSS: script alheio rodando na sua página\n\n*Cross-Site Scripting* é quando um texto vindo de fora (um título de tarefa, um comentário, um parâmetro de URL) acaba **executado como código** na sua página. Esse script roda com os mesmos poderes do seu: lê o `localStorage`, lê variáveis, chama a API.\n\n### CSRF: outro site usando o cookie do usuário\n\n*Cross-Site Request Forgery* explora o fato de o navegador **anexar cookies sozinho**. O usuário está logado no seu sistema e abre uma página maliciosa em outra aba. Essa página dispara uma requisição para a sua API, e o navegador manda o cookie junto. O atacante não lê nada, mas faz a ação acontecer.\n\n### A tabela da decisão\n\n| Onde guarda | Script da página lê? (XSS) | Vai sozinho na requisição? (CSRF) |\n|---|---|---|\n| `localStorage` | Sim | Não |\n| Variável em memória | Só enquanto a página está aberta | Não |\n| Cookie comum | Sim | Sim |\n| Cookie `httpOnly` | Não | Sim |\n\n`localStorage` é o pior lugar para um token de longa duração: qualquer script que rode na página copia o valor e o usa de outra máquina, por dias.\n\n### O desenho recomendado\n\n- **Access token em memória** (uma variável ou o estado do cliente HTTP), enviado no cabeçalho `Authorization`. Como o navegador não adiciona esse cabeçalho sozinho, as rotas da API ficam fora do alcance de CSRF.\n- **Refresh token em cookie** `httpOnly`, `secure`, `sameSite` (`strict` ou `lax`) e com `path` restrito à rota de renovação. Você viu esses atributos em http-05. O script não lê, o cookie não viaja para as outras rotas e o `sameSite` impede que outro site o use.\n- Ao recarregar a página a memória se perde. O front chama a renovação, o cookie vai junto e um access novo chega.\n\n### A parte honesta\n\n`httpOnly` impede o **roubo** do token, não o XSS. Um script injetado ainda pode chamar a API em nome do usuário enquanto a aba estiver aberta. Por isso a defesa principal continua sendo **não ter XSS**.\n\nO React ajuda muito. Tudo o que você põe entre chaves é tratado como texto, com escape automático:\n\n```tsx\n<h2>{tarefa.titulo}</h2>   // seguro: vira texto, mesmo com <script>\n```\n\nAs portas que continuam abertas:\n\n- **`dangerouslySetInnerHTML`**: desliga o escape. O nome é um aviso. Se precisar exibir HTML vindo de fora, passe antes por uma biblioteca de sanitização mantida, como a DOMPurify.\n- **URL vinda do usuário em `href` ou `src`**: valide o esquema e aceite só `http:` e `https:`. O escape de texto não protege contra `javascript:`.\n- **Bibliotecas que geram HTML** (renderizador de markdown, editor rico) e acesso direto ao DOM com `innerHTML`.\n- **Dependência comprometida**: script de terceiro é script da página (seg-09).\n\nUma política de CSP (seg-11) entra como segunda camada, para o dia em que algo escapar.\n\nCritério: quando o desenho é sessão em cookie para tudo (seg-03), o risco muda de lado. XSS não rouba a sessão, e CSRF passa a exigir atenção em toda rota que altera dado: `sameSite` mais um token anti-CSRF nas rotas sensíveis.",
+      "naPratica": "No Cockpit, uma busca por `dangerouslySetInnerHTML` e por `localStorage.setItem` no `apps/web` deve voltar vazia ou com justificativa escrita. É a primeira busca que eu faço ao revisar um front que não conheço.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma versão mínima do escape que o React aplica ao texto entre chaves. O que sai?",
+          "codigo": "const escapar = (s: string) =>\n  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\nconst titulo = '<img src=x onerror=\"roubar()\">';\n\nconsole.log(escapar(titulo));\nconsole.log(escapar(titulo).includes('<'));\nconsole.log(escapar('Comprar pao & leite'));\n",
+          "saida": "&lt;img src=x onerror=&quot;roubar()&quot;&gt;\nfalse\nComprar pao &amp; leite\n",
+          "explicacao": "Os caracteres que o HTML interpreta viram entidades. O navegador mostra o texto `<img ...>` na tela, mas não cria elemento nenhum, então o `onerror` nunca dispara. Depois do escape não sobra nenhum `<`. O `&` é trocado primeiro para não estragar as entidades geradas nas trocas seguintes. Esse é o trabalho que o `dangerouslySetInnerHTML` pula."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. O campo `descricao` é digitado pelo usuário e pode ser visto por outras pessoas. Qual é o problema?\n\n```tsx\nfunction Descricao({ tarefa }: { tarefa: Tarefa }) {\n  return <div dangerouslySetInnerHTML={{ __html: tarefa.descricao }} />;\n}\n```",
+          "opcoes": [
+            "Nenhum: o React escapa o conteúdo de qualquer propriedade",
+            "Falta a propriedade `key` no `div`",
+            "XSS armazenado: o HTML do usuário é inserido sem escape e roda no navegador de quem abrir a tarefa",
+            "CSRF: o `div` pode disparar requisições com o cookie do usuário"
+          ],
+          "correta": 2,
+          "explicacao": "`dangerouslySetInnerHTML` desliga o escape automático. Um `<img onerror=...>` na descrição executa no navegador de cada pessoa que abrir a tela. A correção é renderizar como texto (`{tarefa.descricao}`) ou, se HTML for requisito, sanitizar antes. A primeira opção é a crença que causa o defeito: o escape vale para o que vai entre chaves, não para esta propriedade."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O refresh token está em cookie `httpOnly` com `sameSite=strict`, e o access token fica em memória e vai no cabeçalho `Authorization`. Um script malicioso consegue rodar na página. O que ele consegue fazer?",
+          "opcoes": [
+            "Nada: `httpOnly` torna o XSS inofensivo",
+            "Copiar o refresh token e usá-lo de outra máquina por dias",
+            "Ler a senha do usuário gravada no cookie",
+            "Chamar a API em nome do usuário enquanto a aba estiver aberta, mas não levar o refresh token embora"
+          ],
+          "correta": 3,
+          "explicacao": "`httpOnly` impede a leitura do cookie, então o token de longa duração não sai do navegador. Mas o script roda dentro da página e pode usar o access token em memória ou disparar a renovação. O dano fica limitado no tempo, não eliminado. Por isso prevenir XSS continua sendo a defesa principal."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, por que não guardamos o token no localStorage? Todo tutorial faz assim e é uma linha de código.\"",
+          "pontos": [
+            "Explicou que qualquer script rodando na página lê o localStorage (XSS, dependência comprometida)",
+            "Diferenciou roubar o token (uso por dias, de outra máquina) de agir enquanto a aba está aberta",
+            "Descreveu o desenho: access em memória, refresh em cookie httpOnly, secure e sameSite",
+            "Explicou por que esse desenho não reabre o CSRF: as rotas exigem o cabeçalho Authorization",
+            "Foi honesto: httpOnly não elimina XSS, só limita o dano"
+          ],
+          "modelo": "Porque o localStorage é legível por qualquer script que rode na nossa página. Basta um XSS ou uma dependência comprometida para o token ser copiado e usado de outra máquina por dias. A gente guarda o access token só em memória e o refresh num cookie httpOnly, secure e sameSite, restrito à rota de renovação. O script não lê o cookie, e outro site não consegue usá-lo. Como as rotas da API exigem o cabeçalho Authorization, que o navegador não envia sozinho, não abrimos CSRF. Não elimina o XSS: um script ainda age enquanto a aba está aberta. Mas troca roubo duradouro por dano limitado."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "XSS e CSRF em uma frase cada.",
+          "verso": "XSS: script alheio executa na sua página e lê o que o seu JavaScript lê. CSRF: outro site dispara requisição e o navegador anexa o cookie sozinho."
+        },
+        {
+          "frente": "Por que não guardar token de longa duração no `localStorage`?",
+          "verso": "Qualquer script na página lê e copia. O token roubado serve de outra máquina até expirar."
+        },
+        {
+          "frente": "Onde ficam access e refresh no desenho recomendado?",
+          "verso": "Access em memória, enviado no cabeçalho `Authorization`. Refresh em cookie `httpOnly`, `secure`, `sameSite`, com `path` restrito à renovação."
+        },
+        {
+          "frente": "O cookie `httpOnly` elimina o risco de XSS?",
+          "verso": "Não. Impede o roubo do token, mas o script ainda chama a API enquanto a aba está aberta. A defesa principal é não ter XSS."
+        },
+        {
+          "frente": "Quais as portas de XSS que o escape do React não fecha?",
+          "verso": "`dangerouslySetInnerHTML`, URL do usuário em `href` (`javascript:`), bibliotecas que geram HTML e `innerHTML` direto."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — Cross Site Scripting Prevention",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Cross-Site Request Forgery Prevention",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "React — referência dos componentes de DOM (dangerouslySetInnerHTML)",
+          "url": "https://react.dev/reference/react-dom/components/common"
+        }
+      ]
+    },
+    {
+      "id": "seg-06",
+      "titulo": "Autorização: RBAC, ABAC e a falha IDOR/BOLA",
+      "minutos": 10,
+      "ponte": "RBAC você conhece: é `ROLE` e `GRANT`. O filtro por linha também: é o predicado que a VPD acrescenta a toda consulta, ou o `WHERE cd_usuario = :usuario` que a tela sempre montava. Na API com usuário de serviço, **ninguém acrescenta esse predicado por você**. Esquecê-lo numa consulta é o equivalente a desligar a política de VPD daquela tabela, e é a falha mais comum da web.",
+      "texto": "Duas perguntas diferentes, que o HTTP separa até no código de status (http-03):\n\n- **Autenticar**: quem é você. Falhou, é `401`.\n- **Autorizar**: você pode fazer isto, **neste registro**. Falhou, é `403` (ou `404`, como você verá).\n\nPassar pelo login não autoriza nada. Toda rota responde à segunda pergunta de novo, a cada requisição.\n\n### RBAC: por papel\n\n*Role-Based Access Control*: o usuário tem papéis e cada papel libera funções. \"Só gestor aprova\", \"só admin exclui\". É simples de explicar e de auditar. No Nest vira um *guard* que lê o papel exigido pela rota (nest-06, nest-11).\n\nO limite do RBAC: ele responde \"pode usar esta **função**?\", não \"pode mexer neste **registro**?\".\n\n### ABAC: por atributo\n\n*Attribute-Based Access Control*: a decisão usa atributos do usuário, do recurso e do contexto. \"O dono edita a tarefa\", \"o gestor vê os 1:1 da própria equipe\", \"só se o status for rascunho\". Sistemas reais combinam os dois: papel para a função, atributo para o registro.\n\n### IDOR / BOLA: a falha número um\n\nIDOR (*Insecure Direct Object Reference*) e BOLA (*Broken Object Level Authorization*) são dois nomes para o mesmo defeito: a rota recebe um identificador e devolve o registro **sem conferir se ele pertence a quem pediu**.\n\n```ts\n// frágil: qualquer usuário logado lê a tarefa de qualquer outro\nreturn this.prisma.tarefa.findUnique({ where: { id } });\n\n// seguro: a posse faz parte da consulta\nreturn this.prisma.tarefa.findFirst({ where: { id, donoId: usuario.id } });\n```\n\nO guard de autenticação passou. O guard de papel passou. O usuário é legítimo e a função é permitida. O que está errado é o **objeto**. Nenhum guard genérico pega isso, porque só a consulta sabe de quem é a linha.\n\n### As regras\n\n1. **Toda consulta filtra pelo dono ou pelo *tenant*** (a organização dona do dado). Leitura, alteração e exclusão. Um `update` por `id` puro tem o mesmo defeito.\n2. **A identidade vem do token, nunca do corpo ou da URL.** Um `donoId` enviado pelo cliente é dado de entrada, não identidade.\n3. **Responda `404` para o que não é do usuário.** `403` confirma que o registro existe.\n4. **Identificador difícil de adivinhar não é autorização.** UUID dificulta a enumeração, mas ids vazam em links, logs e telas compartilhadas.\n5. **Filhos herdam a checagem.** Em `/tarefas/:id/anexos/:anexoId`, confira que o anexo é daquela tarefa e que a tarefa é do usuário.\n\n### Como não depender de memória\n\nO defeito é de omissão, então a defesa é tornar a omissão difícil:\n\n- Métodos de repositório que **exigem** o `usuarioId` como parâmetro. Não existe `buscaPorId(id)`, existe `buscaDoUsuario(usuarioId, id)`.\n- Um teste e2e por recurso: o usuário B pede o registro do usuário A e recebe `404`.\n- Como rede de segurança em sistemas com vários tenants, o próprio banco pode aplicar o predicado (*row-level security* no Postgres, a mesma ideia da VPD). Isso exige passar a identidade para a sessão do banco a cada requisição e cuidado com o pool de conexões (dados-10).\n\nCritério: comece com RBAC mais a regra de posse. Um motor de políticas genérico só se paga quando as regras são muitas e mudam sem deploy.",
+      "naPratica": "No Cockpit, as anotações de 1:1 são o dado mais sensível. Todo método do service recebe o `usuarioId` vindo do token, e existe um teste e2e em que um segundo usuário tenta ler, alterar e excluir a anotação do primeiro e recebe `404` nas três.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A Ana está logada e pede a tarefa 2, que é do Beto. O que cada busca devolve?",
+          "codigo": "type Tarefa = { id: number; donoId: string; titulo: string };\nconst tarefas: Tarefa[] = [\n  { id: 1, donoId: 'ana', titulo: 'Revisar PR' },\n  { id: 2, donoId: 'beto', titulo: 'Plano de carreira' },\n];\n\nconst buscaFragil = (id: number) => tarefas.find((t) => t.id === id);\nconst buscaSegura = (id: number, usuarioId: string) =>\n  tarefas.find((t) => t.id === id && t.donoId === usuarioId);\n\nconst usuarioLogado = 'ana';\nconsole.log(buscaFragil(2)?.titulo);\nconsole.log(buscaSegura(2, usuarioLogado)?.titulo);\nconsole.log(buscaSegura(1, usuarioLogado)?.titulo);\n",
+          "saida": "Plano de carreira\nundefined\nRevisar PR\n",
+          "explicacao": "A busca frágil só olha o id e entrega a tarefa do Beto para a Ana. A busca segura inclui o dono no filtro: a tarefa 2 simplesmente não existe para a Ana (`undefined`, que a API traduz em `404`), e a tarefa 1, que é dela, vem normalmente. A diferença entre as duas é um predicado, como no `WHERE`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. A rota está protegida por autenticação e por papel. Qual é a falha?\n\n```ts\n@UseGuards(JwtGuard, PapeisGuard)\n@Papeis('usuario')\n@Patch(':id')\natualizar(@Param('id') id: string, @Body() dto: AtualizaTarefaDto) {\n  return this.prisma.tarefa.update({ where: { id }, data: dto });\n}\n```",
+          "opcoes": [
+            "Falta um guard de administrador: só admin deveria alterar tarefas",
+            "O `id` deveria vir no corpo da requisição, não na URL",
+            "O `PATCH` deveria ser `PUT`",
+            "IDOR/BOLA: a alteração filtra só pelo `id`, então qualquer usuário logado altera a tarefa de outro"
+          ],
+          "correta": 3,
+          "explicacao": "Os guards respondem \"está logado?\" e \"tem o papel?\". Nenhum responde \"esta tarefa é sua?\". O usuário do token nem é lido. A correção é incluir o dono no filtro da alteração e devolver `404` quando nada for afetado. Exigir admin esconderia o defeito e quebraria o requisito: o usuário comum precisa alterar as **próprias** tarefas."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "\"Gestor pode ver as anotações de 1:1, mas só das pessoas da própria equipe.\" Como essa regra se divide?",
+          "opcoes": [
+            "É RBAC puro: basta criar o papel `gestor`",
+            "É ABAC puro: papéis não são necessários",
+            "O papel `gestor` libera a função (RBAC) e a relação entre gestor e equipe filtra os registros (ABAC)",
+            "Não é autorização, é regra de tela: o front filtra a lista"
+          ],
+          "correta": 2,
+          "explicacao": "O papel decide quem pode usar a função. A posse (a equipe do gestor) decide quais linhas, e isso é atributo do recurso. Só o papel deixaria qualquer gestor ler os 1:1 de todas as equipes, que é exatamente o BOLA. Filtrar no front não é controle de acesso (seg-01)."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, dá para a API nova usar o usuário de banco de cada pessoa, como o Forms faz? Aí o grant resolve a permissão e a gente não precisa programar nada disso.\"",
+          "pontos": [
+            "Explicou que a API usa pool de conexões com um usuário de serviço; conexão por pessoa não escala e não combina com o pool",
+            "Lembrou que a identidade vem de token ou SSO: a API nem tem a senha de banco da pessoa",
+            "Mostrou que grant é por objeto, não por linha: não resolveria o IDOR de qualquer forma",
+            "Disse o que se faz: usuário de serviço com privilégio mínimo e autorização no código, com a posse na consulta",
+            "Citou como manter auditoria: repassar a identidade ao banco como contexto"
+          ],
+          "modelo": "Tecnicamente existe caminho, mas não é o que eu recomendo. A API atende todo mundo com um pool pequeno de conexões de um usuário de serviço. Abrir conexão por pessoa acaba com o pool, e a API nem conhece a senha de banco de ninguém, porque o login vem por token. E o grant libera a tabela inteira, não a linha: não impediria um usuário de ler o registro de outro. O desenho usual é usuário de serviço com o mínimo de privilégio, autorização no código com o dono dentro de cada consulta, e a identidade repassada ao banco como contexto, para a auditoria continuar sabendo quem fez."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Autenticar × autorizar, e os códigos de status.",
+          "verso": "Autenticar: quem é você (`401`). Autorizar: pode fazer isto neste registro (`403`, ou `404` para não revelar que existe)."
+        },
+        {
+          "frente": "O que é IDOR/BOLA?",
+          "verso": "A rota recebe um id e devolve ou altera o registro sem conferir se pertence a quem pediu. Trocar o id na URL basta."
+        },
+        {
+          "frente": "Por que um guard de papel não pega IDOR?",
+          "verso": "Ele responde \"pode usar a função?\". Só a consulta sabe de quem é a linha. A posse tem que estar no filtro."
+        },
+        {
+          "frente": "De onde vem o id do usuário usado no filtro de posse?",
+          "verso": "Do token validado. Nunca do corpo nem da URL, que são dados de entrada."
+        },
+        {
+          "frente": "RBAC × ABAC: o que cada um responde?",
+          "verso": "RBAC: o papel libera a função. ABAC: atributos do usuário, do recurso e do contexto decidem o registro. Sistemas reais usam os dois."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — Authorization",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Insecure Direct Object Reference Prevention",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "NestJS — Authorization",
+          "url": "https://docs.nestjs.com/security/authorization"
+        }
+      ]
+    },
+    {
+      "id": "seg-07",
+      "titulo": "Injeção, validação de entrada e mass assignment",
+      "minutos": 11,
+      "ponte": "Você usa *bind* há anos e sabe o que acontece com `EXECUTE IMMEDIATE` montado por concatenação. Injeção de SQL é isso, sem novidade. O que muda na web é que o mesmo erro (tratar dado como instrução) aparece em lugares que o Forms não tinha: o objeto JSON que vira `UPDATE`, o nome de arquivo que vira caminho, a URL que o servidor resolve buscar. A analogia quebra porque não existe um \"bind\" único para todos eles.",
+      "texto": "A ideia central é a **fronteira de confiança**: tudo o que chega de fora (corpo, parâmetros de URL, cabeçalhos, nome de arquivo, resposta de outro sistema) é dado não confiável até ser validado. Injeção é o que acontece quando esse dado cruza a fronteira e passa a ser interpretado como **comando**.\n\n### SQL: bind sempre\n\nVocê viu em dados-09 que o ORM já usa parâmetros e que o risco volta no SQL puro. No Prisma, `$queryRaw` com *template* marcado vira bind. As variantes `Unsafe`, com texto concatenado, são o `EXECUTE IMMEDIATE` sem `USING`.\n\nO que o bind **não** cobre: identificadores. Nome de coluna em `ORDER BY`, nome de tabela e direção da ordenação não podem ser parâmetro. Aí a defesa é uma lista de permitidos: o cliente manda `ordenar=prazo` e o código traduz, a partir de um mapa fixo, para a coluna real. O texto do cliente nunca entra no SQL.\n\n### Validação por lista de permitidos\n\nValidar é dizer **o que é aceito** (*allowlist*) e recusar o resto. Tentar listar o que é proibido sempre esquece um caso. Para cada campo: tipo, tamanho máximo, formato e, quando houver, o conjunto de valores. É o trabalho do DTO com `class-validator` ou de um esquema Zod (ts-09, nest-05).\n\nValidar a entrada não substitui o cuidado na saída: o bind continua obrigatório no SQL e o escape continua obrigatório no HTML (seg-05). Um nome como `O'Brien` é válido e precisa funcionar.\n\n### Mass assignment: o campo que ninguém pediu\n\n```ts\n// frágil: o corpo inteiro vira coluna\nawait prisma.usuario.update({ where: { id }, data: req.body });\n```\n\nO formulário só tem nome e e-mail. Mas quem monta a requisição à mão acrescenta `\"papel\": \"admin\"`, e o campo é gravado. O TypeScript não ajuda: os tipos somem na execução, e o objeto real tem o que o cliente mandou. As defesas, juntas:\n\n- `ValidationPipe` com `whitelist: true` remove o que não está no DTO. Com `forbidNonWhitelisted: true`, recusa com `400`.\n- Um DTO **por operação**, só com os campos que aquela operação pode alterar. Nada de reaproveitar a entidade como DTO.\n- No service, monte o `data` campo a campo. Campos como `papel`, `donoId` e `saldo` só mudam em rotas próprias.\n\n### Path traversal: o nome de arquivo que sobe de pasta\n\nSe o nome enviado pelo cliente entra num caminho, `../../` sai da pasta prevista. A melhor defesa é **não usar o nome do cliente**: grave com um identificador gerado e guarde o nome original numa coluna. Quando o nome precisa compor o caminho, resolva o caminho final e confira que ele continua dentro da pasta base.\n\n### SSRF, em noção\n\n*Server-Side Request Forgery*: uma funcionalidade faz o **servidor** buscar uma URL informada pelo usuário (importar de um link, gerar miniatura, *webhook*). O servidor está dentro da rede e alcança o que o usuário não alcança: serviços internos e endereços de metadados da nuvem. Defesa: lista de destinos permitidos, bloqueio de endereços privados depois de resolver o nome e não seguir redirecionamento às cegas. Se a funcionalidade não é essencial, não a ofereça.\n\n### Critério\n\nValide **na borda**, uma vez, e trabalhe com dado tipado dali para dentro. Validação espalhada por todas as camadas vira ruído e ninguém sabe qual vale. E a validação do front é usabilidade: quem ataca não usa o seu formulário.",
+      "naPratica": "No Cockpit, o `ValidationPipe` global roda com `whitelist` e `forbidNonWhitelisted`, e a ordenação das listas passa por um mapa fixo de colunas. Num review, três buscas rendem achado rápido: `Unsafe`, `data: dto` com DTO largo e `path.join` com variável vinda da requisição.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O formulário só tem nome e e-mail, mas a requisição chegou com dois campos a mais. O que cada versão grava?",
+          "codigo": "const corpo = JSON.parse('{\"nome\":\"Ana\",\"email\":\"ana@exemplo.com\",\"papel\":\"admin\",\"saldo\":9999}');\n\nconst fragil = { papel: 'usuario', saldo: 0, ...corpo };\n\nconst PERMITIDOS = ['nome', 'email'] as const;\nconst limpo: Record<string, unknown> = {};\nfor (const campo of PERMITIDOS) limpo[campo] = corpo[campo];\nconst seguro = { papel: 'usuario', saldo: 0, ...limpo };\n\nconsole.log(fragil.papel, fragil.saldo);\nconsole.log(seguro.papel, seguro.saldo);\nconsole.log(Object.keys(limpo).join(','));\n",
+          "saida": "admin 9999\nusuario 0\nnome,email\n",
+          "explicacao": "No *spread*, o que vem depois sobrescreve o que veio antes: os campos extras do corpo passam por cima dos valores padrão, e o usuário se promove a admin. Na versão segura, só os campos da lista de permitidos são copiados, então `papel` e `saldo` ficam com os valores do servidor. É o que o `whitelist: true` do `ValidationPipe` faz com base no DTO."
+        },
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "O nome do arquivo vem do cliente. (O exemplo usa `node:path/posix` para a saída ser igual em qualquer sistema.) O que sai?",
+          "codigo": "import path from 'node:path/posix';\n\nconst BASE = '/srv/anexos';\n\nfunction caminhoSeguro(nome: string): string {\n  const alvo = path.resolve(BASE, nome);\n  return alvo.startsWith(BASE + '/') ? alvo : 'recusado';\n}\n\nconsole.log(path.join(BASE, '../../etc/passwd'));\nconsole.log(caminhoSeguro('relatorio.pdf'));\nconsole.log(caminhoSeguro('../../etc/passwd'));\nconsole.log(caminhoSeguro('2026/../nota.txt'));\n",
+          "saida": "/etc/passwd\n/srv/anexos/relatorio.pdf\nrecusado\n/srv/anexos/nota.txt\n",
+          "explicacao": "O `path.join` resolve os `..` e sai da pasta base: o caminho final é `/etc/passwd`. A função segura resolve primeiro e confere depois se o resultado continua debaixo da base. O último caso mostra por que a conferência é feita no caminho **resolvido**, e não procurando `..` no texto: `2026/../nota.txt` contém `..` e mesmo assim termina dentro da pasta. A barra no `BASE + '/'` evita aceitar `/srv/anexos-outro`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. Qual é o problema?\n\n```ts\nasync listar(usuarioId: string, ordenar: string) {\n  return this.prisma.$queryRawUnsafe(\n    `SELECT id, titulo FROM tarefa WHERE dono_id = $1 ORDER BY ${ordenar}`,\n    usuarioId,\n  );\n}\n```",
+          "opcoes": [
+            "O `dono_id` deveria ser concatenado também, para manter o padrão",
+            "Injeção de SQL: `ordenar` vem do cliente e entra no texto do comando",
+            "Nenhum: o `$1` mostra que a consulta usa bind",
+            "Falta `await` antes do `$queryRawUnsafe`"
+          ],
+          "correta": 1,
+          "explicacao": "O `dono_id` está em bind, e isso engana o revisor apressado. O `ORDER BY` recebe texto do cliente direto no comando. Identificador não aceita bind, então a correção é um mapa fixo: `{ prazo: 'prazo', titulo: 'titulo' }[ordenar]`, com valor padrão quando a chave não existe. Retornar a Promise sem `await` é válido numa função `async`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O DTO de atualização de perfil declara só `nome` e `email`. O `ValidationPipe` global está com `whitelist: true`. Chega um corpo com `nome`, `email` e `papel: 'admin'`. O que o controller recebe?",
+          "opcoes": [
+            "Um objeto com `nome` e `email`; o `papel` foi removido",
+            "Os três campos, porque o TypeScript só confere em tempo de compilação",
+            "Nada: a requisição é recusada com `401`",
+            "Os três campos, mas o `papel` vem como `undefined`"
+          ],
+          "correta": 0,
+          "explicacao": "Com `whitelist`, propriedades sem decorator de validação no DTO são removidas antes de chegar ao controller. A segunda opção descreve o que acontece **sem** o pipe: aí sim os tipos somem e o campo extra passa. Para recusar em vez de remover, use `forbidNonWhitelisted`, que responde `400`."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o front já valida o formulário inteiro com Zod. Precisa mesmo validar tudo de novo na API? É trabalho dobrado.\"",
+          "pontos": [
+            "Afirmou que a validação da API é obrigatória: a requisição pode ser montada sem o front",
+            "Separou os papéis: front valida para dar retorno rápido ao usuário, API valida para proteger o dado",
+            "Citou mass assignment e campos extras como exemplo do que só a API barra",
+            "Propôs reduzir o custo: esquema compartilhado ou contrato gerado, em vez de escrever duas vezes à mão",
+            "Não desvalorizou a validação do front"
+          ],
+          "modelo": "Precisa. As duas validações têm donos diferentes. A do front existe para o usuário saber na hora que o campo está errado. A da API existe porque qualquer pessoa manda uma requisição sem passar pela nossa tela, com campo a mais, tipo trocado ou texto de dez megabytes. Se só o front valida, um campo como papel entra direto no banco. O que dá para evitar é escrever a regra duas vezes: num monorepo a gente compartilha o esquema, ou gera o cliente a partir do contrato da API. Aí o custo é quase zero e a garantia fica onde tem que ficar, no servidor."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que é a fronteira de confiança?",
+          "verso": "A linha a partir da qual o dado veio de fora (corpo, URL, cabeçalho, arquivo, outro sistema) e precisa ser validado antes de ser usado."
+        },
+        {
+          "frente": "O bind protege o `ORDER BY` dinâmico?",
+          "verso": "Não. Identificador (coluna, tabela, direção) não aceita bind. Use um mapa fixo de valores permitidos."
+        },
+        {
+          "frente": "O que é mass assignment e qual a defesa?",
+          "verso": "Gravar o corpo inteiro e aceitar campos que o cliente não deveria alterar (`papel`, `donoId`). DTO por operação com `whitelist` e `data` montado campo a campo."
+        },
+        {
+          "frente": "Por que validar por lista de permitidos e não por lista de proibidos?",
+          "verso": "A lista de proibidos sempre esquece um caso. Dizer o que é aceito recusa todo o resto por padrão."
+        },
+        {
+          "frente": "Como evitar path traversal num upload?",
+          "verso": "Não use o nome do cliente no caminho: gere um id. Se precisar, resolva o caminho final e confira que continua dentro da pasta base."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — Input Validation",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Mass Assignment",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "NestJS — Validation",
+          "url": "https://docs.nestjs.com/techniques/validation"
+        }
+      ]
+    },
+    {
+      "id": "seg-08",
+      "titulo": "Segredos, variáveis de ambiente e dado sensível em log (LGPD)",
+      "minutos": 9,
+      "ponte": "No mundo Oracle você já viu a senha do schema dentro de um `.bat`, de um script de carga ou de um arquivo de conexão que todo mundo copiava. O risco é o mesmo de sempre. O que muda é a escala: um repositório git guarda **todo o histórico**, é clonado em dezenas de máquinas e às vezes vai para um serviço externo. Apagar a linha no commit seguinte não apaga nada.",
+      "texto": "**Segredo** é qualquer valor que dá acesso: senha do banco, chave que assina os tokens, *client secret* do provedor de identidade, chave de API de terceiros. A regra tem quatro partes.\n\n### 1. Fora do código\n\nO código é o mesmo em todos os ambientes; a configuração muda. Segredos entram por **variável de ambiente**, lidos e validados na subida da aplicação (você viu em nest-10). Se faltar uma variável, a aplicação não sobe. É melhor que descobrir na primeira requisição.\n\n### 2. Fora do repositório\n\n- O `.env` local fica no `.gitignore`. O que vai para o repositório é um `.env.example`, com os nomes das variáveis e valores falsos.\n- **Segredo que entrou num commit está vazado**, mesmo que o repositório seja privado e o commit tenha sido desfeito. O histórico guarda, os clones guardam. A correção é **trocar o segredo**. Limpar o histórico é complemento, não solução.\n- Ligue a varredura de segredos no repositório e no CI. Ela pega o erro antes do *merge*.\n\n### 3. Em produção, num cofre\n\nUm cofre de segredos (*secret manager*, como o Vault ou o serviço equivalente da nuvem) guarda os valores cifrados, entrega para a aplicação na execução, registra quem leu e permite trocar sem novo deploy. Para um projeto pessoal, as variáveis de ambiente da plataforma de hospedagem bastam. Em empresa, o cofre é o padrão esperado.\n\n### 4. Trocável\n\n**Rotação** é trocar o segredo periodicamente e sempre que houver suspeita. O que importa é a capacidade: se trocar a senha do banco exige parar tudo e editar cinco lugares, ninguém troca. Para a chave que assina tokens, a troca sem derrubar usuários pede que o servidor aceite a chave nova e a anterior por um período.\n\nUm lembrete sobre o front: **não existe segredo no navegador**. Tudo o que vai para o *bundle* é público, inclusive as variáveis com prefixo `VITE_` (front-08). Chave que precisa de sigilo fica na API.\n\n### Log: o vazamento que ninguém planejou\n\nLog é copiado para agregadores, fica retido por meses e é lido por muito mais gente que o banco. O que nunca entra: senha, token, os cabeçalhos `Authorization` e `Cookie`, e dado pessoal além do necessário.\n\nO Pino, o logger do projeto, tem a opção `redact`, que mascara caminhos do objeto antes de escrever:\n\n```ts\nconst logger = pino({\n  redact: {\n    paths: ['req.headers.authorization', 'req.headers.cookie', '*.senha'],\n    censor: '[oculto]',\n  },\n});\n```\n\nO `redact` trabalha por **caminho de campo**. Ele não lê texto livre. Um `logger.info('falha no login com senha ' + senha)` passa direto. Daí duas regras de escrita: registre **identificadores** (`usuarioId`), não o objeto inteiro, e nunca monte mensagem concatenando valor de entrada.\n\n### LGPD, em nível de princípio\n\nSem entrar em interpretação jurídica, três princípios da lei orientam o desenho: **finalidade** (usar o dado para o que foi informado), **necessidade** (coletar e guardar o mínimo) e **segurança** (proteger o que guarda). Um log com CPF, e-mail e conteúdo de formulário é uma segunda cópia do dado pessoal, com menos controle de acesso e outro prazo de retenção. Por isso dado pessoal em log é tratado como **incidente**, não como detalhe técnico. Quando surgir dúvida sobre o que pode ser guardado e por quanto tempo, a resposta vem do responsável por proteção de dados da organização, não do desenvolvedor.",
+      "naPratica": "No Cockpit, confira que o `.env` está no `.gitignore`, que existe um `.env.example` e que o logger tem `redact` para `authorization` e `cookie`. Num review, todo `logger.info(dto)` ou `console.log(req.body)` merece um comentário.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Uma versão simplificada de mascaramento por nome de campo. Observe o campo `obs`. O que sai?",
+          "codigo": "const SENSIVEIS = new Set(['senha', 'token', 'authorization', 'cpf']);\n\nfunction mascarar(valor: unknown): unknown {\n  if (Array.isArray(valor)) return valor.map(mascarar);\n  if (valor === null || typeof valor !== 'object') return valor;\n  const saida: Record<string, unknown> = {};\n  for (const [chave, v] of Object.entries(valor)) {\n    saida[chave] = SENSIVEIS.has(chave.toLowerCase()) ? '[oculto]' : mascarar(v);\n  }\n  return saida;\n}\n\nconst evento = {\n  rota: '/auth/login',\n  corpo: { email: 'ana@exemplo.com', senha: 'cafe-com-leite' },\n  headers: { Authorization: 'Bearer abc.def.ghi' },\n  obs: 'a senha do usuario e cafe-com-leite',\n};\n\nconsole.log(JSON.stringify(mascarar(evento)));\n",
+          "saida": "{\"rota\":\"/auth/login\",\"corpo\":{\"email\":\"ana@exemplo.com\",\"senha\":\"[oculto]\"},\"headers\":{\"Authorization\":\"[oculto]\"},\"obs\":\"a senha do usuario e cafe-com-leite\"}\n",
+          "explicacao": "Os campos `senha` e `Authorization` foram mascarados, em qualquer nível do objeto. Mas a senha aparece inteira em `obs`: o mascaramento olha o **nome do campo**, não o conteúdo do texto. É o limite de qualquer `redact`. Repare também que o e-mail passou, porque não estava na lista: decidir se ele pode ir para o log é parte do trabalho."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. Qual é o problema deste handler de login?\n\n```ts\n@Post('login')\nasync login(@Body() dto: LoginDto) {\n  this.logger.info({ dto }, 'tentativa de login');\n  return this.auth.entrar(dto.email, dto.senha);\n}\n```",
+          "opcoes": [
+            "O nível deveria ser `debug`, não `info`",
+            "Falta um `try/catch` em volta da chamada",
+            "O log deveria ser feito depois do login, não antes",
+            "O DTO inteiro vai para o log, com a senha em texto puro"
+          ],
+          "correta": 3,
+          "explicacao": "`dto` contém a senha, e o log é retido e lido por muita gente. O certo é registrar só o necessário para investigar (um identificador, o resultado, a origem). Um `redact` em `*.senha` serve de rede de segurança, mas a correção é não mandar o objeto. Trocar o nível não resolve: `debug` também é gravado em algum ambiente."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Você percebe que a senha do banco de produção foi commitada num `.env` há três commits. O repositório é privado. Qual a primeira ação?",
+          "opcoes": [
+            "Fazer um novo commit removendo o arquivo",
+            "Trocar a senha do banco; depois remover o arquivo e avaliar a limpeza do histórico",
+            "Nada: repositório privado não é vazamento",
+            "Reescrever o histórico com *force push* e seguir em frente"
+          ],
+          "correta": 1,
+          "explicacao": "O segredo está no histórico e em todo clone feito desde então. Remover o arquivo ou reescrever o histórico não desfaz as cópias. A única ação que encerra o risco é invalidar o segredo. O novo commit é a reação instintiva e a que menos resolve: o valor continua a um `git log` de distância."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, posso deixar a senha do banco de homologação no README do repositório? É só homologação e facilita para quem entra no time.\"",
+          "pontos": [
+            "Negou sem ser ríspido e reconheceu o problema real (facilitar a entrada de gente nova)",
+            "Explicou que o histórico do git guarda para sempre e o repositório é clonado em muitas máquinas",
+            "Lembrou que homologação costuma ter cópia de dado real ou senha parecida com a de produção",
+            "Deu a alternativa: `.env.example` no repositório e o valor no cofre ou gerenciador de senhas do time",
+            "Citou que acesso por cofre permite saber quem leu e trocar quando alguém sai"
+          ],
+          "modelo": "Melhor não. O que entra no repositório fica no histórico para sempre e vai para cada máquina que clonar. E homologação quase sempre tem cópia de dado de produção, ou uma senha que segue o mesmo padrão da de lá. O problema que você quer resolver é legítimo: quem chega precisa subir o ambiente rápido. Dá para resolver com um .env.example no repositório, listando as variáveis, e o valor de verdade no cofre de senhas do time. A pessoa nova copia o exemplo, busca o valor no cofre e pronto. De quebra a gente sabe quem tem acesso e consegue trocar a senha quando alguém sai."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "Um segredo foi commitado e o commit foi desfeito. O que fazer?",
+          "verso": "Trocar o segredo. O histórico e os clones guardam o valor. Limpar o histórico é complemento, não solução."
+        },
+        {
+          "frente": "O que vai para o repositório no lugar do `.env`?",
+          "verso": "Um `.env.example` com os nomes das variáveis e valores falsos. O `.env` real fica no `.gitignore`."
+        },
+        {
+          "frente": "Por que o `redact` do logger não basta sozinho?",
+          "verso": "Ele mascara por caminho de campo. Valor concatenado em mensagem de texto passa direto. Registre identificadores, não objetos inteiros."
+        },
+        {
+          "frente": "Posso guardar uma chave secreta numa variável `VITE_`?",
+          "verso": "Não. Tudo o que vai para o bundle do front é público. Segredo fica na API."
+        },
+        {
+          "frente": "Por que dado pessoal em log é tratado como incidente?",
+          "verso": "O log é uma segunda cópia do dado, com mais leitores, menos controle e outra retenção. Fere os princípios de necessidade e segurança."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — Secrets Management",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "OWASP Cheat Sheet — Logging",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "The Twelve-Factor App — Config",
+          "url": "https://12factor.net/config"
+        }
+      ]
+    },
+    {
+      "id": "seg-09",
+      "titulo": "Cadeia de dependências: npm audit, lockfile e pacote malicioso",
+      "minutos": 9,
+      "ponte": "No Forms, o código de terceiros que roda no seu sistema cabe numa lista curta: o runtime do fornecedor e meia dúzia de `.pll` que alguém da equipe escreveu. Numa aplicação Node, a pasta `node_modules` tem centenas de pacotes de centenas de autores, e quase todos chegaram como dependência de dependência. Não há paralelo: é como se cada `.pll` anexado trouxesse outros cinquenta, atualizados por desconhecidos.",
+      "texto": "Você viu em js-11 como o npm resolve versões. Agora o lado de segurança: **cada dependência é código de outra pessoa rodando com as permissões da sua aplicação**. E não só em produção. Um pacote pode declarar *scripts* de ciclo de vida (`preinstall`, `install`, `postinstall`) que executam na sua máquina e no CI durante a instalação, antes de você importar qualquer coisa.\n\n### Os dois riscos\n\n**Vulnerabilidade conhecida.** Uma versão de um pacote tem uma falha publicada. Não houve má-fé, só defeito. A defesa é saber e atualizar.\n\n**Pacote malicioso.** Alguém publica código feito para roubar segredos ou abrir acesso. Os caminhos mais comuns:\n\n- *Typosquatting*: um pacote com nome quase igual ao de um popular, esperando o erro de digitação.\n- **Conta de mantenedor sequestrada**: um pacote legítimo e muito usado recebe uma versão nova com código malicioso.\n- **Confusão de dependência**: um pacote público com o mesmo nome de um pacote interno da empresa.\n\n### As defesas\n\n**Lockfile no repositório.** O `package-lock.json` registra a versão exata e o *hash* de integridade de cada pacote da árvore. Sem ele, duas instalações do mesmo projeto em dias diferentes podem trazer códigos diferentes.\n\n**`npm ci` no CI e no build.** Instala exatamente o que está no lockfile e falha se ele divergir do `package.json`. O `npm install` pode alterar o lockfile; use-o para adicionar ou atualizar dependência de propósito, e revise o diff do lockfile no PR.\n\n**`npm audit`, com critério.** Ele compara a sua árvore com a base de vulnerabilidades conhecidas. Não trate a saída como lista de tarefas nem como ruído:\n\n- Separe produção de desenvolvimento (`npm audit --omit=dev`). Uma falha numa ferramenta de build pesa diferente de uma no servidor HTTP.\n- Pergunte se o caminho vulnerável é alcançável no seu uso.\n- Cuidado com `npm audit fix --force`: ele pode subir versão *major* e quebrar a aplicação.\n- `npm ls <pacote>` mostra quem trouxe a dependência.\n\n**Atualização contínua.** Dependabot e Renovate abrem PRs automáticos de atualização. Muitos PRs pequenos, cada um passando pelo CI, são mais seguros que uma atualização grande por ano. Para o risco da versão recém-publicada e comprometida, uma prática comum é esperar alguns dias antes de adotar uma versão nova, salvo correção de segurança.\n\n**Scripts de instalação.** Dá para desligar com `--ignore-scripts`. O custo: pacotes com parte nativa dependem desses scripts para compilar ou baixar binários. É uma decisão para o CI e para o time, com a lista de exceções conhecida.\n\n### Fixar versões\n\nEm aplicação, quem fixa é o **lockfile**. Um intervalo como `^4.2.0` no `package.json` é aceitável desde que o lockfile esteja versionado e o build use `npm ci`. Fixar a versão exata no `package.json` deixa as mudanças mais explícitas, mas não cobre as dependências transitivas. Só o lockfile cobre.\n\n### Antes de instalar um pacote\n\n1. Preciso mesmo? Dez linhas próprias ou uma API nativa do Node resolvem?\n2. O nome está **exatamente** igual ao da documentação oficial?\n3. Tem manutenção recente, uso amplo e repositório público?\n4. Quantas dependências ele traz junto?\n\nA postura de sênior: dependência é **custo permanente**, não atalho gratuito. Você assume as atualizações, as falhas e os mantenedores dela enquanto o sistema existir.",
+      "naPratica": "No Cockpit, o CI usa `npm ci` e o lockfile é revisado em todo PR que mexe em dependência. Quando o diff do `package-lock.json` tem 300 linhas para um pacote \"pequeno\", essa é a informação que faltava para decidir.",
+      "exercicios": [
+        {
+          "tipo": "quiz",
+          "pergunta": "Por que o pipeline de build deve usar `npm ci` e não `npm install`?",
+          "opcoes": [
+            "Porque o `npm ci` é o único que baixa dependências de desenvolvimento",
+            "Porque o `npm ci` ignora o lockfile e sempre pega as versões mais novas, com as correções de segurança",
+            "Porque o `npm ci` instala exatamente o que está no lockfile e falha se ele divergir do `package.json`",
+            "Não faz diferença: os dois comandos são equivalentes"
+          ],
+          "correta": 2,
+          "explicacao": "O valor do `npm ci` é a reprodutibilidade: o que foi testado é o que vai para produção. A segunda opção inverte o comportamento e descreve justamente o risco: pegar versão nova sem revisão é como um pacote comprometido chega ao build."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "`npm audit` aponta 14 vulnerabilidades, 12 delas em dependências de uma ferramenta de build usada só em desenvolvimento. Qual a atitude de sênior?",
+          "opcoes": [
+            "Rodar `npm audit fix --force` e fazer o commit",
+            "Ignorar tudo: `npm audit` só gera ruído",
+            "Bloquear todos os deploys até o número chegar a zero",
+            "Separar produção de desenvolvimento, avaliar se cada caso é alcançável e atualizar com o CI validando"
+          ],
+          "correta": 3,
+          "explicacao": "O relatório é insumo para decisão. As duas em produção vêm primeiro. As de desenvolvimento ainda importam (rodam na sua máquina e no CI), mas com outra urgência. O `--force` é tentador e pode subir versões *major* sem você perceber, trocando um risco teórico por uma quebra real."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Um colega instalou um pacote copiando o nome de uma resposta de fórum. O nome tem uma letra trocada em relação ao pacote famoso. Qual é o risco específico?",
+          "opcoes": [
+            "*Typosquatting*: pode ser um pacote malicioso publicado com nome parecido, e o script de instalação já rodou na máquina dele",
+            "Nenhum: o registro do npm revisa todos os pacotes antes de publicar",
+            "Só risco de licença incompatível",
+            "O pacote não vai funcionar, mas não causa dano"
+          ],
+          "correta": 0,
+          "explicacao": "O registro público aceita publicação de qualquer pessoa, sem revisão prévia. Um pacote de nome parecido pode executar código já na instalação, pelos scripts de ciclo de vida. Além de remover o pacote, o caso pede tratar a máquina como possivelmente exposta e trocar os segredos que estavam ao alcance (seg-08)."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, achei um pacote no npm que resolve essa formatação em uma linha. Posso instalar?\"",
+          "pontos": [
+            "Não respondeu sim nem não de imediato: fez as perguntas de avaliação",
+            "Perguntou se o Node ou uma dependência já existente resolve",
+            "Pediu para conferir nome exato, manutenção, uso e quantas dependências transitivas vêm junto",
+            "Explicou o custo: código de terceiro com as permissões da aplicação, e atualização para sempre",
+            "Deixou um critério claro para a pessoa decidir sozinha da próxima vez"
+          ],
+          "modelo": "Pode ser, vamos olhar três coisas antes. Primeiro, se o Node ou algo que a gente já usa resolve: formatação de data e número, por exemplo, o Intl nativo cobre. Segundo, quem é o pacote: nome exatamente igual ao da documentação oficial, manutenção recente, bastante uso e quantas dependências ele puxa junto. Roda a instalação num branch e olha o diff do lockfile. Terceiro, o custo: é código de terceiro rodando com as permissões da nossa aplicação, e a gente assume as atualizações dele para sempre. Se for pequeno, mantido e sem árvore grande, instala. Se forem dez linhas, eu escreveria as dez linhas."
+        },
+        {
+          "tipo": "pratica",
+          "titulo": "Auditoria com critério no Cockpit",
+          "minutos": 15,
+          "passos": [
+            "Na raiz do app, rode `npm audit` e depois `npm audit --omit=dev`. Anote os dois totais em `estudo/auditoria.md`.",
+            "Escolha até três achados e, para cada um, rode `npm ls <pacote>` para descobrir qual dependência direta o trouxe.",
+            "Para cada achado, escreva uma linha: produção ou desenvolvimento, se o caminho vulnerável parece alcançável no seu uso, e a ação (atualizar, aguardar, aceitar com justificativa).",
+            "Se não houver achados, faça o mesmo exercício de `npm ls` com três pacotes transitivos quaisquer do lockfile."
+          ],
+          "prontoQuando": "O arquivo tem os dois totais e três linhas de classificação, cada uma com a dependência direta de origem identificada."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "`npm ci` × `npm install` no build.",
+          "verso": "`npm ci` instala exatamente o lockfile e falha se ele divergir do `package.json`. `npm install` pode alterar o lockfile."
+        },
+        {
+          "frente": "Por que instalar um pacote já é executar código de terceiros?",
+          "verso": "Pacotes podem declarar scripts de ciclo de vida (`preinstall`, `install`, `postinstall`) que rodam na instalação, na sua máquina e no CI."
+        },
+        {
+          "frente": "O que é typosquatting?",
+          "verso": "Pacote malicioso publicado com nome quase igual ao de um popular, contando com o erro de digitação."
+        },
+        {
+          "frente": "Quem fixa de verdade as versões de uma aplicação Node?",
+          "verso": "O lockfile versionado, que registra versão exata e hash de integridade de toda a árvore, inclusive as transitivas."
+        },
+        {
+          "frente": "Como ler a saída do `npm audit`?",
+          "verso": "Como insumo: separar produção de desenvolvimento, avaliar se é alcançável, atualizar com CI. Nem ignorar, nem `fix --force` às cegas."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — NPM Security",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/NPM_Security_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "GitHub Docs — Dependabot",
+          "url": "https://docs.github.com/en/code-security/dependabot"
+        },
+        {
+          "titulo": "OWASP Top 10 (edição atual)",
+          "url": "https://owasp.org/www-project-top-ten/"
+        }
+      ]
+    },
+    {
+      "id": "seg-10",
+      "titulo": "OAuth 2.0, OpenID Connect e SSO corporativo",
+      "minutos": 12,
+      "ponte": "No Forms, quem autentica é o banco: a tela repassa usuário e senha e o Oracle responde. Com SSO, quem autentica é um **provedor de identidade** central, e a sua aplicação nunca vê a senha. É parecido com autenticação externa do banco delegada a um diretório. A analogia quebra porque aqui a prova de identidade é um token assinado que viaja pelo navegador, e a sua API precisa saber conferi-lo sozinha.",
+      "texto": "Três siglas que andam juntas e resolvem problemas diferentes.\n\n### OAuth 2.0: autorização delegada\n\nO OAuth permite que uma aplicação acesse uma API **em nome do usuário, sem conhecer a senha dele**. Os quatro papéis:\n\n| Papel | Quem é |\n|---|---|\n| *Resource owner* | O usuário |\n| *Client* | A aplicação que quer acesso (o seu front) |\n| *Authorization server* | Quem autentica o usuário e emite os tokens |\n| *Resource server* | A API que recebe o token (o seu back-end) |\n\n### O fluxo recomendado: authorization code com PKCE\n\n1. O front gera um valor aleatório, o `code_verifier`, e calcula o *hash* dele, o `code_challenge`.\n2. O front **redireciona** o navegador para o servidor de autorização, levando o `code_challenge`.\n3. O usuário faz login **na página do provedor**. A sua aplicação não participa.\n4. O provedor redireciona de volta com um **código** de uso único e vida curta.\n5. O front troca o código por tokens, enviando o `code_verifier` original.\n6. O servidor confere que o verifier corresponde ao challenge do passo 2 e entrega os tokens.\n\nO PKCE (*Proof Key for Code Exchange*) fecha uma brecha: o código do passo 4 passa pela URL e pode ser interceptado. Sem o `code_verifier`, que nunca saiu do cliente, o código roubado não vale nada. Os fluxos antigos em que o token voltava direto na URL (*implicit*) ou em que a aplicação recebia a senha do usuário (*password*) estão desaconselhados pelas recomendações atuais de segurança do OAuth.\n\n### OpenID Connect: a camada de identidade\n\nO OAuth diz o que a aplicação **pode acessar**, não **quem** é o usuário. O OpenID Connect (OIDC) acrescenta isso, com um token a mais:\n\n- **`id_token`**: um JWT destinado ao **client**, dizendo quem autenticou, quando e como.\n- **`access_token`**: destinado à **API**.\n\nA confusão clássica é mandar o `id_token` para a API. Cada token tem o seu destinatário, declarado na claim `aud`.\n\n### SSO corporativo\n\nUm **provedor de identidade** (IdP), como o Keycloak ou o Microsoft Entra ID, centraliza o login de todas as aplicações. O ganho é da organização: uma senha só, segundo fator num lugar só e, principalmente, **desligamento central**. Quando alguém sai, o acesso a tudo cai de uma vez.\n\n### Como a API valida o token\n\nA API não chama o IdP a cada requisição. Ela confere o JWT localmente (seg-03):\n\n1. **Assinatura**, com a chave pública do IdP. As chaves ficam num endereço público, o **JWKS** (*JSON Web Key Set*). O cabeçalho do token traz o `kid`, que diz qual chave usar. A API guarda as chaves em cache e busca de novo quando aparece um `kid` desconhecido, porque o IdP faz rotação.\n2. **`iss`** (*issuer*): o emissor é exatamente o IdP esperado.\n3. **`aud`** (*audience*): o token foi emitido para **esta** API. Sem essa checagem, um token válido de outra aplicação da empresa abre a sua.\n4. **`exp`** e o algoritmo, fixado na configuração.\n\nPapéis e grupos costumam vir em claims do IdP e alimentam o RBAC. A regra de posse por registro continua sendo sua (seg-06): o IdP não sabe de quem é cada tarefa.\n\n### O critério\n\n**Nunca escreva o seu próprio servidor de identidade.** Recuperação de senha, segundo fator, bloqueio, rotação de chaves e os fluxos do protocolo são anos de casos de borda. Em empresa, integre com o IdP existente usando uma biblioteca mantida. Login local com argon2 (seg-02) e refresh rotativo (seg-04) é aceitável num projeto pessoal como o Cockpit, e vale como estudo para entender o que o IdP faz por você.",
+      "naPratica": "Quando o assunto for \"a tela nova vai logar como?\", a resposta de sênior é: pelo provedor de identidade da empresa, via OIDC com authorization code e PKCE, e a API validando assinatura, `iss`, `aud` e `exp`. Você viu o impacto disso na migração em mig-10.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "A assinatura já foi conferida. Falta validar as claims, com o relógio fixo em `AGORA`. O que cada token recebe?",
+          "codigo": "type Claims = { iss: string; aud: string; exp: number; sub: string };\n\nconst ESPERADO = { iss: 'https://idp.exemplo.com/realms/casa', aud: 'cockpit-api' };\nconst AGORA = 1700000500;\n\nfunction validar(c: Claims): string {\n  if (c.iss !== ESPERADO.iss) return 'emissor desconhecido';\n  if (c.aud !== ESPERADO.aud) return 'token de outra aplicacao';\n  if (c.exp <= AGORA) return 'expirado';\n  return `ok: ${c.sub}`;\n}\n\nconst base = { iss: ESPERADO.iss, aud: 'cockpit-api', exp: 1700000900, sub: 'u1' };\n\nconsole.log(validar(base));\nconsole.log(validar({ ...base, aud: 'app-de-relatorios' }));\nconsole.log(validar({ ...base, iss: 'https://idp.falso.com/realms/casa' }));\nconsole.log(validar({ ...base, exp: 1700000500 }));\n",
+          "saida": "ok: u1\ntoken de outra aplicacao\nemissor desconhecido\nexpirado\n",
+          "explicacao": "O primeiro token passa nas três checagens. O segundo tem assinatura válida do mesmo IdP, mas foi emitido para outra aplicação: sem conferir `aud`, ele abriria a sua API. O terceiro vem de outro emissor. O quarto expira exatamente em `AGORA`: a comparação `exp <= AGORA` trata o instante de expiração como já expirado. Bibliotecas reais aceitam uma pequena tolerância de relógio configurável."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Depois do login por OIDC, o front recebe um `id_token` e um `access_token`. Qual deles vai no cabeçalho `Authorization` das chamadas à API?",
+          "opcoes": [
+            "O `id_token`, porque é ele que diz quem é o usuário",
+            "Os dois, concatenados",
+            "O `access_token`; o `id_token` é destinado ao client",
+            "Nenhum: a API consulta o IdP usando o cookie do navegador"
+          ],
+          "correta": 2,
+          "explicacao": "Cada token tem um destinatário, declarado em `aud`. O `id_token` informa o client sobre a autenticação. O `access_token` é emitido para a API. A primeira opção é a confusão clássica: \"identidade\" no nome não significa \"credencial para a API\", e uma API que valida `aud` corretamente recusa o `id_token`."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que o PKCE protege no fluxo authorization code?",
+          "opcoes": [
+            "A senha do usuário, que passa a trafegar cifrada",
+            "O código de autorização: quem o interceptar não consegue trocá-lo por tokens sem o `code_verifier`",
+            "O access token contra XSS no navegador",
+            "A API contra excesso de requisições"
+          ],
+          "correta": 1,
+          "explicacao": "O código volta pela URL de redirecionamento, um caminho exposto. O PKCE amarra a troca do código ao cliente que iniciou o fluxo, por um valor que nunca saiu dele. A senha nem passa pela aplicação nesse fluxo, e a proteção contra XSS é assunto de seg-05."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, a gente mesmo não pode fazer a tela de login e emitir os tokens? No fim é só gerar um JWT, não precisa depender do time de identidade.\"",
+          "pontos": [
+            "Reconheceu que gerar o JWT é a parte fácil",
+            "Listou o que vem junto: guarda de senha, recuperação, segundo fator, bloqueio, rotação de chave, auditoria",
+            "Destacou o ganho do IdP central: desligamento único quando alguém sai, uma senha só",
+            "Apontou o risco de a aplicação virar mais um lugar com senhas para vazar",
+            "Propôs o caminho: OIDC com o IdP existente e a API validando assinatura, iss, aud e exp"
+          ],
+          "modelo": "Gerar o JWT é a parte fácil. O difícil é o resto: guardar senha direito, recuperação de senha, segundo fator, bloqueio por tentativa, rotação de chave, auditoria de login. Cada item desses é um lugar para errar, e a nossa aplicação viraria mais uma base de senhas da empresa para proteger. Com o provedor de identidade a gente ganha o que não consegue fazer sozinho: quando alguém é desligado, o acesso cai em tudo de uma vez. Eu integraria por OIDC com authorization code e PKCE. Do nosso lado sobra pouco: validar assinatura, emissor, audiência e expiração, e mapear os grupos para os nossos papéis."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "OAuth 2.0 × OpenID Connect.",
+          "verso": "OAuth: autorização delegada (o que a aplicação pode acessar). OIDC: camada de identidade sobre o OAuth (quem autenticou), com o `id_token`."
+        },
+        {
+          "frente": "`id_token` × `access_token`: para quem é cada um?",
+          "verso": "`id_token` é para o client saber quem logou. `access_token` é para a API. Não se manda `id_token` para a API."
+        },
+        {
+          "frente": "Por que a API precisa conferir `aud`?",
+          "verso": "Sem isso, um token válido emitido pelo mesmo IdP para outra aplicação abriria a sua API."
+        },
+        {
+          "frente": "O que é o JWKS e para que serve o `kid`?",
+          "verso": "JWKS é o endereço público com as chaves do IdP. O `kid` no cabeçalho do token diz qual chave usar; a API guarda em cache e recarrega na rotação."
+        },
+        {
+          "frente": "Por que não escrever o próprio servidor de identidade?",
+          "verso": "Recuperação de senha, segundo fator, bloqueio, rotação de chaves e fluxos do protocolo são anos de casos de borda. Integre com um IdP."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "RFC 6749 — The OAuth 2.0 Authorization Framework",
+          "url": "https://www.rfc-editor.org/rfc/rfc6749"
+        },
+        {
+          "titulo": "RFC 7636 — Proof Key for Code Exchange (PKCE)",
+          "url": "https://www.rfc-editor.org/rfc/rfc7636"
+        },
+        {
+          "titulo": "RFC 9700 — Best Current Practice for OAuth 2.0 Security",
+          "url": "https://www.rfc-editor.org/rfc/rfc9700"
+        }
+      ]
+    },
+    {
+      "id": "seg-11",
+      "titulo": "Cabeçalhos de segurança, CSP e rate limit",
+      "minutos": 10,
+      "ponte": "No banco, um `PROFILE` com `FAILED_LOGIN_ATTEMPTS` bloqueia a conta depois de N senhas erradas, e a rede interna decide quem chega ao *listener*. Na web, a API exposta recebe tentativa de qualquer lugar, e o limite de tentativas é código seu. Já os cabeçalhos de segurança não têm paralelo no Forms: são instruções que o servidor dá ao **navegador** sobre como tratar a página.",
+      "texto": "Esta lição junta três defesas de configuração. Nenhuma corrige falha de código. Todas reduzem o estrago quando algo escapa.\n\n### Cabeçalhos: instruções para o navegador\n\nO `helmet` é um *middleware* que acrescenta um conjunto de cabeçalhos de resposta com valores padrão sensatos. Uma linha no `main.ts`:\n\n```ts\napp.use(helmet());\n```\n\nO que os principais fazem:\n\n| Cabeçalho | O que manda o navegador fazer | O que evita |\n|---|---|---|\n| `Strict-Transport-Security` (HSTS) | Usar só HTTPS neste domínio pelo prazo informado | Alguém na rede rebaixar a conexão para HTTP |\n| `X-Content-Type-Options: nosniff` | Não adivinhar o tipo do conteúdo | Um arquivo enviado como texto ser executado como script |\n| CSP `frame-ancestors` (e o antigo `X-Frame-Options`) | Só aceitar ser embutido em *iframe* pelas origens listadas | *Clickjacking*: a sua tela invisível sobre outra página, capturando cliques |\n| `Content-Security-Policy` | Carregar script, estilo e conexão só das origens listadas | O script injetado que conseguiu passar |\n\nO helmet também remove o `X-Powered-By`, que anuncia a tecnologia do servidor sem necessidade. Os padrões mudam entre versões; confira a documentação da versão instalada antes de afirmar o que está ligado.\n\n### CSP, em noção\n\nA *Content Security Policy* é uma lista de permitidos para o navegador. `default-src 'self'` diz: só carregue recursos da minha própria origem. Com isso, um `<script src>` apontando para fora ou um script embutido no HTML não executa, mesmo que um XSS tenha conseguido inseri-lo. É a segunda camada que seg-05 prometeu.\n\nDois avisos práticos:\n\n- A CSP importa **onde o HTML é servido**. Numa API que só devolve JSON ela tem pouco efeito. O lugar de configurá-la é o servidor que entrega o `index.html` do front.\n- Uma política rígida quebra a página no primeiro script embutido ou serviço externo esquecido. Comece em modo `Content-Security-Policy-Report-Only`, que só registra as violações, e aperte aos poucos.\n\n### Rate limit: o contador de tentativas\n\n*Rate limit* é limitar quantas requisições uma chave pode fazer numa janela de tempo. Passou do limite, a resposta é `429`, de preferência com `Retry-After`.\n\nO alvo óbvio é o **login**. Sem limite, um atacante testa senhas vazadas de outros sites contra a sua tela, na velocidade que a rede permitir. Os critérios:\n\n- **Qual chave.** Só por IP não basta, porque o atacante troca de IP. Só por conta permite a um terceiro bloquear um usuário de propósito. Use as duas, com limites diferentes.\n- **Atraso progressivo** em vez de bloqueio definitivo, e a mesma mensagem genérica de sempre (seg-02).\n- **Várias instâncias.** Contador em memória vale por processo. Com duas instâncias, o limite real dobra. O contador vai para um armazenamento compartilhado, como o Redis (dados-13).\n- **Atrás de proxy.** O IP visto pela aplicação é o do proxy. O IP real vem num cabeçalho de encaminhamento, que só merece confiança se a aplicação estiver configurada para confiar **apenas** no seu proxy.\n\nNo Nest, o pacote `@nestjs/throttler` implementa isso como *guard*.\n\n### CORS não é autenticação\n\nVocê viu em http-06 que o CORS é uma regra que o **navegador** aplica. Ele decide se o JavaScript de outra origem pode **ler** a resposta. Um script de linha de comando ignora CORS por completo. Restringir a origem não protege rota nenhuma: quem protege é o token e a autorização.\n\nO erro perigoso é o contrário. Configurar o CORS para devolver qualquer origem recebida **junto com** `credentials: true` autoriza qualquer site a fazer chamadas com os cookies do usuário e ler a resposta.",
+      "naPratica": "No Cockpit, o `main.ts` liga o `helmet`, o CORS lista a origem do front pelo nome e a rota de login tem um limite mais apertado que o resto. Num review de configuração, procure `origin: true` ou `origin: '*'` perto de `credentials`.",
+      "exercicios": [
+        {
+          "tipo": "prever",
+          "linguagem": "ts",
+          "enunciado": "Um limitador de janela deslizante: no máximo 3 tentativas por minuto, por login. O relógio é passado como parâmetro para a saída ser determinística. O que sai?",
+          "codigo": "const LIMITE = 3;\nconst JANELA_MS = 60_000;\nconst tentativas = new Map<string, number[]>();\n\nfunction permite(chave: string, agora: number): boolean {\n  const recentes = (tentativas.get(chave) ?? []).filter((t) => agora - t < JANELA_MS);\n  if (recentes.length >= LIMITE) {\n    tentativas.set(chave, recentes);\n    return false;\n  }\n  recentes.push(agora);\n  tentativas.set(chave, recentes);\n  return true;\n}\n\nconst login = 'ana@exemplo.com';\nconst instantes = [0, 1_000, 2_000, 3_000, 30_000, 61_000];\nconsole.log(instantes.map((t) => (permite(login, t) ? 'ok' : '429')).join(' '));\nconsole.log(permite('beto@exemplo.com', 3_500));\n",
+          "saida": "ok ok ok 429 429 ok\ntrue\n",
+          "explicacao": "As três primeiras tentativas cabem no limite. A quarta e a quinta caem dentro do mesmo minuto e são recusadas. No instante 61 000, as tentativas de 0 e de 1 000 já saíram da janela (61 000 − 1 000 dá exatamente 60 000, que não é menor que a janela), sobra só a de 2 000, e a requisição passa. O contador é por chave: o Beto não é afetado pelas tentativas contra a conta da Ana. Como o `Map` vive na memória do processo, uma segunda instância teria um contador próprio."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "Revisão de código. A API usa refresh token em cookie. Qual é o problema desta configuração?\n\n```ts\napp.enableCors({\n  origin: (origem, callback) => callback(null, true),\n  credentials: true,\n});\n```",
+          "opcoes": [
+            "Nenhum: aceitar qualquer origem é necessário para o front funcionar",
+            "Falta listar os métodos HTTP permitidos",
+            "Qualquer site passa a poder chamar a API com os cookies do usuário e ler a resposta",
+            "O `credentials: true` desliga o HTTPS"
+          ],
+          "correta": 2,
+          "explicacao": "A função aceita toda origem recebida, e `credentials: true` libera o envio de cookies. Juntas, as duas linhas anulam a proteção que a política de mesma origem dava. A correção é uma lista explícita com a origem do front. A primeira opção é como isso nasce: alguém teve um erro de CORS em desenvolvimento e \"resolveu\" aceitando tudo."
+        },
+        {
+          "tipo": "quiz",
+          "pergunta": "O que o cabeçalho `Strict-Transport-Security` faz?",
+          "opcoes": [
+            "Cifra o corpo das respostas da API",
+            "Obriga o servidor a recusar requisições sem token",
+            "Impede a página de ser aberta dentro de um *iframe*",
+            "Instrui o navegador a acessar o domínio só por HTTPS durante o prazo informado"
+          ],
+          "correta": 3,
+          "explicacao": "O HSTS é uma instrução memorizada pelo navegador: nas próximas visitas, ele nem tenta HTTP. Quem cifra é o próprio HTTPS; o cabeçalho só impede o rebaixamento. Impedir *iframe* é trabalho do `frame-ancestors`."
+        },
+        {
+          "tipo": "corredor",
+          "pergunta": "\"{{nome}}, o CORS já está restrito ao nosso domínio. Então ninguém de fora consegue chamar a API, né?\"",
+          "pontos": [
+            "Corrigiu: CORS é aplicado pelo navegador, não pelo servidor",
+            "Deu o exemplo: uma ferramenta de linha de comando ou outro servidor ignora CORS",
+            "Disse o que o CORS de fato controla: se o JavaScript de outra origem pode ler a resposta",
+            "Apontou o que protege a API: autenticação, autorização por rota e rate limit",
+            "Reconheceu que restringir a origem continua sendo correto, só não é o controle de acesso"
+          ],
+          "modelo": "Consegue. O CORS é uma regra que o navegador aplica para proteger o usuário, não uma barreira no servidor. Qualquer script, ferramenta de linha de comando ou outro back-end chama a nossa API sem nem olhar para CORS. O que ele controla é outra coisa: se o JavaScript de uma página de outra origem, rodando no navegador de alguém, pode ler a nossa resposta. Restringir a origem está certo e deve continuar assim. Mas quem protege a API é o token validado em cada rota, a checagem de autorização e o limite de requisições. Se alguma rota depende só do CORS para ficar fechada, ela está aberta."
+        }
+      ],
+      "cartoes": [
+        {
+          "frente": "O que o HSTS manda o navegador fazer?",
+          "verso": "Acessar o domínio só por HTTPS durante o prazo informado, sem nem tentar HTTP."
+        },
+        {
+          "frente": "Para que serve `X-Content-Type-Options: nosniff`?",
+          "verso": "Proíbe o navegador de adivinhar o tipo do conteúdo, evitando que um arquivo enviado seja executado como script."
+        },
+        {
+          "frente": "Por que CORS não é mecanismo de autenticação?",
+          "verso": "Quem aplica é o navegador. Qualquer cliente fora dele ignora. CORS só decide se o JavaScript de outra origem pode ler a resposta."
+        },
+        {
+          "frente": "Rate limit de login: por IP ou por conta?",
+          "verso": "Os dois. Só IP: o atacante troca de IP. Só conta: um terceiro bloqueia o usuário de propósito."
+        },
+        {
+          "frente": "Por que contador de rate limit em memória falha com várias instâncias?",
+          "verso": "Cada processo tem o seu contador, então o limite real se multiplica. O contador vai para um armazenamento compartilhado, como o Redis."
+        }
+      ],
+      "fontes": [
+        {
+          "titulo": "OWASP Cheat Sheet — HTTP Security Response Headers",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+        },
+        {
+          "titulo": "NestJS — Helmet",
+          "url": "https://docs.nestjs.com/security/helmet"
+        },
+        {
+          "titulo": "MDN — Content Security Policy (CSP)",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP"
+        }
+      ]
+    }
+  ]
+}
