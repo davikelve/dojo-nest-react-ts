@@ -171,7 +171,7 @@ const servidor = http.createServer(async (req, res) => {
 
 const endereco = `http://localhost:${PORTA}`;
 const abre = () => {
-  if (process.argv.includes('--sem-navegador')) return;
+  if (process.argv.includes('--sem-navegador') || process.env.DOJO_SEM_NAVEGADOR) return;
   const comando = process.platform === 'win32' ? `start "" "${endereco}"` : process.platform === 'darwin' ? `open "${endereco}"` : `xdg-open "${endereco}"`;
   exec(comando, { windowsHide: true }, () => {});
 };
