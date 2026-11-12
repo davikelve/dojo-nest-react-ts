@@ -2079,7 +2079,9 @@ jobs:
 > `JWT_ACESS_SECRET` com um C a menos (o Joi da 1.1 derruba a API: *"JWT_ACCESS_SECRET is required"*).
 > Confira os nomes das variáveis contra o `env.validation.ts`, letra por letra.
 
-Faça o push, abra o **Pull Request** com `Closes #<número da issue da Sprint 1>` na descrição, espere o
+Faça o push, abra o **Pull Request** com o título em Conventional Commits (`feat(api): add api foundation`) e, na
+descrição, `Closes #7` — troque o 7 pelo número da issue da sua Sprint 1 e escreva só `#` e o número: com
+`<>` em volta o GitHub não reconhece e a issue fica aberta depois do merge. Espere o
 check `build-test` ficar verde, revise o seu PR e faça o *squash merge*.
 
 #### Como deve ficar no fim da Sprint 1
