@@ -3,7 +3,7 @@ titulo: Cockpit — Guia de Implementação
 subtitulo: Passo a passo manual, no rito do dia a dia de um dev NestJS + React
 rotulo: Documento técnico
 autor: Davi Kelve
-badges: Para implementar à mão:ok, v1.5
+badges: Para implementar à mão:ok, v1.6
 kpis: Sprints=11; Recurso Nest padrão=12 passos; Commits por feature=3 a 6
 ---
 
@@ -76,6 +76,13 @@ NestJS trabalha de verdade. Cada sprint segue o mesmo rito — repita-o até vir
 > compilados (`tsc`), testados e passados no lint num projeto com as dependências da Sprint 2; os do front
 > foram compilados contra React Router 8, TanStack Query 5, Zustand 5, Zod 4 e MSW 3. De quebra, o
 > `server.listen` da 4.5 mudou: no MSW 3 a opção se chama `onUnhandledFrame`.
+
+> [!INFO] v1.6 — cadastro e login passo a passo (15/11/2026)
+> A seção 2.4 foi dividida em **Parte A — Cadastro e login** (fecha a missão 2.3 do Dojo) e **Parte B —
+> Refresh e logout** (missão 2.4). Entraram os arquivos que o guia só citava: o `UsersService` com
+> `findByEmail`, `create` e `findByIdOrThrow`, o `exports` do `UsersModule`, o `register` do controller, a
+> rota `GET /users/me` com o `UserDto` e o `@ApiBearerAuth()`, o `refresh` e o `logout` completos, e um
+> roteiro de prova no Swagger. Tudo compilado, com lint, num projeto com as dependências da Sprint 2.
 
 > [!ATENCAO] Três regras de import neste projeto
 > **1. Arquivo seu termina em `.js`** (`'./auth.service.js'`), mesmo sendo `.ts`: a API é ESM. Pacote não
@@ -1703,79 +1710,70 @@ providers: [
 
 ### 2.4 Refresh rotativo (o coração da sprint)
 
+Esta seção tem duas partes, e cada uma é uma missão do Dojo. A **Parte A** fecha a missão 2.3: no fim dela
+o cadastro e o login funcionam no Swagger. A **Parte B** é a missão 2.4: o refresh rotativo e o logout.
+
+#### Parte A — Cadastro e login
+
+Seis arquivos, nesta ordem: quem é usado vem antes de quem usa, e o compilador fica verde a cada passo.
+
+**1. O `UsersModule` exporta o service.** Provider de um módulo só é visto por outro módulo se estiver em
+`exports`; a CLI não põe.
+
 ```ts
-// src/modules/auth/auth.service.ts (trecho)
-import { createHash, randomBytes, randomUUID } from 'node:crypto'; // do próprio Node, nada a instalar
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { JwtService } from '@nestjs/jwt';
-import * as argon2 from 'argon2';
+// src/modules/users/users.module.ts
+import { Module } from '@nestjs/common';
+import { UsersController } from './users.controller.js';
+import { UsersService } from './users.service.js';
+
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService], // sem isto o AuthService não recebe o UsersService
+})
+export class UsersModule {}
+```
+
+**2. O `UsersService`**: três métodos, e só eles falam com a tabela `User`. O `PrismaModule` é global
+(1.2), então basta pedir o `PrismaService` no constructor.
+
+```ts
+// src/modules/users/users.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service.js';
-import { UsersService } from '../users/users.service.js';
-import { LoginDto, RegisterDto } from './dto/auth.dto.js';
 
-const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+@Injectable()
+export class UsersService {
+  constructor(private prisma: PrismaService) {}
 
-// dentro de @Injectable() export class AuthService { ... } — é o constructor que dá nome a
-// this.prisma, this.users, this.jwt, this.config e this.events:
-constructor(
-  private prisma: PrismaService,
-  private users: UsersService,
-  private jwt: JwtService,
-  private config: ConfigService,
-  private events: EventEmitter2,
-) {}
-
-async register(dto: RegisterDto, userAgent?: string) {
-  if (await this.users.findByEmail(dto.email)) throw new ConflictException('E-mail já cadastrado.');
-  const user = await this.users.create({ email: dto.email, name: dto.name, passwordHash: await argon2.hash(dto.password) });
-  await this.events.emitAsync('user.registered', { userId: user.id }); // ESPERA o workspace Pessoal (RN-01)
-  return this.issueTokens(user, randomUUID(), userAgent);
-}
-
-async login(dto: LoginDto, userAgent?: string) {
-  const user = await this.users.findByEmail(dto.email);
-  if (!user || !(await argon2.verify(user.passwordHash, dto.password))) {
-    throw new UnauthorizedException('Credenciais inválidas'); // mesma mensagem nos dois casos
+  /** Devolve o usuário ou null: quem chama decide o que o null significa. */
+  findByEmail(email: string) {
+    return this.prisma.user.findUnique({ where: { email } });
   }
-  return this.issueTokens(user, randomUUID(), userAgent); // nova família
-}
 
-async refresh(rawToken: string) {
-  const session = await this.prisma.session.findUnique({ where: { tokenHash: sha256(rawToken) } });
-  if (!session || session.expiresAt < new Date()) throw new UnauthorizedException();
-  if (session.revokedAt) {
-    // REUSO: alguém usou um token já trocado — derruba a família inteira
-    await this.prisma.session.updateMany({ where: { familyId: session.familyId }, data: { revokedAt: new Date() } });
-    throw new UnauthorizedException();
+  create(data: { email: string; name: string; passwordHash: string }) {
+    return this.prisma.user.create({ data });
   }
-  await this.prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
-  const user = await this.users.findByIdOrThrow(session.userId);
-  return this.issueTokens(user, session.familyId, session.userAgent ?? undefined); // mesma família
-}
 
-private async issueTokens(user: { id: string; email: string }, familyId: string, userAgent?: string) {
-  const accessToken = await this.jwt.signAsync({ sub: user.id, email: user.email });
-  const refreshToken = randomBytes(32).toString('base64url');
-  const days = this.config.get<number>('REFRESH_TTL_DAYS', 30);
-  await this.prisma.session.create({
-    data: { userId: user.id, familyId, tokenHash: sha256(refreshToken), userAgent, expiresAt: new Date(Date.now() + days * 86_400_000) },
-  });
-  return { accessToken, refreshToken };
+  async findByIdOrThrow(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    return user;
+  }
 }
 ```
 
-> [!ATENCAO] `emitAsync`, não `emit`
-> `emit()` não espera o ouvinte: a resposta do cadastro voltava **antes** do workspace *Pessoal* existir e
-> o teste pegava a lista vazia (testado na Sprint 3). Com `await emitAsync(...)` e
-> `@OnEvent('user.registered', { promisify: true })` no ouvinte, o cadastro só responde depois.
+> [!INFO] Por que cada método é assim
+> **`findUnique`** só aceita campo único no `where` (`id` ou `email`, que é `@unique`) e devolve
+> `User | null`. É esse `null` que obriga o `login` a testar `!user` antes de ler `user.passwordHash`:
+> passe o mouse no retorno e confira o tipo. **`create`** recebe só os três campos: `id`, `timezone`,
+> `workdayMinutes` e as datas têm `@default` no schema. Se o TypeScript reclamar que falta
+> `workdayMinutes`, o `@default(360)` não está no seu `schema.prisma` (documento 1): corrija lá, com
+> migration, e não aqui. **`findByIdOrThrow`** não usa o `findUniqueOrThrow` do Prisma de propósito: ele
+> lança o erro `P2025`, que o filtro da 1.4 devolveria como 500. Com o `NotFoundException` sai 404.
 
-`findByEmail`, `create` e `findByIdOrThrow` são métodos do `UsersService` que **você escreve** (Prisma
-puro, com o `PrismaService` injetado no constructor): o trecho acima só os chama.
-
-O refresh vai em cookie, nunca no corpo — e **o retorno do controller tem que ser uma classe**, senão o
-Swagger documenta a resposta como vazia e o front recebe `void` (testado na Sprint 4):
+**3. Os DTOs.** O retorno do controller **tem que ser uma classe** (`AccessTokenDto`), senão o Swagger
+documenta a resposta como vazia e o front recebe `void` (testado na Sprint 4).
 
 ```ts
 // src/modules/auth/dto/auth.dto.ts
@@ -1794,37 +1792,221 @@ export class AccessTokenDto {
 }
 ```
 
+**4. O `AuthService`**: cadastro, login e a emissão dos dois tokens.
+
 ```ts
-// src/modules/auth/auth.controller.ts (trecho)
+// src/modules/auth/auth.service.ts
+import { createHash, randomBytes, randomUUID } from 'node:crypto'; // do próprio Node, nada a instalar
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { JwtService } from '@nestjs/jwt';
+import * as argon2 from 'argon2';
+import { PrismaService } from '../../core/prisma/prisma.service.js';
+import { UsersService } from '../users/users.service.js';
+import { LoginDto, RegisterDto } from './dto/auth.dto.js';
+
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private prisma: PrismaService,
+    private users: UsersService,
+    private jwt: JwtService,
+    private config: ConfigService,
+    private events: EventEmitter2,
+  ) {}
+
+  async register(dto: RegisterDto, userAgent?: string) {
+    if (await this.users.findByEmail(dto.email)) throw new ConflictException('E-mail já cadastrado.');
+    const user = await this.users.create({ email: dto.email, name: dto.name, passwordHash: await argon2.hash(dto.password) });
+    await this.events.emitAsync('user.registered', { userId: user.id }); // ESPERA o workspace Pessoal (RN-01)
+    return this.issueTokens(user, randomUUID(), userAgent);
+  }
+
+  async login(dto: LoginDto, userAgent?: string) {
+    const user = await this.users.findByEmail(dto.email);
+    if (!user || !(await argon2.verify(user.passwordHash, dto.password))) {
+      throw new UnauthorizedException('Credenciais inválidas'); // mesma mensagem nos dois casos
+    }
+    return this.issueTokens(user, randomUUID(), userAgent); // nova família
+  }
+
+  private async issueTokens(user: { id: string; email: string }, familyId: string, userAgent?: string) {
+    const accessToken = await this.jwt.signAsync({ sub: user.id, email: user.email });
+    const refreshToken = randomBytes(32).toString('base64url');
+    const days = this.config.get<number>('REFRESH_TTL_DAYS', 30);
+    await this.prisma.session.create({
+      data: { userId: user.id, familyId, tokenHash: sha256(refreshToken), userAgent, expiresAt: new Date(Date.now() + days * 86_400_000) },
+    });
+    return { accessToken, refreshToken };
+  }
+}
+```
+
+> [!ATENCAO] `emitAsync`, não `emit`
+> `emit()` não espera o ouvinte: a resposta do cadastro voltava **antes** do workspace *Pessoal* existir e
+> o teste pegava a lista vazia (testado na Sprint 3). Com `await emitAsync(...)` e
+> `@OnEvent('user.registered', { promisify: true })` no ouvinte, o cadastro só responde depois. Nesta
+> sprint ainda não há ouvinte: o evento sai e ninguém escuta, sem erro. Ele chega na 3.2.
+
+**5. O `AuthController`.** O refresh token vai em cookie, nunca no corpo da resposta.
+
+```ts
+// src/modules/auth/auth.controller.ts
 import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express'; // "import type" é obrigatório aqui (TS1272)
 import { Public } from '../../common/decorators/public.decorator.js';
 import { AuthService } from './auth.service.js';
-import { AccessTokenDto, LoginDto } from './dto/auth.dto.js'; // DTO NUNCA com "import type"
+import { AccessTokenDto, LoginDto, RegisterDto } from './dto/auth.dto.js'; // DTO NUNCA com "import type"
 
 const cookieOptions: CookieOptions = {
   httpOnly: true, secure: true, sameSite: 'strict', path: '/api/v1/auth', maxAge: 30 * 86_400_000,
 };
 
-// dentro de @Controller('auth') export class AuthController { ... }:
-constructor(private auth: AuthService) {}
+@Controller('auth')
+export class AuthController {
+  constructor(private auth: AuthService) {}
 
-@Public()
-@Throttle({ default: { limit: 5, ttl: 60_000 } })
-@Post('login')
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('register') // POST já responde 201
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenDto> {
+    const { accessToken, refreshToken } = await this.auth.register(dto, req.headers['user-agent']);
+    res.cookie('rt', refreshToken, cookieOptions);
+    return { accessToken };
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('login')
+  @HttpCode(200)
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenDto> {
+    const { accessToken, refreshToken } = await this.auth.login(dto, req.headers['user-agent']);
+    res.cookie('rt', refreshToken, cookieOptions);
+    return { accessToken };
+  }
+}
+```
+
+**6. Uma rota protegida de verdade: `GET /users/me`.** Sem ela não há como ver o 401 — rota que não existe
+devolve 404 antes de o guard rodar.
+
+```ts
+// src/modules/users/dto/user.dto.ts
+export class UserDto {
+  id: string;
+  email: string;
+  name: string;
+  timezone: string;
+  workdayMinutes: number;
+}
+```
+
+```ts
+// src/modules/users/users.controller.ts
+import { Controller, Get } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
+import { CurrentUser, type AuthUser } from '../../common/decorators/current-user.decorator.js';
+import { UserDto } from './dto/user.dto.js';
+import { UsersService } from './users.service.js';
+
+@ApiBearerAuth() // sem isto o Swagger não manda o token, mesmo depois do Authorize
+@Controller('users')
+export class UsersController {
+  constructor(private users: UsersService) {}
+
+  @Get('me')
+  async me(@CurrentUser() auth: AuthUser): Promise<UserDto> {
+    const user = await this.users.findByIdOrThrow(auth.id);
+    // campo a campo: o passwordHash NUNCA sai da API
+    return { id: user.id, email: user.email, name: user.name, timezone: user.timezone, workdayMinutes: user.workdayMinutes };
+  }
+}
+```
+
+**Prove no Swagger** (`npm run start:dev -w apps/api` e abra `http://localhost:3000/docs`). Antes de cada
+passo, **preveja** o código de status:
+
+| Passo | Chamada | Esperado |
+|---|---|---|
+| 1 | `POST /api/v1/auth/register` com `email`, `password` (8+) e `name` | 201 com `accessToken` |
+| 2 | o mesmo cadastro de novo | 409 em problem+json |
+| 3 | `POST /api/v1/auth/login` com a senha errada | 401, *Credenciais inválidas* |
+| 4 | `POST /api/v1/auth/login` com a senha certa | 200 com `accessToken` |
+| 5 | `GET /api/v1/users/me` sem autorizar | 401 |
+| 6 | botão **Authorize**, cole o `accessToken`, e `GET /api/v1/users/me` de novo | 200, sem `passwordHash` |
+
+Aqui a missão 2.3 do Dojo está pronta.
+
+#### Parte B — Refresh e logout
+
+O access token dura 15 minutos. Quem mantém a sessão viva é o refresh token do cookie — e ele é **rotativo**:
+cada uso troca o token por um novo e revoga o antigo. Se um token já trocado aparecer de novo, alguém o
+copiou: a família inteira cai.
+
+```ts
+// src/modules/auth/auth.service.ts (trecho) — dois métodos novos na classe; os imports já estão lá
+async refresh(rawToken: string) {
+  const session = await this.prisma.session.findUnique({ where: { tokenHash: sha256(rawToken) } });
+  if (!session || session.expiresAt < new Date()) throw new UnauthorizedException();
+  if (session.revokedAt) {
+    // REUSO: alguém usou um token já trocado — derruba a família inteira
+    await this.prisma.session.updateMany({ where: { familyId: session.familyId }, data: { revokedAt: new Date() } });
+    throw new UnauthorizedException();
+  }
+  await this.prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+  const user = await this.users.findByIdOrThrow(session.userId);
+  return this.issueTokens(user, session.familyId, session.userAgent ?? undefined); // mesma família
+}
+
+async logout(rawToken?: string) {
+  if (!rawToken) return; // sem cookie não há sessão para revogar
+  await this.prisma.session.updateMany({
+    where: { tokenHash: sha256(rawToken), revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
+```
+
+```ts
+// src/modules/auth/auth.controller.ts (trecho) — acrescente UnauthorizedException ao import de '@nestjs/common'
+// e, dentro da classe:
+@Public() // o access token pode já ter vencido: quem autentica aqui é o cookie
+@Post('refresh')
 @HttpCode(200)
-async login(
-  @Body() dto: LoginDto,
-  @Req() req: Request,
-  @Res({ passthrough: true }) res: Response,
-): Promise<AccessTokenDto> {
-  const { accessToken, refreshToken } = await this.auth.login(dto, req.headers['user-agent']);
+async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AccessTokenDto> {
+  const rt = (req.cookies as Record<string, string | undefined>).rt; // lido pelo cookie-parser (1.3)
+  if (!rt) throw new UnauthorizedException();
+  const { accessToken, refreshToken } = await this.auth.refresh(rt);
   res.cookie('rt', refreshToken, cookieOptions);
   return { accessToken };
 }
-// register (201) e refresh (200, lê req.cookies.rt) seguem o mesmo molde; logout (204) revoga e limpa o cookie
+
+@Public()
+@Post('logout')
+@HttpCode(204)
+async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
+  await this.auth.logout((req.cookies as Record<string, string | undefined>).rt);
+  res.clearCookie('rt', cookieOptions); // mesmas opções do cookie, ou o navegador não apaga
+}
 ```
+
+Prove no Swagger: `refresh` logo depois do login devolve 200 e um `accessToken` novo (o navegador manda o
+cookie sozinho; Chrome, Edge e Firefox aceitam cookie `secure` em `localhost`). `logout` devolve 204 e o
+`refresh` seguinte dá 401. O reuso — apresentar de novo um refresh token **já trocado** e ver a família
+inteira cair — o navegador não deixa simular, porque ele só guarda o cookie novo: essa prova é o teste e2e
+da 2.5.
 
 ### 2.5 Testes
 
