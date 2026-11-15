@@ -136,6 +136,44 @@ teste('rota: cada fase tem chefão, cada chefão tem critério de aprovação, m
   assert.ok(rota.missoes.every((m) => m.titulo && m.guia && m.prontoQuando && m.sessoes > 0));
 });
 
+teste('lição-base: a missão fica fechada até a última lição da rota que dá base a ela', () => {
+  const ordem = L.ordemDaRota(rota, ementa);
+  const pos = (id) => ordem.findIndex((o) => o.id === id);
+  // toda lição-base existe na rota e nunca anda para trás de uma missão para a seguinte
+  let anterior = -1;
+  for (const m of rota.missoes.filter((x) => x.ate)) {
+    assert.ok(pos(m.ate) >= 0, `${m.id}: lição-base ${m.ate} fora da rota`);
+    assert.ok(pos(m.ate) >= anterior, `${m.id}: lição-base ${m.ate} vem antes da missão anterior`);
+    anterior = pos(m.ate);
+  }
+  const m = rota.missoes.find((x) => x.id === 's2.3');
+  const e = novo();
+  const zero = L.travaDaMissao(m, ordem, e);
+  assert.equal(zero.travada, true);
+  assert.equal(zero.faltam.length, pos(m.ate) + 1);
+  assert.equal(zero.faltam[0], ordem[0].id); // devolve na ordem de estudo
+  for (const o of ordem.slice(0, pos(m.ate))) e.licoes[o.id] = { feitaEm: '2026-11-10' };
+  assert.deepEqual(L.travaDaMissao(m, ordem, e).faltam, [m.ate]); // falta só a última
+  e.licoes[m.ate] = { feitaEm: '2026-11-10' };
+  assert.equal(L.travaDaMissao(m, ordem, e).travada, false);
+  assert.equal(L.travaDaMissao({ id: 'x' }, ordem, novo()).travada, false); // sem "ate" é livre
+  assert.equal(L.travaDaMissao(m, ordem, novo(), () => false).travada, false); // lição ainda não escrita não trava
+});
+
+// m.guia é um título ou uma lista de títulos; o Dojo abre o guia sinalizando cada um deles
+const titulos = (await readFile(new URL('../guia/GUIA.md', import.meta.url), 'utf8'))
+  .split('\n').filter((l) => /^#{1,4} /.test(l)).map((l) => l.replace(/^#+ /, '').replaceAll('`', '').trim().toLowerCase());
+teste('rota: todo bloco do guia citado por uma missão existe como título no guia', () => {
+  for (const m of rota.missoes) {
+    const blocos = [m.guia].flat();
+    assert.ok(blocos.length > 0 && blocos.every((b) => typeof b === 'string' && b.trim()), m.id);
+    for (const b of blocos) {
+      const alvo = b.replaceAll('`', '').trim().toLowerCase();
+      assert.ok(titulos.some((t) => t.endsWith(alvo) || t.includes(alvo)), `${m.id}: "${b}" não é título do guia`);
+    }
+  }
+});
+
 teste('próxima lição e próxima missão respeitam o que já foi feito', () => {
   const e = L.estadoInicial('2026-11-10');
   const ordem = L.ordemDaRota(rota, ementa);

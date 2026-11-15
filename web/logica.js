@@ -215,6 +215,17 @@ export const proximasLicoes = (ordem, estado, n = 1, existe = () => true) =>
 
 export const proximaMissao = (missoes, estado) => missoes.find((m) => !estado.missoes[m.id]?.feitaEm) ?? null;
 
+// Lição-base: a missão com "ate" só abre depois de feitas TODAS as lições da rota até essa (inclusive).
+// Devolve as que faltam, na ordem de estudo. Missão sem "ate" (ou com lição que ainda não existe) é livre.
+export function travaDaMissao(missao, ordem, estado, existe = () => true) {
+  const livre = { travada: false, faltam: [], ate: missao?.ate ?? null };
+  if (!missao?.ate) return livre;
+  const fim = ordem.findIndex((o) => o.id === missao.ate);
+  if (fim < 0) return livre;
+  const faltam = ordem.slice(0, fim + 1).filter((o) => !estado.licoes[o.id]?.feitaEm && existe(o.id)).map((o) => o.id);
+  return { travada: faltam.length > 0, faltam, ate: missao.ate };
+}
+
 /** Ritmo dos últimos 14 dias e projeção de término de um conjunto de lições. */
 export function projecao(estado, hoje, restantes) {
   let feitas = 0;

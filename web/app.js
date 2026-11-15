@@ -152,7 +152,9 @@ const refDe = (id) => trilhaDe(id)?.licoes.find((l) => l.id === id);
 const existe = (id) => !!D.licoes[id];
 const feita = (id) => !!E.licoes[id]?.feitaEm;
 const faseAtual = () => D.rota.fases.find((f) => L.progressoFase(D.ordem, E, f.id).pct < 100) ?? D.rota.fases.at(-1);
-const linkGuia = (titulo) => '/guia?ir=' + encodeURIComponent(titulo);
+// missao.guia é um título de seção ou uma lista deles (missão que usa mais de um bloco do guia)
+const blocosGuia = (guia) => [guia].flat().filter(Boolean);
+const linkGuia = (guia) => '/guia?' + blocosGuia(guia).map((t) => 'ir=' + encodeURIComponent(t)).join('&');
 const textoCartao = (cid) => {
   if (cid.startsWith('meu#')) return E.meusCartoes.find((c) => 'meu#' + c.id === cid) ?? null;
   const [lid, i] = cid.split('#');
@@ -209,7 +211,9 @@ TELAS.hoje = () => {
   const proximas = L.proximasLicoes(D.ordem, E, Math.max(0, cfg.licoes - feitasHoje), existe);
   const licOk = feitasHoje >= cfg.licoes || proximas.length === 0;
   const missao = L.proximaMissao(D.rota.missoes, E);
-  const consOk = cfg.construir === 0 || d.minutos >= cfg.construir || !missao;
+  // lição-base: a missão só abre depois das lições que dão base a ela (campo "ate" da rota)
+  const trava = missao ? L.travaDaMissao(missao, D.ordem, E, existe) : { travada: false, faltam: [] };
+  const consOk = cfg.construir === 0 || d.minutos >= cfg.construir || !missao || trava.travada;
   const passos = [];
   const atual = (ok, anteriores) => (ok ? 'feito' : anteriores ? 'atual' : '');
 
@@ -243,11 +247,15 @@ TELAS.hoje = () => {
         h('h3', {}, 'Construir ', h('small', { class: 'sub' }, `${cfg.construir} min no Cockpit · digite, não cole`)),
         missao ? [
           h('p', {}, h('strong', {}, missao.titulo), ' ', h('span', { class: 'pilula' }, `~${missao.sessoes} ${missao.sessoes > 1 ? 'sessões' : 'sessão'}`),
-            D.guia ? [' ', h('a', { href: linkGuia(missao.guia), target: '_blank' }, 'abrir no guia ↗')] : null),
+            D.guia ? [' ', h('a', { href: linkGuia(missao.guia), target: '_blank' }, blocosGuia(missao.guia).length > 1 ? `abrir no guia (${blocosGuia(missao.guia).length} blocos) ↗` : 'abrir no guia ↗')] : null),
           h('p', { class: 'sub' }, h('strong', {}, 'Pronto quando: '), missao.prontoQuando),
           h('p', { class: 'sub' }, `Hoje: ${d.minutos} de ${cfg.construir} min · nesta missão: ${E.missoes[missao.id]?.minutos ?? 0} min`,
             D.git?.hoje?.length ? ` · ${D.git.hoje.length} commit${D.git.hoje.length > 1 ? 's' : ''} hoje` : ''),
           emFoco ? h('div', { class: 'linha' }, visor, h('button', { class: 'btn primario', onclick: () => paraFoco(missao.id) }, 'Parar e registrar'))
+            : trava.travada ? [
+              h('p', {}, '🔒 ', h('strong', {}, `Missão fechada: ${trava.faltam.length === 1 ? 'falta 1 lição-base' : `faltam ${trava.faltam.length} lições-base`}`), ' ', h('span', { class: 'sub' }, `(estude até "${refDe(trava.ate)?.titulo ?? trava.ate}")`)),
+              h('p', { class: 'sub' }, 'O Cockpit espera: primeiro a lição que dá base ao que você vai digitar. A missão abre sozinha quando a última for concluída.'),
+              h('div', { class: 'linha' }, h('a', { class: 'btn primario', href: '#/licao/' + trava.faltam[0] }, `${trilhaDe(trava.faltam[0]).icone} ${refDe(trava.faltam[0]).titulo}`), h('span', { class: 'sub' }, 'próxima lição-base'))]
             : h('div', { class: 'linha' },
               h('button', { class: 'btn ' + (revOk && licOk && !consOk ? 'primario' : ''), onclick: () => { E.foco = { inicio: Date.now(), dia: HOJE, missao: missao.id }; salvar(); navega(); } }, '▶ Iniciar foco'),
               h('button', { class: 'btn fantasma', onclick: () => concluiMissao(missao) }, 'Concluí esta missão')),
@@ -307,6 +315,7 @@ function paraFoco(missaoId) {
 }
 
 function concluiMissao(m) {
+  if (L.travaDaMissao(m, D.ordem, E, existe).travada) return avisa('Missão fechada: conclua antes as lições-base.');
   if (!confirm(`Concluir "${m.titulo}"?\n\nPronto quando: ${m.prontoQuando}\n\nSó confirme se isso é verdade agora.`)) return;
   if (E.foco) paraFoco(m.id);
   E.missoes[m.id] = { ...(E.missoes[m.id] ?? {}), feitaEm: HOJE };

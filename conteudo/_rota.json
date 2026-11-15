@@ -38,37 +38,37 @@
       "sprints": "Sprints 2 e 3 do Cockpit",
       "chefao": "c1",
       "licoes": [
+        "dados-01",
+        "dados-02",
+        "dados-03",
+        "nest-04",
         "http-02",
         "http-05",
         "seg-01",
-        "nest-04",
         "nest-05",
         "seg-02",
         "seg-03",
         "nest-06",
         "ts-09",
         "seg-04",
+        "test-02",
+        "nest-18",
+        "test-05",
+        "ferr-02",
+        "http-07",
         "js-02",
         "js-03",
-        "dados-01",
-        "dados-02",
-        "dados-05",
         "ts-07",
         "ts-08",
-        "test-02",
-        "test-04",
-        "dados-03",
+        "dados-05",
         "dados-07",
-        "ferr-02",
+        "http-08",
+        "test-04",
         "ferr-06",
         "mig-04",
         "mig-06",
         "dados-12",
-        "nest-18",
-        "test-05",
-        "js-11",
-        "http-07",
-        "http-08"
+        "js-11"
       ]
     },
     {
@@ -81,36 +81,36 @@
         "react-01",
         "react-02",
         "ui-01",
+        "ui-02",
+        "ui-03",
+        "ui-04",
         "react-03",
         "react-04",
-        "ui-02",
         "react-05",
         "react-07",
-        "http-06",
         "front-01",
         "front-02",
-        "react-10",
-        "ui-03",
-        "front-03",
-        "front-04",
-        "react-06",
-        "js-05",
-        "react-08",
-        "react-09",
-        "react-11",
-        "react-12",
         "front-05",
+        "http-06",
         "front-06",
         "front-07",
         "seg-05",
-        "ui-04",
-        "mig-07",
-        "mig-08",
-        "mig-09",
-        "test-06",
         "ts-10",
         "ts-11",
-        "react-14"
+        "react-14",
+        "test-06",
+        "react-10",
+        "js-05",
+        "front-03",
+        "front-04",
+        "react-06",
+        "react-12",
+        "react-08",
+        "react-09",
+        "react-11",
+        "mig-07",
+        "mig-08",
+        "mig-09"
       ]
     },
     {
@@ -148,6 +148,7 @@
       "sprint": 1,
       "titulo": "1.1 Configuração validada",
       "guia": "1.1 Configuração validada",
+      "ate": "nest-01",
       "sessoes": 1,
       "prontoQuando": "A API se recusa a subir sem as variáveis obrigatórias."
     },
@@ -156,6 +157,7 @@
       "sprint": 1,
       "titulo": "1.2 Prisma",
       "guia": "1.2 Prisma",
+      "ate": "nest-02",
       "sessoes": 1,
       "prontoQuando": "A API conecta no banco na partida."
     },
@@ -164,6 +166,7 @@
       "sprint": 1,
       "titulo": "1.3 Bootstrap",
       "guia": "1.3 Bootstrap",
+      "ate": "nest-02",
       "sessoes": 2,
       "prontoQuando": "A API sobe, o /docs abre e o openapi.json é gerado."
     },
@@ -172,6 +175,7 @@
       "sprint": 1,
       "titulo": "1.4 Erros padronizados (RFC 9457)",
       "guia": "1.4 Erros padronizados (RFC 9457)",
+      "ate": "nest-08",
       "sessoes": 1,
       "prontoQuando": "Rota inexistente devolve 404 em application/problem+json."
     },
@@ -180,6 +184,7 @@
       "sprint": 1,
       "titulo": "1.5 Health",
       "guia": "1.5 Health",
+      "ate": "nest-09",
       "sessoes": 1,
       "prontoQuando": "GET /health devolve 200 com o banco \"up\". Commit: feat(api): add health check."
     },
@@ -188,6 +193,7 @@
       "sprint": 1,
       "titulo": "1.6 Testes da sprint e Pull Request",
       "guia": "1.6 Testes desta sprint",
+      "ate": "test-01",
       "sessoes": 3,
       "prontoQuando": "1 teste unitário e 2 e2e verdes, CI verde, PR com squash na main fechando a issue da Sprint 1."
     },
@@ -196,6 +202,7 @@
       "sprint": 2,
       "titulo": "2.1 Modelos de usuário e token",
       "guia": "2.1 Modelos",
+      "ate": "dados-03",
       "sessoes": 1,
       "prontoQuando": "Migration criada e aplicada; commit feito."
     },
@@ -204,30 +211,37 @@
       "sprint": 2,
       "titulo": "2.2 Gerar os módulos de Users e Auth",
       "guia": "2.2 Gerar os módulos",
+      "ate": "nest-04",
       "sessoes": 1,
       "prontoQuando": "Módulos gerados pela CLI e registrados; a API sobe."
     },
     {
       "id": "s2.3",
       "sprint": 2,
-      "titulo": "2.3 Peças centrais da autenticação",
-      "guia": "2.3 Peças centrais",
+      "titulo": "2.3 Peças centrais, cadastro e login",
+      "guia": [
+        "2.3 Peças centrais",
+        "Parte A — Cadastro e login"
+      ],
+      "ate": "ts-09",
       "sessoes": 3,
-      "prontoQuando": "Registro e login funcionam no Swagger; rota protegida devolve 401 sem token."
+      "prontoQuando": "Registro e login funcionam no Swagger; GET /users/me devolve 200 com o token e 401 sem ele."
     },
     {
       "id": "s2.4",
       "sprint": 2,
-      "titulo": "2.4 Refresh rotativo",
-      "guia": "2.4 Refresh rotativo (o coração da sprint)",
+      "titulo": "2.4 Refresh rotativo e logout",
+      "guia": "Parte B — Refresh e logout",
+      "ate": "seg-04",
       "sessoes": 3,
-      "prontoQuando": "Renovar troca o token; reapresentar o antigo derruba a família inteira."
+      "prontoQuando": "Renovar troca o token; reapresentar o antigo derruba a família inteira; o logout revoga a sessão e limpa o cookie."
     },
     {
       "id": "s2.5",
       "sprint": 2,
       "titulo": "2.5 Testes e Pull Request da Sprint 2",
       "guia": "2.5 Testes",
+      "ate": "ferr-02",
       "sessoes": 3,
       "prontoQuando": "Testes da seção verdes, CI verde, PR com squash na main."
     },
@@ -236,6 +250,7 @@
       "sprint": 3,
       "titulo": "3.1 A receita nest g resource",
       "guia": "3.1 A receita `nest g resource`",
+      "ate": "http-07",
       "sessoes": 1,
       "prontoQuando": "Você gerou um recurso e sabe dizer o que cada arquivo faz."
     },
@@ -244,6 +259,7 @@
       "sprint": 3,
       "titulo": "3.2 Workspaces",
       "guia": "3.2 Workspaces",
+      "ate": "ts-08",
       "sessoes": 2,
       "prontoQuando": "CRUD de workspaces funcionando, isolado por usuário."
     },
@@ -252,6 +268,7 @@
       "sprint": 3,
       "titulo": "3.3 Tasks",
       "guia": "3.3 Tasks",
+      "ate": "http-08",
       "sessoes": 3,
       "prontoQuando": "CRUD de tarefas com filtros e tags."
     },
@@ -260,6 +277,7 @@
       "sprint": 3,
       "titulo": "3.4 Captura rápida com TDD",
       "guia": "3.4 Captura rápida (TDD de ponta a ponta)",
+      "ate": "test-04",
       "sessoes": 2,
       "prontoQuando": "O histórico de commits mostra o teste vermelho antes do verde."
     },
@@ -268,6 +286,7 @@
       "sprint": 3,
       "titulo": "3.5 Ordenação por índice fracionário",
       "guia": "3.5 Ordenação por índice fracionário",
+      "ate": "mig-06",
       "sessoes": 1,
       "prontoQuando": "Reordenar não renumera a lista inteira."
     },
@@ -276,6 +295,7 @@
       "sprint": 3,
       "titulo": "3.6 Testes obrigatórios e Pull Request da Sprint 3",
       "guia": "3.6 Testes obrigatórios da sprint",
+      "ate": "js-11",
       "sessoes": 2,
       "prontoQuando": "Testes verdes, CI verde, PR com squash na main."
     },
@@ -284,6 +304,7 @@
       "sprint": 4,
       "titulo": "4.1 Tailwind e shadcn/ui",
       "guia": "4.1 Tailwind 4 e shadcn/ui",
+      "ate": "ui-04",
       "sessoes": 2,
       "prontoQuando": "Um botão do shadcn aparece estilizado na tela."
     },
@@ -292,6 +313,7 @@
       "sprint": 4,
       "titulo": "4.2 Rotas, Query e providers",
       "guia": "4.2 Rotas, Query e providers",
+      "ate": "front-05",
       "sessoes": 2,
       "prontoQuando": "Navegar entre duas rotas funciona sem recarregar a página."
     },
@@ -300,6 +322,7 @@
       "sprint": 4,
       "titulo": "4.3 Cliente HTTP com refresh automático",
       "guia": "4.3 Cliente HTTP com refresh automático",
+      "ate": "seg-05",
       "sessoes": 2,
       "prontoQuando": "Um 401 dispara a renovação e a chamada original é repetida."
     },
@@ -308,6 +331,7 @@
       "sprint": 4,
       "titulo": "4.4 Gerar o cliente do contrato",
       "guia": "4.4 Gerar o cliente do contrato (orval)",
+      "ate": "ts-11",
       "sessoes": 1,
       "prontoQuando": "npm run api:gen gera o cliente tipado a partir do openapi.json."
     },
@@ -316,6 +340,7 @@
       "sprint": 4,
       "titulo": "4.5 Telas de login e testes da Sprint 4",
       "guia": "4.5 Telas e testes desta sprint",
+      "ate": "react-10",
       "sessoes": 3,
       "prontoQuando": "Login de ponta a ponta no navegador, testes verdes, PR na main."
     },
@@ -324,6 +349,7 @@
       "sprint": 5,
       "titulo": "5.1 Plano do dia — API",
       "guia": "5.1 API",
+      "ate": "js-05",
       "sessoes": 4,
       "prontoQuando": "Plano do dia com capacidade e carry-over testado em dois fusos."
     },
@@ -332,6 +358,7 @@
       "sprint": 5,
       "titulo": "5.2 Tela Hoje — Web",
       "guia": "5.2 Web",
+      "ate": "react-12",
       "sessoes": 4,
       "prontoQuando": "Tela Hoje com arrastar e soltar e atualização otimista; PR na main."
     },
@@ -340,6 +367,7 @@
       "sprint": 6,
       "titulo": "Sprint 6 — Foco e Standup",
       "guia": "Sprint 6 — Foco e Standup",
+      "ate": "mig-09",
       "sessoes": 7,
       "prontoQuando": "Timer de foco com teste de relógio falso; índice parcial de sessão ativa; PR na main."
     },
