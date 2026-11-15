@@ -3,7 +3,7 @@ titulo: Cockpit — Guia de Implementação
 subtitulo: Passo a passo manual, no rito do dia a dia de um dev NestJS + React
 rotulo: Documento técnico
 autor: Davi Kelve
-badges: Para implementar à mão:ok, v1.4
+badges: Para implementar à mão:ok, v1.5
 kpis: Sprints=11; Recurso Nest padrão=12 passos; Commits por feature=3 a 6
 ---
 
@@ -69,6 +69,24 @@ NestJS trabalha de verdade. Cada sprint segue o mesmo rito — repita-o até vir
 > raiz do arquivo, o que invalida o workflow) e há um "Como deve ficar no fim". O filtro da 1.4 passou a
 > registrar todo erro 5xx no log e a devolver o corpo do Terminus quando o health check falha; o ping da
 > 1.5 ganhou 3 s de limite, porque um banco que hiberna (Neon) não acorda em 1 s.
+
+> [!INFO] v1.5 — os imports de cada bloco (15/11/2026)
+> Vários blocos de código usavam classes sem dizer de onde vinham (o `JwtService` do guard da 2.3 foi o
+> primeiro a travar). Agora todo bloco das Sprints 1 a 5 abre com os seus `import`. Os da API foram
+> compilados (`tsc`), testados e passados no lint num projeto com as dependências da Sprint 2; os do front
+> foram compilados contra React Router 8, TanStack Query 5, Zustand 5, Zod 4 e MSW 3. De quebra, o
+> `server.listen` da 4.5 mudou: no MSW 3 a opção se chama `onUnhandledFrame`.
+
+> [!ATENCAO] Três regras de import neste projeto
+> **1. Arquivo seu termina em `.js`** (`'./auth.service.js'`), mesmo sendo `.ts`: a API é ESM. Pacote não
+> leva extensão (`'@nestjs/jwt'`). No front (Vite) não vai extensão nenhuma.
+> **2. `Request` e `Response` vêm do `express`, com `import type`.** Sem o import, o TypeScript usa o
+> `Request` global do `fetch`, que não tem `headers.authorization` nem `cookies`. E sem o `type`, o
+> compilador recusa o tipo em método com decorator (erro TS1272).
+> **3. DTO nunca com `import type`.** O `ValidationPipe` precisa da classe em tempo de execução; importada
+> só como tipo, a validação deixa de acontecer sem erro nenhum.
+> Num bloco marcado como *(trecho)*, os `import` do topo são os que aquele trecho usa: some aos que o
+> arquivo já tem. Peça que ainda não existe aparece com o comentário `// você cria`.
 
 ### Definição de pronto (DoD) — vale para todo PR
 
@@ -1130,6 +1148,12 @@ await bootstrap();
 `src/app.module.ts` (o `LoggerModule` é obrigatório: o `main.ts` pede o `Logger` dele):
 
 ```ts
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
+import { envValidation } from './config/env.validation.js';
+import { PrismaModule } from './core/prisma/prisma.module.js';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validationSchema: envValidation }),
@@ -1244,9 +1268,14 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 }
 ```
 
-Agora registre no `AppModule`, acrescentando a linha de `providers` (o `APP_FILTER` vem de `@nestjs/core`):
+Agora registre no `AppModule`, acrescentando os dois imports e a linha de `providers`:
 
 ```ts
+// src/app.module.ts (trecho)
+import { APP_FILTER } from '@nestjs/core';
+import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
+
+// dentro do @Module({ ... }), depois de imports:
   providers: [{ provide: APP_FILTER, useClass: ProblemDetailsFilter }],
 ```
 
@@ -1273,12 +1302,20 @@ nest g controller core/health
 
 ```ts
 // src/core/health/health.module.ts
+import { Module } from '@nestjs/common';
+import { TerminusModule } from '@nestjs/terminus';
+import { HealthController } from './health.controller.js';
+
 @Module({ imports: [TerminusModule], controllers: [HealthController] })
 export class HealthModule {}
 ```
 
 ```ts
 // src/core/health/health.controller.ts
+import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
+import { HealthCheck, HealthCheckService, PrismaHealthIndicator } from '@nestjs/terminus';
+import { PrismaService } from '../prisma/prisma.service.js';
+
 @Controller({ path: 'health', version: VERSION_NEUTRAL }) // sem isso vira /v1/health (testado)
 export class HealthController {
   constructor(
@@ -1323,6 +1360,12 @@ registra o controller, e o controller agora depende de três serviços. É norma
 gerado vira teste de verdade ou é apagado**, nunca fica quebrado. Versão de verdade, com mocks do Vitest:
 
 ```ts
+// src/core/health/health.controller.spec.ts — describe, it, expect e vi são globais do Vitest (sem import)
+import { Test } from '@nestjs/testing';
+import { HealthCheckService, PrismaHealthIndicator } from '@nestjs/terminus';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { HealthController } from './health.controller.js';
+
 describe('HealthController', () => {
   let controller: HealthController;
   const health = { check: vi.fn() };
@@ -1351,6 +1394,11 @@ Se sobrar no topo do arquivo o `TestingModule` que a CLI importou, apague: o lin
 **Passo 2 — a base dos e2e.** Utilitário `test/utils/app.ts` (usado em todas as sprints):
 
 ```ts
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { AppModule } from '../../src/app.module.js';
+import { setupApp } from '../../src/app.setup.js';
+
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
@@ -1548,10 +1596,16 @@ nest g decorator common/decorators/current-user --flat
 
 ```ts
 // src/common/decorators/public.decorator.ts
+import { SetMetadata } from '@nestjs/common';
+
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+```
 
+```ts
 // src/common/decorators/current-user.decorator.ts
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+
 export type AuthUser = { id: string; email: string };
 export const CurrentUser = createParamDecorator(
   (_: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest<{ user: AuthUser }>().user,
@@ -1560,6 +1614,13 @@ export const CurrentUser = createParamDecorator(
 
 ```ts
 // src/modules/auth/guards/jwt-auth.guard.ts
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt'; // instalado na 2.2
+import type { Request } from 'express'; // sem isto vale o Request do fetch, que não tem headers.authorization
+import type { AuthUser } from '../../../common/decorators/current-user.decorator.js';
+import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator.js';
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -1587,6 +1648,14 @@ export class JwtAuthGuard implements CanActivate {
 
 ```ts
 // src/modules/auth/auth.module.ts — o JwtModule precisa ser GLOBAL: o guard global usa o JwtService
+import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import type { StringValue } from 'ms'; // só o tipo: o pacote ms já vem junto com o @nestjs/jwt
+import { UsersModule } from '../users/users.module.js';
+import { AuthController } from './auth.controller.js';
+import { AuthService } from './auth.service.js';
+
 @Module({
   imports: [
     UsersModule,
@@ -1595,7 +1664,7 @@ export class JwtAuthGuard implements CanActivate {
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        signOptions: { expiresIn: config.get<StringValue>('JWT_ACCESS_TTL', '15m') }, // StringValue vem de 'ms'
+        signOptions: { expiresIn: config.get<StringValue>('JWT_ACCESS_TTL', '15m') },
       }),
     }),
   ],
@@ -1605,8 +1674,17 @@ export class JwtAuthGuard implements CanActivate {
 export class AuthModule {}
 ```
 
+O `AuthModule` importa o `UsersModule` para o `AuthService` receber o `UsersService`: para isso o
+`UsersModule` precisa ter `exports: [UsersService]` (a CLI não põe).
+
 ```ts
-// app.module.ts (trecho)
+// src/app.module.ts (trecho) — some estes imports aos que o arquivo já tem
+import { APP_FILTER, APP_GUARD } from '@nestjs/core'; // o APP_FILTER já estava: só acrescente o APP_GUARD
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard.js';
+
+// dentro do @Module({ ... }):
 imports: [
   // ...
   ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
@@ -1626,8 +1704,28 @@ providers: [
 ### 2.4 Refresh rotativo (o coração da sprint)
 
 ```ts
-// auth.service.ts (trecho)
+// src/modules/auth/auth.service.ts (trecho)
+import { createHash, randomBytes, randomUUID } from 'node:crypto'; // do próprio Node, nada a instalar
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { JwtService } from '@nestjs/jwt';
+import * as argon2 from 'argon2';
+import { PrismaService } from '../../core/prisma/prisma.service.js';
+import { UsersService } from '../users/users.service.js';
+import { LoginDto, RegisterDto } from './dto/auth.dto.js';
+
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+
+// dentro de @Injectable() export class AuthService { ... } — é o constructor que dá nome a
+// this.prisma, this.users, this.jwt, this.config e this.events:
+constructor(
+  private prisma: PrismaService,
+  private users: UsersService,
+  private jwt: JwtService,
+  private config: ConfigService,
+  private events: EventEmitter2,
+) {}
 
 async register(dto: RegisterDto, userAgent?: string) {
   if (await this.users.findByEmail(dto.email)) throw new ConflictException('E-mail já cadastrado.');
@@ -1673,11 +1771,16 @@ private async issueTokens(user: { id: string; email: string }, familyId: string,
 > o teste pegava a lista vazia (testado na Sprint 3). Com `await emitAsync(...)` e
 > `@OnEvent('user.registered', { promisify: true })` no ouvinte, o cadastro só responde depois.
 
+`findByEmail`, `create` e `findByIdOrThrow` são métodos do `UsersService` que **você escreve** (Prisma
+puro, com o `PrismaService` injetado no constructor): o trecho acima só os chama.
+
 O refresh vai em cookie, nunca no corpo — e **o retorno do controller tem que ser uma classe**, senão o
 Swagger documenta a resposta como vazia e o front recebe `void` (testado na Sprint 4):
 
 ```ts
-// dto/auth.dto.ts
+// src/modules/auth/dto/auth.dto.ts
+import { IsEmail, IsString, Length, MinLength } from 'class-validator';
+
 export class LoginDto {
   @IsEmail() email: string;
   @IsString() @MinLength(8) password: string;
@@ -1692,10 +1795,20 @@ export class AccessTokenDto {
 ```
 
 ```ts
-// auth.controller.ts (trecho)
+// src/modules/auth/auth.controller.ts (trecho)
+import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import type { CookieOptions, Request, Response } from 'express'; // "import type" é obrigatório aqui (TS1272)
+import { Public } from '../../common/decorators/public.decorator.js';
+import { AuthService } from './auth.service.js';
+import { AccessTokenDto, LoginDto } from './dto/auth.dto.js'; // DTO NUNCA com "import type"
+
 const cookieOptions: CookieOptions = {
   httpOnly: true, secure: true, sameSite: 'strict', path: '/api/v1/auth', maxAge: 30 * 86_400_000,
 };
+
+// dentro de @Controller('auth') export class AuthController { ... }:
+constructor(private auth: AuthService) {}
 
 @Public()
 @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -1719,6 +1832,17 @@ Os specs gerados de `users.*` e `auth.controller` ("should be defined") quebram 
 dependências — transforme em teste de verdade ou apague. O do `AuthService`, com `vitest-mock-extended`:
 
 ```ts
+// src/modules/auth/auth.service.spec.ts
+import { UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { JwtService } from '@nestjs/jwt';
+import { Test } from '@nestjs/testing';
+import { mockDeep, type DeepMockProxy } from 'vitest-mock-extended';
+import { PrismaService } from '../../core/prisma/prisma.service.js';
+import { UsersService } from '../users/users.service.js';
+import { AuthService } from './auth.service.js';
+
 describe('AuthService', () => {
   let service: AuthService;
   let prisma: DeepMockProxy<PrismaService>;
@@ -1812,7 +1936,9 @@ npx prisma generate
 ```
 
 ```ts
-// create-workspace.dto.ts
+// src/modules/workspaces/dto/create-workspace.dto.ts
+import { IsHexColor, IsOptional, IsString, Length } from 'class-validator';
+
 export class CreateWorkspaceDto {
   /** Nome do contexto, ex.: Empresa, Freela */
   @IsString() @Length(1, 40) name: string;
@@ -1821,7 +1947,12 @@ export class CreateWorkspaceDto {
 ```
 
 ```ts
-// workspaces.service.ts (trecho)
+// src/modules/workspaces/workspaces.service.ts (trecho)
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { PrismaService } from '../../core/prisma/prisma.service.js';
+
+// dentro da classe, com constructor(private prisma: PrismaService) {}:
 findAll(userId: string) {
   return this.prisma.workspace.findMany({ where: { userId, archivedAt: null }, orderBy: { position: 'asc' } });
 }
@@ -1870,7 +2001,11 @@ export function assertTransition(from: TaskStatus, to: TaskStatus): void {
 ```
 
 ```ts
-// task-status.machine.spec.ts
+// src/modules/tasks/task-status.machine.spec.ts
+import { ConflictException } from '@nestjs/common';
+import type { TaskStatus } from '../../generated/prisma/enums.js';
+import { assertTransition } from './task-status.machine.js';
+
 it.each<[TaskStatus, TaskStatus, boolean]>([
   ['INBOX', 'DONE', true],
   ['DONE', 'BLOCKED', false],
@@ -1886,6 +2021,12 @@ it.each<[TaskStatus, TaskStatus, boolean]>([
 **DTO de consulta** com filtros e paginação (reaproveite `PaginationQueryDto` de `common/dto`):
 
 ```ts
+// src/modules/tasks/dto/task-query.dto.ts
+import { Transform } from 'class-transformer';
+import { IsEnum, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto.js'; // você cria
+import { TaskStatus } from '../../../generated/prisma/enums.js'; // sem "type": o @IsEnum usa o objeto
+
 export class TaskQueryDto extends PaginationQueryDto {
   @IsOptional() @Transform(({ value }) => String(value).split(','))
   @IsEnum(TaskStatus, { each: true }) status?: TaskStatus[];
@@ -1899,7 +2040,14 @@ export class TaskQueryDto extends PaginationQueryDto {
 **Transição** como rota própria — e o evento de domínio sai daqui:
 
 ```ts
-// tasks.service.ts (trecho)
+// src/modules/tasks/tasks.service.ts (trecho)
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PrismaService } from '../../core/prisma/prisma.service.js';
+import { ChangeStatusDto } from './dto/change-status.dto.js'; // você cria: status (@IsEnum) e reason opcional
+import { assertTransition } from './task-status.machine.js';
+
+// dentro da classe, com constructor(private prisma: PrismaService, private events: EventEmitter2) {}:
 async changeStatus(userId: string, id: string, dto: ChangeStatusDto) {
   const task = await this.findOne(userId, id);
   assertTransition(task.status, dto.status);
@@ -1930,7 +2078,9 @@ a data de "hoje" no fuso do usuário e as listas de workspaces/pessoas; devolve 
 Não acessa banco — quem resolve nomes é o service.
 
 ```ts
-// quick-add.parser.spec.ts (comece por estes e vá crescendo)
+// src/modules/tasks/quick-add/quick-add.parser.spec.ts (comece por estes e vá crescendo)
+import { parseQuickAdd } from './quick-add.parser.js';
+
 const today = '2026-10-31';  // uma sexta-feira — fixe a data, nunca use new Date() em teste
 it.each([
   ['Revisar PR', { title: 'Revisar PR' }],
@@ -2039,7 +2189,11 @@ npm i -w apps/web react-router @tanstack/react-query @tanstack/react-query-devto
 ```
 
 ```tsx
-// src/app/router.tsx
+// src/app/router.tsx — no front (Vite) o import não leva extensão
+import { createBrowserRouter, Navigate } from 'react-router';
+import { AppShell } from '@/app/layouts/AppShell'; // você cria (4.5)
+import { RequireAuth } from '@/features/auth/RequireAuth'; // você cria (4.3)
+
 export const router = createBrowserRouter([
   { path: '/login', lazy: () => import('@/features/auth/LoginPage') },
   { path: '/register', lazy: () => import('@/features/auth/RegisterPage') },
@@ -2059,6 +2213,17 @@ Com `lazy`, cada página exporta uma função chamada **`Component`** (`export f
 
 ```tsx
 // src/main.tsx — o TooltipProvider envolve tudo (o shadcn avisa ao instalar o tooltip)
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider } from 'react-router';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { router } from '@/app/router';
+import './index.css';
+
+const queryClient = new QueryClient();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -2075,6 +2240,8 @@ createRoot(document.getElementById('root')!).render(
 
 ```ts
 // src/features/auth/session-store.ts — access token SÓ em memória (sem persist)
+import { create } from 'zustand';
+
 export const useSession = create<{ token: string | null; setToken: (t: string | null) => void }>((set) => ({
   token: null,
   setToken: (token) => set({ token }),
@@ -2083,6 +2250,11 @@ export const useSession = create<{ token: string | null; setToken: (t: string | 
 
 ```ts
 // src/api/http.ts — o orval 8 (client fetch) chama o mutator com (url, RequestInit)
+import { useSession } from '@/features/auth/session-store';
+import { ApiError } from '@/api/api-error'; // você cria: classe com static async from(res: Response)
+import { refreshAccessToken } from '@/features/auth/refresh'; // você cria (descrita logo abaixo)
+// fetch, Headers e RequestInit são do navegador: sem import
+
 let refreshing: Promise<string | null> | null = null;
 
 export async function http<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -2148,6 +2320,14 @@ da `operationIdFactory` da Sprint 1: `useAuthLogin()`, `useUsersMe()`, `useWorks
 - `LoginPage` e `RegisterPage` com React Hook Form + Zod, erro da API exibido no campo/toast:
 
 ```tsx
+// src/features/auth/LoginPage.tsx
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { useSession } from '@/features/auth/session-store';
+// useAuthLogin é gerado pelo orval em src/api/generated/ (a pasta e o arquivo levam o nome da tag do
+// controller). Depois do "npm run api:gen", ponha o cursor no nome e use Ctrl+. → "Add import".
+
 const schema = z.object({ email: z.email('E-mail inválido'), password: z.string().min(8, 'Mínimo 8 caracteres') });
 
 export function Component() {
@@ -2185,17 +2365,32 @@ export default mergeConfig(
 
 ```ts
 // src/test/server.ts
-export const server = setupServer(); // cada teste registra seus handlers com server.use(...)
+import { setupServer } from 'msw/node';
 
-// src/test/setup.ts
+export const server = setupServer(); // cada teste registra seus handlers com server.use(...)
+```
+
+```ts
+// src/test/setup.ts — beforeAll, afterEach e afterAll são globais do Vitest (globals: true)
 import '@testing-library/jest-dom/vitest';
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+import { cleanup } from '@testing-library/react';
+import { server } from './server';
+
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' })); // MSW 3; no MSW 2 era onUnhandledRequest
 afterEach(() => { server.resetHandlers(); cleanup(); });
 afterAll(() => server.close());
 ```
 
 ```tsx
 // src/features/auth/LoginPage.test.tsx (trecho)
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { http as mock, HttpResponse } from 'msw'; // "as mock" para não confundir com o http de src/api/http.ts
+import { server } from '@/test/server';
+import { useSession } from './session-store';
+import { Component as LoginPage } from './LoginPage';
+
 it('guarda o token em memória quando a API aceita', async () => {
   server.use(mock.post('*/api/v1/auth/login', () => HttpResponse.json({ accessToken: 'tok-123' })));
   renderPage(); // envolve em <QueryClientProvider client={new QueryClient()}>
@@ -2235,7 +2430,7 @@ nest g pipe common/pipes/parse-date --flat
 ```
 
 Registre o agendador no `AppModule` — sem isso o `@Cron` não dispara (o guia antigo esquecia):
-`imports: [..., ScheduleModule.forRoot()]`.
+`imports: [..., ScheduleModule.forRoot()]`, com `import { ScheduleModule } from '@nestjs/schedule';` no topo.
 
 > [!ATENCAO] O pipe gerado não passa no lint
 > `nest g pipe` cria `transform(value: any, metadata: ArgumentMetadata)`, e a regra `no-explicit-any`
@@ -2263,7 +2458,9 @@ export function localHour(timezone: string, now = new Date()): number {
 ```
 
 ```ts
-// local-date.spec.ts — 31/10/2026 02:30 UTC é outro dia em cada fuso
+// src/common/time/local-date.spec.ts — 31/10/2026 02:30 UTC é outro dia em cada fuso
+import { localHour, localToday } from './local-date.js';
+
 const now = new Date('2026-10-31T02:30:00Z');
 it.each([
   ['America/Fortaleza', '2026-10-30', 23],
@@ -2285,6 +2482,12 @@ return { ...plan, capacity: { availableMin: user.workdayMinutes, plannedMin: pla
 **Carry-over por hora** (RN-05):
 
 ```ts
+// src/modules/daily-plans/daily-plans.scheduler.ts
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { UsersService } from '../users/users.service.js';
+import { DailyPlansService } from './daily-plans.service.js';
+
 @Injectable()
 export class DailyPlansScheduler {
   private readonly logger = new Logger(DailyPlansScheduler.name);
@@ -2307,7 +2510,8 @@ unitário com fuso fixo (`America/Fortaleza` e `Asia/Tokyo`) e "agora" injetado.
 **Ouça os eventos** de tarefa (`@OnEvent('task.completed', { promisify: true })` marca `doneAt` no item
 do plano de hoje).
 
-e2e do agendador: `expect(app.get(SchedulerRegistry).getCronJob('carry-over')).toBeDefined()` e
+e2e do agendador (o `SchedulerRegistry` também vem de `@nestjs/schedule`):
+`expect(app.get(SchedulerRegistry).getCronJob('carry-over')).toBeDefined()` e
 `await app.get(DailyPlansScheduler).carryOver()` — roda o job de verdade sem esperar a hora cheia.
 
 ### 5.2 Web
@@ -2324,6 +2528,9 @@ npm i -w apps/web @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 - **Optimistic update** ao concluir:
 
 ```ts
+import { useQueryClient } from '@tanstack/react-query';
+// useChangeTaskStatus é gerado pelo orval (src/api/generated/); todayKey e markDone você cria na feature
+
 const qc = useQueryClient();
 const mutation = useChangeTaskStatus({
   mutation: {
